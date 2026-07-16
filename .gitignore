@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+.venv32/
+.venv64/
+*.egg-info/
+.DS_Store
+# 探索の生成物 (保存戦略 JSON 等) は必要になったら別途 track する
+/out/
+*.local.json
