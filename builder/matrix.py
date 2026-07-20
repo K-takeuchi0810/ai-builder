@@ -1,0 +1,213 @@
+"""Phase 3a: 特徴量行列の事前計算 + ディスクキャッシュ。
+
+compute_features は 1 頭ごとに騎手・血統等を DB 集計するため高コスト。Phase 3 の重み自動探索は
+「同じ特徴量を重みだけ変えて何百回も評価」するので、毎回 DB を叩くと非現実的に遅い。
+
+そこで候補特徴量セット (columns) について、期間内の全 (レース×馬) の特徴量ベクトル・着順・
+単勝払戻・セグメント属性を **一度だけ** 計算して JSON にキャッシュする。以降の探索
+(score_race_columns / evaluate_matrix) は行列上の純粋計算だけで回るため高速。
+
+read-only: keiba-yosou は model 経由 (compute_features / horse_past_runs) でのみ参照。
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from pathlib import Path
+
+from . import axes as ax
+from . import config, model
+from .keiba_bridge import open_conn, _ensure_keiba_on_path
+
+MATRIX_VERSION = 1
+_CACHE_DIR = Path(config.__file__).resolve().parent.parent / "out" / "matrix"
+
+
+def _col_id(spec: dict) -> str:
+    key = spec["key"]
+    feat = model.FEATURES.get(key)
+    if feat and feat.kind == "aggregate":
+        lb = spec.get("lookback")
+        m = ",".join(sorted(spec.get("match") or []))
+        return f"{key}|lb={lb}|m={m}"
+    return key
+
+
+def _columns(specs: list[dict]) -> list[dict]:
+    cols = []
+    for s in specs:
+        feat = model.FEATURES.get(s.get("key"))
+        if feat is None:
+            continue
+        cols.append({"id": _col_id(s), "key": feat.key, "kind": feat.kind,
+                     "hib": feat.higher_is_better, "label": feat.label,
+                     "lookback": s.get("lookback"), "match": s.get("match") or []})
+    return cols
+
+
+def _seg(race: dict) -> dict:
+    return {
+        "track": str(race.get("track_code")),
+        "distance": race.get("distance"),
+        "distance_bucket": ax.distance_bucket(race.get("distance")),
+        "surface": model._surface(race.get("track_type_code")),
+        "condition": ax.condition_key(model._surface(race.get("track_type_code")),
+                                      race.get("turf_condition"), race.get("dirt_condition")),
+        "month": (race.get("race_month_day", "") or "")[:2].lstrip("0") or "unknown",
+    }
+
+
+def _tan_payouts(payout_row: dict | None) -> dict[str, int]:
+    """払戻行から単勝の {馬番: 払戻円} を取り出す (同着最大3)。"""
+    out: dict[str, int] = {}
+    if not payout_row:
+        return out
+    for i in (1, 2, 3):
+        num = payout_row.get(f"tan_horse_num{i}")
+        pay = payout_row.get(f"tan_payout{i}")
+        if num and pay:
+            out[str(num)] = int(pay)
+    return out
+
+
+def _cache_path(from_date: str, to_date: str, cols: list[dict]) -> Path:
+    ids = ",".join(c["id"] for c in cols)
+    h = hashlib.sha1(f"{MATRIX_VERSION}|{from_date}|{to_date}|{ids}".encode()).hexdigest()[:16]
+    return _CACHE_DIR / f"matrix_{from_date}_{to_date}_{h}.json"
+
+
+def build_matrix(from_date: str, to_date: str, specs: list[dict],
+                 rebuild: bool = False) -> dict:
+    """候補特徴量 specs (重み不要) について特徴量行列を構築。キャッシュがあれば読む。
+
+    戻り: {"from","to","columns","races":[{date, seg, horses:[{num,order,x:{col_id:val}}],
+           tan:{num:yen}, trusted}]}
+    """
+    cols = _columns(specs)
+    path = _cache_path(from_date, to_date, cols)
+    if path.exists() and not rebuild:
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    _ensure_keiba_on_path()
+    from scripts.backtest import (  # type: ignore
+        get_payout_row, horses_for_race, list_races, popularity_config, race_odds_untrusted,
+    )
+    max_age = popularity_config().get("max_snapshot_age_min")
+    need_compute = any(c["kind"] == "compute" for c in cols)
+    need_past = any(c["kind"] == "aggregate" for c in cols)
+
+    races_out: list[dict] = []
+    with open_conn() as conn:
+        cache: dict = {}
+        races = list_races(conn, from_date, to_date, jra_only=True, require_confirmed=True)
+        for race in races:
+            horses = horses_for_race(conn, race)
+            if not horses or not any(h.get("confirmed_order") == 1 for h in horses):
+                continue
+            before = f"{race.get('race_year')}{race.get('race_month_day')}"
+            hrows = []
+            for h in horses:
+                feats = {}
+                if need_compute:
+                    fkey = ("cf", h.get("blood_register_num"), before, str(h.get("horse_num")))
+                    if fkey not in cache:
+                        cache[fkey] = model._compute_features(conn, h, race, cache)
+                    feats = cache[fkey]
+                past = []
+                if need_past:
+                    pkey = ("past50", h.get("blood_register_num"), before)
+                    if pkey not in cache:
+                        cache[pkey] = model._past_runs(conn, h.get("blood_register_num"), before) \
+                            if h.get("blood_register_num") else []
+                    past = cache[pkey]
+                x: dict[str, float | None] = {}
+                for c in cols:
+                    feat = model.FEATURES[c["key"]]
+                    if c["kind"] == "compute":
+                        x[c["id"]] = feat.metric(feats)
+                    elif c["kind"] == "aggregate":
+                        x[c["id"]] = model._aggregate_value(feat, past, race, c["match"], c["lookback"])
+                    else:
+                        x[c["id"]] = feat.metric(h)
+                hrows.append({"num": str(h.get("horse_num")),
+                              "order": h.get("confirmed_order"), "x": x})
+            races_out.append({
+                "date": before, "seg": _seg(race), "horses": hrows,
+                "tan": _tan_payouts(get_payout_row(conn, race)),
+                "trusted": not race_odds_untrusted(horses, race, max_age),
+            })
+
+    matrix = {"from": from_date, "to": to_date, "columns": cols, "races": races_out}
+    _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(matrix, ensure_ascii=False), encoding="utf-8")
+    return matrix
+
+
+# ---------------------------------------------------------------------------
+# 行列上の高速評価 (DB 非依存・純粋)
+# ---------------------------------------------------------------------------
+def score_race_columns(hrows: list[dict], columns: list[dict],
+                       weights: dict[str, float]) -> list[tuple[str, float]]:
+    """行列の 1 レース分 (hrows) を weights でスコアリング。(馬番, スコア) 降順。純粋関数。"""
+    nums = [hr["num"] for hr in hrows]
+    scores = {n: 0.0 for n in nums}
+    col_by_id = {c["id"]: c for c in columns}
+    for cid, w in weights.items():
+        c = col_by_id.get(cid)
+        if c is None or w == 0.0:
+            continue
+        present = {hr["num"]: hr["x"].get(cid) for hr in hrows}
+        vals = [v for v in present.values() if v is not None]
+        if len(vals) < 2:
+            continue
+        mean = sum(vals) / len(vals)
+        var = sum((v - mean) ** 2 for v in vals) / len(vals)
+        if var == 0:
+            continue
+        std = var ** 0.5
+        direction = 1.0 if c["hib"] else -1.0
+        for n in nums:
+            v = present[n]
+            if v is None:
+                continue
+            scores[n] += w * direction * ((v - mean) / std)
+    return sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
+
+
+def _blank():
+    return {"n": 0, "wins": 0, "top3": 0, "ret_sum": 0.0, "ret_n": 0}
+
+
+def _summ(a: dict) -> dict:
+    n = a["n"]
+    return {"n": n,
+            "win_rate": round(a["wins"] / n, 4) if n else None,
+            "top3_rate": round(a["top3"] / n, 4) if n else None,
+            "roi": round(a["ret_sum"] / a["ret_n"], 4) if a["ret_n"] else None,
+            "roi_n": a["ret_n"]}
+
+
+def evaluate_matrix(matrix: dict, weights: dict[str, float], split_date: str,
+                    races: list[dict] | None = None) -> dict:
+    """行列上で weights を backtest。TRAIN/HOLDOUT/overall の成績を返す (DB 非依存)。"""
+    cols = matrix["columns"]
+    rs = races if races is not None else matrix["races"]
+    overall, train, holdout = _blank(), _blank(), _blank()
+    for r in rs:
+        ranked = score_race_columns(r["horses"], cols, weights)
+        if not ranked:
+            continue
+        pick = ranked[0][0]
+        order = next((hr["order"] for hr in r["horses"] if hr["num"] == pick), None)
+        won = 1 if order == 1 else 0
+        top3 = 1 if isinstance(order, int) and 1 <= order <= 3 else 0
+        ret = (r["tan"].get(pick, 0) / 100.0) if r["trusted"] else None
+        for acc in (overall, train if r["date"] < split_date else holdout):
+            acc["n"] += 1
+            acc["wins"] += won
+            acc["top3"] += top3
+            if ret is not None:
+                acc["ret_sum"] += ret
+                acc["ret_n"] += 1
+    return {"overall": _summ(overall), "train": _summ(train), "holdout": _summ(holdout)}
