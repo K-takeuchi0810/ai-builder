@@ -147,24 +147,41 @@ def _real_env_ready() -> bool:
     return importlib.util.find_spec("lightgbm") is not None
 
 
-@pytest.mark.skipif(not _real_env_ready(), reason="keiba-yosou の DB / lightgbm が無い環境ではスキップ")
-def test_build_matrix_smoke(tmp_path, monkeypatch):
+@pytest.mark.skipif(not _real_env_ready(), reason="keiba-yosou (popularity_config) が無い環境ではスキップ")
+def test_build_matrix_monthly_checkpoint(tmp_path, monkeypatch):
+    """月次チェックポイント・再開・範囲クリップを検証 (DB compute はモックで高速化)。"""
+    import contextlib
     monkeypatch.setattr(matrix, "_CACHE_DIR", tmp_path)
-    specs = [
-        {"key": "agg_top3_rate", "lookback": 5, "match": ["surface"]},
-        {"key": "jockey_win_rate"},
-        {"key": "popularity"},
-    ]
-    m = matrix.build_matrix("20250104", "20250106", specs)
-    if not m["races"]:
-        pytest.skip("対象期間にレースが無い")
-    assert len(m["columns"]) == 3
-    r0 = m["races"][0]
-    assert set(("date", "seg", "horses", "tan", "trusted")) <= set(r0.keys())
-    assert all(cid in r0["horses"][0]["x"] for cid in (c["id"] for c in m["columns"]))
-    # キャッシュファイルが書かれ、再読込で同一
-    m2 = matrix.build_matrix("20250104", "20250106", specs)
-    assert m2["from"] == m["from"] and len(m2["races"]) == len(m["races"])
-    # 行列上の評価が動く
-    res = matrix.evaluate_matrix(m, {"jockey_win_rate": 1.0, "popularity": 0.5}, "20250105")
-    assert res["overall"]["n"] == len(m["races"])
+    monkeypatch.setattr(matrix, "open_conn", lambda: contextlib.nullcontext(None))
+
+    calls = []
+
+    def fake_range(conn, lo, hi, cols, nc, npast, ma):
+        calls.append((lo, hi))
+        return [{"date": lo, "seg": {}, "trusted": True, "tan": {"1": 200},
+                 "horses": [{"num": "1", "order": 1, "odds": 2.0, "pop": 1,
+                             "x": {c["id"]: 1.0 for c in cols}}]}]
+
+    monkeypatch.setattr(matrix, "_races_for_range", fake_range)
+    specs = [{"key": "popularity"}]
+
+    # 2 か月ぶん構築 → Jan, Feb の 2 回だけ _races_for_range が呼ばれる
+    m = matrix.build_matrix("20240101", "20240228", specs)
+    assert calls == [("20240101", "20240131"), ("20240201", "20240231")]
+    assert len(m["races"]) == 2
+    monthfiles = list((tmp_path / "months").glob("m_*.json"))
+    assert len(monthfiles) == 2                       # 月ごとにチェックポイント保存
+
+    # 範囲キャッシュを消し、月キャッシュから再開 → 追加の compute 呼び出し無し
+    for f in tmp_path.glob("matrix_*.json"):
+        f.unlink()
+    calls.clear()
+    m2 = matrix.build_matrix("20240101", "20240228", specs)
+    assert calls == []                                # 全月キャッシュ済み → 再計算なし
+    assert len(m2["races"]) == 2
+
+    # 範囲クリップ: 1 月だけ要求すると Jan の 1 レースのみ (月キャッシュ再利用)
+    calls.clear()
+    m3 = matrix.build_matrix("20240101", "20240131", specs)
+    assert calls == []
+    assert [r["date"] for r in m3["races"]] == ["20240101"]

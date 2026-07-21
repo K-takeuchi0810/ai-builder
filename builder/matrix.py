@@ -99,74 +99,121 @@ def load_years(years: list[int], specs: list[dict]) -> dict:
     return merge_matrices(mats)
 
 
+def _col_hash(cols: list[dict]) -> str:
+    ids = ",".join(c["id"] for c in cols)
+    return hashlib.sha1(f"{MATRIX_VERSION}|{ids}".encode()).hexdigest()[:16]
+
+
+def _months(from_date: str, to_date: str) -> list[str]:
+    """[from,to] を月 (YYYYMM) の並びに展開。"""
+    y, m = int(from_date[:4]), int(from_date[4:6])
+    ey, em = int(to_date[:4]), int(to_date[4:6])
+    out = []
+    while (y, m) <= (ey, em):
+        out.append(f"{y:04d}{m:02d}")
+        m += 1
+        if m > 12:
+            m, y = 1, y + 1
+    return out
+
+
+def _races_for_range(conn, lo: str, hi: str, cols: list[dict],
+                     need_compute: bool, need_past: bool, max_age) -> list[dict]:
+    """[lo,hi] の JRA 確定レースを特徴量行列レコードに変換 (build_matrix の中核)。"""
+    from scripts.backtest import (  # type: ignore
+        get_payout_row, horses_for_race, list_races, race_odds_untrusted,
+    )
+    out: list[dict] = []
+    cache: dict = {}
+    for race in list_races(conn, lo, hi, jra_only=True, require_confirmed=True):
+        horses = horses_for_race(conn, race)
+        if not horses or not any(h.get("confirmed_order") == 1 for h in horses):
+            continue
+        before = f"{race.get('race_year')}{race.get('race_month_day')}"
+        hrows = []
+        for h in horses:
+            feats = {}
+            if need_compute:
+                fkey = ("cf", h.get("blood_register_num"), before, str(h.get("horse_num")))
+                if fkey not in cache:
+                    cache[fkey] = model._compute_features(conn, h, race, cache)
+                feats = cache[fkey]
+            past = []
+            if need_past:
+                pkey = ("past50", h.get("blood_register_num"), before)
+                if pkey not in cache:
+                    cache[pkey] = model._past_runs(conn, h.get("blood_register_num"), before) \
+                        if h.get("blood_register_num") else []
+                past = cache[pkey]
+            x: dict[str, float | None] = {}
+            for c in cols:
+                feat = model.FEATURES[c["key"]]
+                if c["kind"] == "compute":
+                    x[c["id"]] = feat.metric(feats)
+                elif c["kind"] == "aggregate":
+                    x[c["id"]] = model._aggregate_value(feat, past, race, c["match"], c["lookback"])
+                else:
+                    x[c["id"]] = feat.metric(h)
+            wo = model._num(h.get("win_odds"))
+            odds = (wo / 10.0) if (wo and wo > 0) else None   # win_odds/10 = 10進オッズ (証跡参照)
+            hrows.append({"num": str(h.get("horse_num")), "order": h.get("confirmed_order"),
+                          "odds": odds, "pop": model._num(h.get("win_popularity")), "x": x})
+        out.append({
+            "date": before, "seg": _seg(race), "horses": hrows,
+            "tan": _tan_payouts(get_payout_row(conn, race)),
+            "trusted": not race_odds_untrusted(horses, race, max_age),
+        })
+    return out
+
+
 def build_matrix(from_date: str, to_date: str, specs: list[dict],
                  rebuild: bool = False) -> dict:
-    """候補特徴量 specs (重み不要) について特徴量行列を構築。キャッシュがあれば読む。
+    """候補特徴量 specs について特徴量行列を構築。**月次チェックポイント**で中断に強い。
 
-    戻り: {"from","to","columns","races":[{date, seg, horses:[{num,order,x:{col_id:val}}],
+    - 完成済みの範囲キャッシュ (out/matrix/matrix_*.json) があればそれを読む (高速・後方互換)。
+    - 無ければ **月 (YYYYMM) 単位で構築し、各月を out/matrix/months/ に逐次保存**。途中でクラッシュ
+      しても次回は未完の月から再開でき、最大でも「その月ぶん (~15分)」しか失わない。
+    - 全月そろったら範囲キャッシュを書き出して返す。
+
+    戻り: {"from","to","columns","races":[{date, seg, horses:[{num,order,odds,pop,x}],
            tan:{num:yen}, trusted}]}
     """
     cols = _columns(specs)
-    path = _cache_path(from_date, to_date, cols)
-    if path.exists() and not rebuild:
-        return json.loads(path.read_text(encoding="utf-8"))
+    range_path = _cache_path(from_date, to_date, cols)
+    if range_path.exists() and not rebuild:
+        return json.loads(range_path.read_text(encoding="utf-8"))
 
     _ensure_keiba_on_path()
-    from scripts.backtest import (  # type: ignore
-        get_payout_row, horses_for_race, list_races, popularity_config, race_odds_untrusted,
-    )
+    from scripts.backtest import popularity_config  # type: ignore
     max_age = popularity_config().get("max_snapshot_age_min")
     need_compute = any(c["kind"] == "compute" for c in cols)
     need_past = any(c["kind"] == "aggregate" for c in cols)
+    chash = _col_hash(cols)
 
-    races_out: list[dict] = []
+    month_dir = _CACHE_DIR / "months"
+    all_races: list[dict] = []
+    month_dir.mkdir(parents=True, exist_ok=True)
     with open_conn() as conn:
-        cache: dict = {}
-        races = list_races(conn, from_date, to_date, jra_only=True, require_confirmed=True)
-        for race in races:
-            horses = horses_for_race(conn, race)
-            if not horses or not any(h.get("confirmed_order") == 1 for h in horses):
+        for ym in _months(from_date, to_date):
+            mp = month_dir / f"m_{ym}_{chash}.json"
+            if mp.exists() and not rebuild:
+                all_races.extend(json.loads(mp.read_text(encoding="utf-8"))["races"])
                 continue
-            before = f"{race.get('race_year')}{race.get('race_month_day')}"
-            hrows = []
-            for h in horses:
-                feats = {}
-                if need_compute:
-                    fkey = ("cf", h.get("blood_register_num"), before, str(h.get("horse_num")))
-                    if fkey not in cache:
-                        cache[fkey] = model._compute_features(conn, h, race, cache)
-                    feats = cache[fkey]
-                past = []
-                if need_past:
-                    pkey = ("past50", h.get("blood_register_num"), before)
-                    if pkey not in cache:
-                        cache[pkey] = model._past_runs(conn, h.get("blood_register_num"), before) \
-                            if h.get("blood_register_num") else []
-                    past = cache[pkey]
-                x: dict[str, float | None] = {}
-                for c in cols:
-                    feat = model.FEATURES[c["key"]]
-                    if c["kind"] == "compute":
-                        x[c["id"]] = feat.metric(feats)
-                    elif c["kind"] == "aggregate":
-                        x[c["id"]] = model._aggregate_value(feat, past, race, c["match"], c["lookback"])
-                    else:
-                        x[c["id"]] = feat.metric(h)
-                wo = model._num(h.get("win_odds"))
-                odds = (wo / 10.0) if (wo and wo > 0) else None   # win_odds/10 = 10進オッズ (証跡参照)
-                hrows.append({"num": str(h.get("horse_num")),
-                              "order": h.get("confirmed_order"),
-                              "odds": odds, "pop": model._num(h.get("win_popularity")),
-                              "x": x})
-            races_out.append({
-                "date": before, "seg": _seg(race), "horses": hrows,
-                "tan": _tan_payouts(get_payout_row(conn, race)),
-                "trusted": not race_odds_untrusted(horses, race, max_age),
-            })
+            lo, hi = f"{ym}01", f"{ym}31"
+            races = _races_for_range(conn, lo, hi, cols, need_compute, need_past, max_age)
+            tmp = mp.with_suffix(".json.tmp")             # 原子的書き込み (部分ファイルを残さない)
+            tmp.write_text(json.dumps({"month": ym, "races": races}, ensure_ascii=False),
+                           encoding="utf-8")
+            tmp.replace(mp)
+            all_races.extend(races)
 
+    # 月キャッシュはフル月ぶん保存するが、返却は要求範囲 [from,to] にクリップする。
+    races_out = [r for r in all_races if from_date <= r["date"] <= to_date]
     matrix = {"from": from_date, "to": to_date, "columns": cols, "races": races_out}
     _CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(matrix, ensure_ascii=False), encoding="utf-8")
+    tmp = range_path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(matrix, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(range_path)
     return matrix
 
 
