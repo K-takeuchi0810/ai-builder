@@ -20,35 +20,13 @@ FAR = "99999999"
 
 
 def _slice(races: list[dict], lo: str, hi: str) -> list[dict]:
-    """YYYYMMDD 文字列比較で [lo, hi] のレースを抽出。"""
+    """YYYYMMDD 文字列比較で [lo, hi] のレースを抽出 (matrix/prepared どちらでも可)。"""
     return [r for r in races if lo <= r["date"] <= hi]
 
 
-def _value(cols, races, weights, temperature, ev_threshold) -> dict:
-    """レース集合に対するバリューベット成績 (単一バケット)。"""
-    res = mx.evaluate_value_matrix({"columns": cols, "races": races}, weights,
-                                   split_date=FAR, temperature=temperature,
-                                   ev_threshold=ev_threshold)
-    return res["train"]           # split=FAR なので全レースが train バケットに入る
-
-
-def favorite_baseline(races: list[dict]) -> dict:
-    """ベースライン: 各レースで市場1番人気を単勝で買う (trusted のみ)。"""
-    bets = hits = 0
-    stake = ret = 0.0
-    for r in races:
-        if not r.get("trusted"):
-            continue
-        fav = next((hr for hr in r["horses"] if hr.get("pop") == 1), None)
-        if fav is None:
-            continue
-        bets += 1
-        stake += 1.0
-        won = 1 if fav.get("order") == 1 else 0
-        hits += won
-        ret += (r["tan"].get(fav["num"], 0) / 100.0) if won else 0.0
-    return {"bets": bets, "hit_rate": round(hits / bets, 4) if bets else None,
-            "roi": round(ret / stake, 4) if stake else None}
+def favorite_baseline(prep_races: list[dict]) -> dict:
+    """ベースライン: 各レースで市場1番人気を単勝で買う (prepared races)。"""
+    return mx.favorite_stats_prepared(prep_races)
 
 
 def _gen_weights(cols, rng, choices) -> dict[str, float]:
@@ -72,11 +50,14 @@ def run_search(matrix: dict, *, train: tuple[str, str], valid: tuple[str, str],
            train,valid,test,final}], expected_false_positives, ...}
     """
     cols = matrix["columns"]
-    races = matrix["races"]
-    tr = _slice(races, *train)
-    va = _slice(races, *valid)
-    te = _slice(races, *test)
-    fi = _slice(races, *final) if final else []
+    prep = mx.prepare_races(matrix)          # レース内正規化を一度だけ (以降の候補評価が高速)
+    tr = _slice(prep, *train)
+    va = _slice(prep, *valid)
+    te = _slice(prep, *test)
+    fi = _slice(prep, *final) if final else []
+
+    def val(races, w, t, ev):
+        return mx.value_stats_prepared(races, w, t, ev)
 
     rng = random.Random(seed)
     qualified: list[dict] = []
@@ -88,10 +69,10 @@ def run_search(matrix: dict, *, train: tuple[str, str], valid: tuple[str, str],
         n_tried += 1
         t = rng.choice(temperatures)
         ev = rng.choice(ev_thresholds)
-        s_tr = _value(cols, tr, w, t, ev)
+        s_tr = val(tr, w, t, ev)
         if (s_tr["bets"] or 0) < min_bets or s_tr["roi"] is None:
             continue
-        s_va = _value(cols, va, w, t, ev)
+        s_va = val(va, w, t, ev)
         if (s_va["bets"] or 0) < min_bets or s_va["roi"] is None:
             continue
         qualified.append({"weights": w, "temperature": t, "ev_threshold": ev,
@@ -102,9 +83,9 @@ def run_search(matrix: dict, *, train: tuple[str, str], valid: tuple[str, str],
     top = qualified[:top_k]
     # 選ばれた候補だけ TEST / final を評価 (最終・一度きり)
     for q in top:
-        q["test"] = _value(cols, te, q["weights"], q["temperature"], q["ev_threshold"])
+        q["test"] = val(te, q["weights"], q["temperature"], q["ev_threshold"])
         if fi:
-            q["final"] = _value(cols, fi, q["weights"], q["temperature"], q["ev_threshold"])
+            q["final"] = val(fi, q["weights"], q["temperature"], q["ev_threshold"])
 
     baselines = {
         "favorite_train": favorite_baseline(tr),

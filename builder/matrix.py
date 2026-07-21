@@ -295,3 +295,102 @@ def evaluate_value_matrix(matrix: dict, weights: dict[str, float], split_date: s
     return {"overall": _value_summ(overall), "train": _value_summ(train),
             "holdout": _value_summ(holdout),
             "params": {"temperature": temperature, "ev_threshold": ev_threshold}}
+
+
+# ---------------------------------------------------------------------------
+# 高速探索用: レース内正規化を一度だけ事前計算する (重み探索を軽くする)
+# ---------------------------------------------------------------------------
+def prepare_races(matrix: dict) -> list[dict]:
+    """各レースの各カラムを「向き付き z 値」に事前正規化して返す。
+
+    z は重みに依存しない (レース内の値だけで決まる) ので一度計算すれば全候補で使い回せる。
+    戻り各要素: {date, trusted, tan, odds:{num:o}, order:{num:o}, fav:num|None,
+                 z:{num:{col_id:zval}}}  (欠損・分散0のカラムは省略=寄与0)。
+    """
+    cols = matrix["columns"]
+    out = []
+    for r in matrix["races"]:
+        hrows = r["horses"]
+        nums = [hr["num"] for hr in hrows]
+        z: dict[str, dict[str, float]] = {n: {} for n in nums}
+        for c in cols:
+            cid = c["id"]
+            direction = 1.0 if c["hib"] else -1.0
+            present = {hr["num"]: hr["x"].get(cid) for hr in hrows}
+            vals = [v for v in present.values() if v is not None]
+            if len(vals) < 2:
+                continue
+            mean = sum(vals) / len(vals)
+            var = sum((v - mean) ** 2 for v in vals) / len(vals)
+            if var == 0:
+                continue
+            std = var ** 0.5
+            for n in nums:
+                v = present[n]
+                if v is not None:
+                    z[n][cid] = direction * ((v - mean) / std)
+        fav = next((hr["num"] for hr in hrows if hr.get("pop") == 1), None)
+        out.append({
+            "date": r["date"], "trusted": r.get("trusted", False), "tan": r["tan"],
+            "odds": {hr["num"]: hr.get("odds") for hr in hrows},
+            "order": {hr["num"]: hr.get("order") for hr in hrows},
+            "fav": fav, "z": z,
+        })
+    return out
+
+
+def _score_prepared(zrace: dict, weights: dict[str, float]) -> dict[str, float]:
+    scores = {}
+    for num, zc in zrace["z"].items():
+        s = 0.0
+        for cid, w in weights.items():
+            zv = zc.get(cid)
+            if zv is not None:
+                s += w * zv
+        scores[num] = s
+    return scores
+
+
+def value_stats_prepared(prep_races: list[dict], weights: dict[str, float],
+                         temperature: float, ev_threshold: float) -> dict:
+    """事前正規化済みレース集合に対するバリューベット成績 (単一バケット・高速)。"""
+    acc = _value_blank()
+    for r in prep_races:
+        if not r["trusted"]:
+            continue
+        scores = _score_prepared(r, weights)
+        if not scores:
+            continue
+        probs = _softmax(list(scores.items()), temperature)
+        bet_in_race = False
+        for num in scores:
+            odds = r["odds"].get(num)
+            if odds is None:
+                continue
+            if probs.get(num, 0.0) * odds < ev_threshold:
+                continue
+            won = 1 if r["order"].get(num) == 1 else 0
+            acc["bets"] += 1
+            acc["hits"] += won
+            acc["stake"] += 1.0
+            acc["ret"] += (r["tan"].get(num, 0) / 100.0) if won else 0.0
+            bet_in_race = True
+        if bet_in_race:
+            acc["races"] += 1
+    return _value_summ(acc)
+
+
+def favorite_stats_prepared(prep_races: list[dict]) -> dict:
+    """事前正規化済みレースでの市場1番人気・単勝ベースライン。"""
+    bets = hits = 0
+    stake = ret = 0.0
+    for r in prep_races:
+        if not r["trusted"] or r["fav"] is None:
+            continue
+        bets += 1
+        stake += 1.0
+        won = 1 if r["order"].get(r["fav"]) == 1 else 0
+        hits += won
+        ret += (r["tan"].get(r["fav"], 0) / 100.0) if won else 0.0
+    return {"bets": bets, "hit_rate": round(hits / bets, 4) if bets else None,
+            "roi": round(ret / stake, 4) if stake else None}

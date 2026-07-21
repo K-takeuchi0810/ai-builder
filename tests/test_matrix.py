@@ -97,6 +97,39 @@ def test_evaluate_value_matrix_ev_selection():
     assert res2["overall"]["bets"] == 0
 
 
+def test_prepared_matches_direct_evaluation():
+    """高速経路(prepared)が低速経路(evaluate_value_matrix)と同一結果を出すこと。"""
+    cols = [
+        {"id": "a", "key": "agg_avg_finish", "kind": "aggregate", "hib": False,
+         "label": "平均着順", "lookback": 5, "match": []},
+        {"id": "b", "key": "popularity", "kind": "current", "hib": False,
+         "label": "人気", "lookback": None, "match": []},
+    ]
+    import random
+    rng = random.Random(3)
+    races = []
+    for yr in ("2024", "2025"):
+        for _ in range(40):
+            n = 6
+            hs = []
+            win = rng.randrange(n)
+            for k in range(n):
+                hs.append({"num": str(k + 1), "order": (1 if k == win else k + 2),
+                           "odds": round(1.5 + k * 1.2 + rng.random(), 1), "pop": k + 1,
+                           "x": {"a": float(rng.randint(1, 10)), "b": float(k + 1)}})
+            races.append({"date": f"{yr}0601", "seg": {}, "trusted": True,
+                          "tan": {hs[win]["num"]: int(hs[win]["odds"] * 100)}, "horses": hs})
+    m = {"columns": cols, "races": races}
+    weights, t, ev = {"a": 1.0, "b": -0.5}, 1.0, 1.1
+
+    direct = matrix.evaluate_value_matrix(m, weights, "99999999", t, ev)["train"]
+    prep = matrix.prepare_races(m)
+    fast = matrix.value_stats_prepared(prep, weights, t, ev)
+    assert direct["bets"] == fast["bets"]
+    assert direct["roi"] == fast["roi"]
+    assert direct["hit_rate"] == fast["hit_rate"]
+
+
 def test_col_id_stable_for_aggregate_variants():
     a5 = matrix._col_id({"key": "agg_top3_rate", "lookback": 5, "match": ["surface"]})
     a3 = matrix._col_id({"key": "agg_top3_rate", "lookback": 3, "match": ["surface"]})

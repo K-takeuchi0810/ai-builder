@@ -59,8 +59,10 @@ def test_run_search_structure_and_oos():
 
 
 def test_favorite_baseline():
+    from builder import matrix
     m = _synthetic_matrix()
-    tr = search._slice(m["races"], "20220101", "20221231")
+    prep = matrix.prepare_races(m)
+    tr = search._slice(prep, "20220101", "20221231")
     fb = search.favorite_baseline(tr)
     assert fb["bets"] == 60
     assert 0.0 <= fb["hit_rate"] <= 1.0
