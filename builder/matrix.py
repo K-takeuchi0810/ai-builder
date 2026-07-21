@@ -79,6 +79,26 @@ def _cache_path(from_date: str, to_date: str, cols: list[dict]) -> Path:
     return _CACHE_DIR / f"matrix_{from_date}_{to_date}_{h}.json"
 
 
+def merge_matrices(matrices: list[dict]) -> dict:
+    """同一 columns の複数行列 (例: 年別) を 1 つに結合する。"""
+    if not matrices:
+        return {"columns": [], "races": []}
+    ids = [c["id"] for c in matrices[0]["columns"]]
+    for m in matrices[1:]:
+        if [c["id"] for c in m["columns"]] != ids:
+            raise ValueError("columns mismatch: cannot merge matrices")
+    races = [r for m in matrices for r in m["races"]]
+    return {"from": min(m["from"] for m in matrices),
+            "to": max(m["to"] for m in matrices),
+            "columns": matrices[0]["columns"], "races": races}
+
+
+def load_years(years: list[int], specs: list[dict]) -> dict:
+    """年別キャッシュ (build_matrix 済み) を読み込んで結合。未構築の年があれば構築される。"""
+    mats = [build_matrix(f"{y}0101", f"{y}1231", specs) for y in years]
+    return merge_matrices(mats)
+
+
 def build_matrix(from_date: str, to_date: str, specs: list[dict],
                  rebuild: bool = False) -> dict:
     """候補特徴量 specs (重み不要) について特徴量行列を構築。キャッシュがあれば読む。
