@@ -67,6 +67,36 @@ def test_evaluate_matrix_split_and_metrics():
     assert res2["train"]["roi"] is None
 
 
+def test_softmax_props():
+    p = matrix._softmax([("a", 1.0), ("b", -1.0)], 1.0)
+    assert abs(sum(p.values()) - 1.0) < 1e-9
+    assert p["a"] > p["b"]                       # 高スコアほど高確率
+
+
+def test_evaluate_value_matrix_ev_selection():
+    cols = [{"id": "a", "key": "agg_avg_finish", "kind": "aggregate", "hib": False,
+             "label": "平均着順", "lookback": 5, "match": []}]
+    # 2頭: 馬1(平均着順2=良, オッズ3.0, 1着), 馬2(平均着順6, オッズ10.0, 2着)
+    m = {"columns": cols, "races": [
+        {"date": "20240101", "seg": {}, "trusted": True, "tan": {"1": 300}, "horses": [
+            {"num": "1", "order": 1, "odds": 3.0, "x": {"a": 2.0}},
+            {"num": "2", "order": 2, "odds": 10.0, "x": {"a": 6.0}},
+        ]},
+    ]}
+    # softmax(t=1) で p1≈0.881 → EV1≈2.64, EV2≈1.19。閾値2.0 なら馬1のみ購入。
+    res = matrix.evaluate_value_matrix(m, {"a": 1.0}, split_date="20250101",
+                                       temperature=1.0, ev_threshold=2.0)
+    assert res["train"]["bets"] == 1
+    assert res["train"]["hit_rate"] == 1.0
+    assert res["train"]["roi"] == 3.0            # 300円払戻 / 100円賭け
+    assert res["overall"]["races_with_bet"] == 1
+    # trusted=False は購入対象外
+    m["races"][0]["trusted"] = False
+    res2 = matrix.evaluate_value_matrix(m, {"a": 1.0}, split_date="20250101",
+                                        temperature=1.0, ev_threshold=2.0)
+    assert res2["overall"]["bets"] == 0
+
+
 def test_col_id_stable_for_aggregate_variants():
     a5 = matrix._col_id({"key": "agg_top3_rate", "lookback": 5, "match": ["surface"]})
     a3 = matrix._col_id({"key": "agg_top3_rate", "lookback": 3, "match": ["surface"]})

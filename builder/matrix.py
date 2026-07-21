@@ -14,13 +14,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from pathlib import Path
 
 from . import axes as ax
 from . import config, model
 from .keiba_bridge import open_conn, _ensure_keiba_on_path
 
-MATRIX_VERSION = 1
+# v2: per-horse に decimal odds(win_odds/10) と win_popularity を追加 (バリューベット EV 用)。
+MATRIX_VERSION = 2
 _CACHE_DIR = Path(config.__file__).resolve().parent.parent / "out" / "matrix"
 
 
@@ -130,8 +132,12 @@ def build_matrix(from_date: str, to_date: str, specs: list[dict],
                         x[c["id"]] = model._aggregate_value(feat, past, race, c["match"], c["lookback"])
                     else:
                         x[c["id"]] = feat.metric(h)
+                wo = model._num(h.get("win_odds"))
+                odds = (wo / 10.0) if (wo and wo > 0) else None   # win_odds/10 = 10進オッズ (証跡参照)
                 hrows.append({"num": str(h.get("horse_num")),
-                              "order": h.get("confirmed_order"), "x": x})
+                              "order": h.get("confirmed_order"),
+                              "odds": odds, "pop": model._num(h.get("win_popularity")),
+                              "x": x})
             races_out.append({
                 "date": before, "seg": _seg(race), "horses": hrows,
                 "tan": _tan_payouts(get_payout_row(conn, race)),
@@ -211,3 +217,81 @@ def evaluate_matrix(matrix: dict, weights: dict[str, float], split_date: str,
                 acc["ret_sum"] += ret
                 acc["ret_n"] += 1
     return {"overall": _summ(overall), "train": _summ(train), "holdout": _summ(holdout)}
+
+
+# ---------------------------------------------------------------------------
+# バリューベット評価 (EV = 推定確率 × オッズ ≥ 閾値 の馬だけ単勝で買う)
+# ---------------------------------------------------------------------------
+def _softmax(pairs: list[tuple[str, float]], temperature: float) -> dict[str, float]:
+    """(馬番, スコア) → レース内確率 (Σ=1)。temperature が小さいほど尖る。"""
+    if not pairs:
+        return {}
+    t = max(temperature, 1e-6)
+    mx = max(s for _, s in pairs)
+    exps = {n: math.exp((s - mx) / t) for n, s in pairs}
+    z = sum(exps.values()) or 1.0
+    return {n: e / z for n, e in exps.items()}
+
+
+def _value_blank():
+    return {"races": 0, "bets": 0, "hits": 0, "stake": 0.0, "ret": 0.0}
+
+
+def _value_summ(a: dict) -> dict:
+    b = a["bets"]
+    return {
+        "races_with_bet": a["races"],
+        "bets": b,
+        "hit_rate": round(a["hits"] / b, 4) if b else None,
+        "roi": round(a["ret"] / a["stake"], 4) if a["stake"] else None,
+        "profit_units": round(a["ret"] - a["stake"], 2),
+    }
+
+
+def evaluate_value_matrix(matrix: dict, weights: dict[str, float], split_date: str,
+                          temperature: float = 1.0, ev_threshold: float = 1.0,
+                          races: list[dict] | None = None) -> dict:
+    """バリューベット方針を行列上で backtest (DB 非依存・純粋)。
+
+    各レースでスコア→softmax確率 p を出し、EV = p × 10進オッズ ≥ ev_threshold の馬だけ
+    単勝を 1 単位ずつ購入。実払戻 (tan) で回収。TRAIN/HOLDOUT/overall を分けて返す。
+    trusted=False (オッズ不信頼) のレースは購入対象外。
+    """
+    cols = matrix["columns"]
+    rs = races if races is not None else matrix["races"]
+    overall, train, holdout = _value_blank(), _value_blank(), _value_blank()
+
+    for r in rs:
+        if not r.get("trusted"):
+            continue
+        ranked = score_race_columns(r["horses"], cols, weights)
+        if not ranked:
+            continue
+        probs = _softmax(ranked, temperature)
+        odds_by = {hr["num"]: hr.get("odds") for hr in r["horses"]}
+        order_by = {hr["num"]: hr.get("order") for hr in r["horses"]}
+        tan = r["tan"]
+        acc = train if r["date"] < split_date else holdout
+        bet_in_race = False
+        for num, _score in ranked:
+            odds = odds_by.get(num)
+            if odds is None:
+                continue
+            ev = probs.get(num, 0.0) * odds
+            if ev < ev_threshold:
+                continue
+            won = 1 if order_by.get(num) == 1 else 0
+            ret = (tan.get(num, 0) / 100.0) if won else 0.0
+            for a in (overall, acc):
+                a["bets"] += 1
+                a["hits"] += won
+                a["stake"] += 1.0
+                a["ret"] += ret
+            bet_in_race = True
+        if bet_in_race:
+            overall["races"] += 1
+            acc["races"] += 1
+
+    return {"overall": _value_summ(overall), "train": _value_summ(train),
+            "holdout": _value_summ(holdout),
+            "params": {"temperature": temperature, "ev_threshold": ev_threshold}}
