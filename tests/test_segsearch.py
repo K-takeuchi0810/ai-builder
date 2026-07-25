@@ -196,6 +196,21 @@ def test_restrict_months_makes_periods_like_for_like():
     assert drop["summary"]["n_adopted"] == 0
 
 
+def test_levels_without_global_does_not_crash():
+    """特定粒度だけを指定した呼び出しでも壊れないこと (global はベースラインとして内部追加)。"""
+    prep = vsearch.prepare_numpy(_matrix())
+    only = [("track_surface_distance_condition",
+             ("track", "surface", "distance", "condition"))]
+    res = segsearch.run_segment_search(
+        prep, train=("20230101", "20231231"), valid=("20240101", "20241231"),
+        test=("20250101", "20251231"), final=("20260101", "20261231"),
+        n_candidates=12, min_races=5, levels=only, sparsity_levels=(2,),
+        seed=4, progress_every=0)
+    assert res["summary"]["global_level_auto_added"] is True
+    assert "global" in res["levels"]                     # 基準として評価されている
+    assert "track_surface_distance_condition" in res["levels"]
+
+
 def test_insufficient_data_marked():
     """min_races を大きくすると全セグメントがデータ不足として扱われること。"""
     prep = vsearch.prepare_numpy(_matrix())

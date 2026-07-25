@@ -155,8 +155,15 @@ def run_segment_search(prep: dict, *, train, valid, test, final,
         masks = {k: (v & mm) for k, v in masks.items()}
     order, tan, trusted = prep["order"], prep["tan"], np.asarray(prep["trusted"])
 
+    # 全体(global)粒度は「セグメント専用重みが超えるべき基準②」として必ず必要なので、
+    # 呼び出し側が指定しなくても内部で追加する (特定粒度だけを調べたい呼び出しでも壊れない)。
+    lv_specs = list(levels)
+    global_added = not any(name == "global" for name, _f in lv_specs)
+    if global_added:
+        lv_specs.append(("global", ()))
+
     lv = []
-    for name, fields in levels:
+    for name, fields in lv_specs:
         codes, keys = _level_codes(prep, fields)
         lv.append({"name": name, "fields": fields, "codes": codes, "keys": keys,
                    "n_seg": len(keys)})
@@ -332,6 +339,7 @@ def run_segment_search(prep: dict, *, train, valid, test, final,
             "min_races": min_races,
             "roi_min_hit_ratio": roi_min_hit_ratio,
             "restrict_months": list(restrict_months) if restrict_months else None,
+            "global_level_auto_added": bool(global_added),
             "adoption_rule": ("CI下限(Wilson/bootstrap)がベースラインを超え、"
                               "roiは更にCI下限>1.0かつ勝率が人気の"
                               f"{roi_min_hit_ratio:.0%}以上"),
