@@ -172,7 +172,13 @@ def _gain_last_to_finish(r: dict):
     return None if (lv is None or not o) else lv - o
 
 
+def _prize(r: dict):
+    """本賞金 (円)。keiba.db にカラムが無いので生 SE から復元した索引を使う。大きいほど良い。"""
+    return _num(r.get("_prize_yen"))
+
+
 _CORNER_INDEX: dict | None = None
+_PRIZE_INDEX: dict | None = None
 
 
 def corner_index() -> dict:
@@ -182,6 +188,15 @@ def corner_index() -> dict:
         from . import corner as _c
         _CORNER_INDEX = _c.load_corner_index(config.CORNER_INDEX_PATH)
     return _CORNER_INDEX
+
+
+def prize_index() -> dict:
+    """賞金索引を遅延ロード (無ければ空 dict で誠実に劣化)。"""
+    global _PRIZE_INDEX
+    if _PRIZE_INDEX is None:
+        from . import prize as _p
+        _PRIZE_INDEX = _p.load_prize_index(config.PRIZE_INDEX_PATH)
+    return _PRIZE_INDEX
 
 
 _RACE_KEY_COLS = ("race_year", "race_month_day", "track_code", "kaiji", "nichiji", "race_num")
@@ -237,6 +252,7 @@ def _enrich_past_runs(conn, runs: list[dict], cache: dict) -> None:
             cache[k] = {"win_time": win_time, "f3_rank": rank, "f3_n": len(f3)}
 
     cidx = corner_index()
+    pidx = prize_index()
     for r in runs:
         k = _race_key(r)
         info = cache.get(k) if k else None
@@ -246,14 +262,17 @@ def _enrich_past_runs(conn, runs: list[dict], cache: dict) -> None:
             r["_margin_to_winner"] = (ft - wt) if (ft and wt is not None) else None
             r["_final3_rank"] = info["f3_rank"].get(str(r.get("horse_num")))
             r["_final3_n"] = info["f3_n"] or None
-        if k and cidx:
-            from . import corner as _c
+        if k and (cidx or pidx):
             hn = str(int(r["horse_num"])) if str(r.get("horse_num", "")).strip().isdigit() else None
-            if hn:
+            if hn and cidx:
+                from . import corner as _c
                 cp = _c.corner_positions(cidx, k, hn)
                 r["_corner_first"] = cp["first"]
                 r["_corner_last"] = cp["last"]
                 r["_corner_gain_first_last"] = cp["gain_first_last"]
+            if hn and pidx:
+                from . import prize as _p
+                r["_prize_yen"] = _p.prize_of(pidx, k, hn)
 
 
 # --- current 特徴のメトリクス -----------------------------------------------
@@ -340,6 +359,8 @@ _FEATURE_LIST: list[Feature] = [
        "aggregate", True, _gain_first_to_finish),
     _F("agg_gain_last_to_finish", "最終コーナーからの着順上昇(可変集計)", "可変集計",
        "aggregate", True, _gain_last_to_finish),
+    # 賞金 (生 SE から復元。索引が無い期間は None で誠実に劣化)
+    _F("agg_prize", "獲得賞金(可変集計)", "可変集計", "aggregate", True, _prize),
 ]
 
 FEATURES: dict[str, Feature] = {f.key: f for f in _FEATURE_LIST}

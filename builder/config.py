@@ -30,3 +30,6 @@ KEIBA_RAW_RACE_DIR = Path(os.environ.get(
     "KEIBA_RAW_RACE_DIR", KEIBA_YOSOU_PATH / "data" / "raw" / "RACE"))
 CORNER_INDEX_PATH = Path(os.environ.get(
     "BUILDER_CORNER_INDEX", _HERE / "out" / "cache" / "corner_index.json"))
+# 賞金も keiba.db にカラムが無いため生 SE レコードから復元する。
+PRIZE_INDEX_PATH = Path(os.environ.get(
+    "BUILDER_PRIZE_INDEX", _HERE / "out" / "cache" / "prize_index.json"))
