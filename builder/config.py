@@ -23,3 +23,10 @@ DEFAULT_MIN_N = int(os.environ.get("BUILDER_MIN_N", "50"))
 
 # hold-out 既定分割日 (この日以降を HOLDOUT)。環境や運用に合わせて調整。
 DEFAULT_SPLIT_DATE = os.environ.get("BUILDER_SPLIT_DATE", "20250101")
+
+# 生 JV-Data (read-only 参照) と、そこから復元したコーナー通過順位索引の保存先。
+# keiba.db の corner_order_* は全ゼロなので、RA レコードから ai-builder 側で復元する。
+KEIBA_RAW_RACE_DIR = Path(os.environ.get(
+    "KEIBA_RAW_RACE_DIR", KEIBA_YOSOU_PATH / "data" / "raw" / "RACE"))
+CORNER_INDEX_PATH = Path(os.environ.get(
+    "BUILDER_CORNER_INDEX", _HERE / "out" / "cache" / "corner_index.json"))

@@ -143,6 +143,47 @@ def _final3f_rank_ratio(r: dict):
     return rk / n
 
 
+# --- コーナー通過順位ベースの派生メトリクス --------------------------------
+# keiba.db の corner_order_* は全ゼロ (有効率0%) なので、生 RA レコードから復元した
+# 索引 (builder/corner.py) を使う。索引のカバーは 2025 年以降 (生ファイルの範囲)。
+# 「第1コーナー」は実際には**最初に記録されたコーナー** (短距離戦は3・4角のみ記録)。
+def _corner_first(r: dict):
+    return _num(r.get("_corner_first"))
+
+
+def _corner_last(r: dict):
+    return _num(r.get("_corner_last"))
+
+
+def _gain_first_to_last(r: dict):
+    """道中の押し上げ: 最初のコーナー順位 - 最終コーナー順位。大きいほど良い。"""
+    return _num(r.get("_corner_gain_first_last"))
+
+
+def _gain_first_to_finish(r: dict):
+    """最初のコーナーから着順までの押し上げ。大きいほど良い。"""
+    f, o = _num(r.get("_corner_first")), _num(r.get("confirmed_order"))
+    return None if (f is None or not o) else f - o
+
+
+def _gain_last_to_finish(r: dict):
+    """最終コーナーから着順までの押し上げ (末脚)。大きいほど良い。"""
+    lv, o = _num(r.get("_corner_last")), _num(r.get("confirmed_order"))
+    return None if (lv is None or not o) else lv - o
+
+
+_CORNER_INDEX: dict | None = None
+
+
+def corner_index() -> dict:
+    """コーナー通過順位索引を遅延ロード (無ければ空 dict で誠実に劣化)。"""
+    global _CORNER_INDEX
+    if _CORNER_INDEX is None:
+        from . import corner as _c
+        _CORNER_INDEX = _c.load_corner_index(config.CORNER_INDEX_PATH)
+    return _CORNER_INDEX
+
+
 _RACE_KEY_COLS = ("race_year", "race_month_day", "track_code", "kaiji", "nichiji", "race_num")
 
 
@@ -166,18 +207,26 @@ def _enrich_past_runs(conn, runs: list[dict], cache: dict) -> None:
             need.append(k)
     need = list(dict.fromkeys(need))
     if need:
-        ph = ",".join("?" * len(need))
+        # ★連結キーの IN は index を使えず horse_races 全スキャンになる (実測で 10 倍遅化)。
+        # 主キー (race_year, race_month_day, track_code, kaiji, nichiji, race_num, horse_num)
+        # を使えるよう、列ごとの等値比較を OR で並べる。
+        keys = [(k[0:4], k[4:8], k[8:10], k[10:12], k[12:14], k[14:16]) for k in need]
+        cond = " OR ".join(
+            ["(race_year=? AND race_month_day=? AND track_code=? AND kaiji=? "
+             "AND nichiji=? AND race_num=?)"] * len(keys))
+        params = [v for t in keys for v in t]
         rows = conn.execute(
-            f"""SELECT (race_year||race_month_day||track_code||kaiji||nichiji||race_num) AS rk,
+            f"""SELECT race_year, race_month_day, track_code, kaiji, nichiji, race_num,
                        horse_num, finish_time, final_3f
                   FROM horse_races
-                 WHERE (race_year||race_month_day||track_code||kaiji||nichiji||race_num) IN ({ph})
-                   AND confirmed_order > 0""",
-            need,
+                 WHERE ({cond}) AND confirmed_order > 0""",
+            params,
         ).fetchall()
         grouped: dict[str, list] = {k: [] for k in need}
         for row in rows:
-            grouped.setdefault(row["rk"], []).append(row)
+            rk = (f"{row['race_year']}{row['race_month_day']}{row['track_code']}"
+                  f"{row['kaiji']}{row['nichiji']}{row['race_num']}")
+            grouped.setdefault(rk, []).append(row)
         for k, rs in grouped.items():
             times = [_num(x["finish_time"]) for x in rs]
             times = [t for t in times if t]
@@ -187,16 +236,24 @@ def _enrich_past_runs(conn, runs: list[dict], cache: dict) -> None:
             rank = {num: i for i, (num, _v) in enumerate(f3, start=1)}
             cache[k] = {"win_time": win_time, "f3_rank": rank, "f3_n": len(f3)}
 
+    cidx = corner_index()
     for r in runs:
         k = _race_key(r)
         info = cache.get(k) if k else None
-        if not info:
-            continue
-        ft = _num(r.get("finish_time"))
-        wt = info["win_time"]
-        r["_margin_to_winner"] = (ft - wt) if (ft and wt is not None) else None
-        r["_final3_rank"] = info["f3_rank"].get(str(r.get("horse_num")))
-        r["_final3_n"] = info["f3_n"] or None
+        if info:
+            ft = _num(r.get("finish_time"))
+            wt = info["win_time"]
+            r["_margin_to_winner"] = (ft - wt) if (ft and wt is not None) else None
+            r["_final3_rank"] = info["f3_rank"].get(str(r.get("horse_num")))
+            r["_final3_n"] = info["f3_n"] or None
+        if k and cidx:
+            from . import corner as _c
+            hn = str(int(r["horse_num"])) if str(r.get("horse_num", "")).strip().isdigit() else None
+            if hn:
+                cp = _c.corner_positions(cidx, k, hn)
+                r["_corner_first"] = cp["first"]
+                r["_corner_last"] = cp["last"]
+                r["_corner_gain_first_last"] = cp["gain_first_last"]
 
 
 # --- current 特徴のメトリクス -----------------------------------------------
@@ -272,6 +329,17 @@ _FEATURE_LIST: list[Feature] = [
     _F("agg_final3f_rank", "上がり3F順位(可変集計)", "可変集計", "aggregate", False, _final3f_rank),
     _F("agg_final3f_rank_ratio", "上がり3F順位率(可変集計)", "可変集計", "aggregate", False,
        _final3f_rank_ratio),
+    # コーナー通過順位系 (生 RA から復元。索引が無い期間は None で誠実に劣化)
+    _F("agg_corner_first", "第1コーナー通過順位(可変集計)", "可変集計", "aggregate", False,
+       _corner_first),
+    _F("agg_corner_last", "最終コーナー通過順位(可変集計)", "可変集計", "aggregate", False,
+       _corner_last),
+    _F("agg_gain_first_to_last", "第1→最終コーナーの着順上昇(可変集計)", "可変集計",
+       "aggregate", True, _gain_first_to_last),
+    _F("agg_gain_first_to_finish", "第1コーナーからの着順上昇(可変集計)", "可変集計",
+       "aggregate", True, _gain_first_to_finish),
+    _F("agg_gain_last_to_finish", "最終コーナーからの着順上昇(可変集計)", "可変集計",
+       "aggregate", True, _gain_last_to_finish),
 ]
 
 FEATURES: dict[str, Feature] = {f.key: f for f in _FEATURE_LIST}

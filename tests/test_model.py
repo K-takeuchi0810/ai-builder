@@ -150,6 +150,32 @@ def test_new_aggregate_features_registered():
         assert model.FEATURES[k].higher_is_better is False   # いずれも小さいほど良い
 
 
+def test_corner_aggregate_features_registered_with_orientation():
+    lower_better = ("agg_corner_first", "agg_corner_last")
+    higher_better = ("agg_gain_first_to_last", "agg_gain_first_to_finish",
+                     "agg_gain_last_to_finish")
+    for k in lower_better + higher_better:
+        assert k in model.FEATURES and model.FEATURES[k].kind == "aggregate"
+    for k in lower_better:
+        assert model.FEATURES[k].higher_is_better is False    # 前にいる方が良い
+    for k in higher_better:
+        assert model.FEATURES[k].higher_is_better is True     # 押し上げた方が良い
+
+
+def test_corner_gain_metrics():
+    # 第1コーナー10番手 → 最終5番手 → 着順2着
+    r = {"_corner_first": 10.0, "_corner_last": 5.0,
+         "_corner_gain_first_last": 5.0, "confirmed_order": 2}
+    assert model._corner_first(r) == 10.0
+    assert model._corner_last(r) == 5.0
+    assert model._gain_first_to_last(r) == 5.0        # 10 → 5
+    assert model._gain_first_to_finish(r) == 8.0      # 10 → 2着
+    assert model._gain_last_to_finish(r) == 3.0       # 5 → 2着
+    # コーナー情報が無い期間は None (索引未カバーでも壊れない)
+    assert model._gain_first_to_finish({"confirmed_order": 2}) is None
+    assert model._gain_last_to_finish({"_corner_last": 5.0}) is None
+
+
 def test_default_config_valid():
     for spec in model.default_config()["features"]:
         assert spec["key"] in model.FEATURES
