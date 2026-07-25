@@ -95,10 +95,47 @@ def _gen_weights(col_ids, rng, choices) -> dict[str, float]:
     return w
 
 
+def _gen_weights_sparse(col_ids, rng, choices, k: int) -> dict[str, float]:
+    """非ゼロ重みを k 個だけ持つ疎な候補。小セグメントでの過学習を抑える。"""
+    nz = [c for c in choices if c != 0] or [1.0]
+    ids = rng.sample(col_ids, min(k, len(col_ids)))
+    return {cid: float(rng.choice(nz)) for cid in ids}
+
+
+def wilson_ci(successes: float, n: float, z: float = 1.96) -> tuple[float, float]:
+    """比率(勝率/複勝率)の Wilson 信頼区間。小標本でも過信しないため必須。"""
+    if n <= 0:
+        return (0.0, 1.0)
+    p = successes / n
+    d = 1.0 + z * z / n
+    c = (p + z * z / (2 * n)) / d
+    m = (z * ((p * (1 - p) / n + z * z / (4 * n * n)) ** 0.5)) / d
+    return (max(0.0, c - m), min(1.0, c + m))
+
+
+def bootstrap_roi_ci(returns: np.ndarray, n_boot: int = 2000, seed: int = 0,
+                     alpha: float = 0.05) -> tuple[float, float]:
+    """回収率の percentile bootstrap 信頼区間。
+
+    単勝配当はヘビーテール (稀な万馬券が平均を支配) なので、点推定での採否判定は危険。
+    1 レース1単位賭けの収益列 returns からブートストラップして区間を出す。
+    """
+    n = returns.size
+    if n == 0:
+        return (0.0, 0.0)
+    rng = np.random.default_rng(seed)
+    idx = rng.integers(0, n, size=(n_boot, n))
+    means = returns[idx].mean(axis=1)
+    lo, hi = np.quantile(means, [alpha / 2, 1 - alpha / 2])
+    return (float(lo), float(hi))
+
+
 def run_segment_search(prep: dict, *, train, valid, test, final,
                        n_candidates: int = 5000, min_races: int = 30,
                        weight_choices=(-1.0, -0.5, 0.0, 0.0, 0.0, 0.5, 1.0),
                        levels=SEG_LEVELS, objectives=OBJECTIVES,
+                       sparsity_levels=(1, 2, 3, 5, 8, 15, None),
+                       roi_min_hit_ratio: float = 0.5,
                        seed: int = 0, progress_every: int = 500) -> dict:
     """全粒度 × 全目的関数でセグメント別に重みを探索し、OOS 再現したものだけ採用する。
 
@@ -116,13 +153,20 @@ def run_segment_search(prep: dict, *, train, valid, test, final,
         lv.append({"name": name, "fields": fields, "codes": codes, "keys": keys,
                    "n_seg": len(keys)})
 
-    # 候補プールを1回だけ生成 (全セグメントで同じ候補を評価 → 公平かつ効率的)
+    # 候補プールを1回だけ生成 (全セグメントで同じ候補を評価 → 公平かつ効率的)。
+    # 疎性を全水準スイープ: 小セグメントでは非ゼロ重みを少なくしないと過学習が構造的に確定する
+    # (例: 34レースの検証に対し非ゼロ100個 = パラメータ過多)。None は密 (全特徴量)。
     rng = random.Random(seed)
     cand = []
-    for _ in range(n_candidates):
-        wd = _gen_weights(prep["col_ids"], rng, weight_choices)
+    cand_k = []
+    sl = list(sparsity_levels)
+    for i in range(n_candidates):
+        k = sl[i % len(sl)]
+        wd = (_gen_weights(prep["col_ids"], rng, weight_choices) if k is None
+              else _gen_weights_sparse(prep["col_ids"], rng, weight_choices, k))
         if wd:
             cand.append(wd)
+            cand_k.append(len(wd))
 
     # --- Pass 1: 各候補を全セグメント×全期間で集計し、VALID 最良を追跡 ---
     best = {L["name"]: {o: {"metric": np.full(L["n_seg"], -np.inf),
@@ -220,19 +264,48 @@ def run_segment_search(prep: dict, *, train, valid, test, final,
                 def better(a, b):
                     return a is not None and b is not None and a > b
 
+                # --- 信頼区間 (点推定での採否判定は危険なため必須) ---
+                ci_bounds = {}
+                for p in ("test", "final"):
+                    pm = seg_mask & masks[p]
+                    n_p = int(res[p]["n"])
+                    if o in ("win_rate", "top3_rate"):
+                        rate = res[p][o]
+                        succ = 0.0 if rate is None else rate * n_p
+                        ci_bounds[p] = wilson_ci(succ, n_p)
+                    else:
+                        ci_bounds[p] = bootstrap_roi_ci(ret[pm & trusted], seed=si + 1)
+                lo_test, lo_final = ci_bounds["test"][0], ci_bounds["final"][0]
+
                 enough = res["test"]["n"] >= min_races and res["final"]["n"] >= min_races
-                beats_fav = (better(res["test"][o], fav_test.get(o))
-                             and better(res["final"][o], fav_final.get(o)))
-                beats_global = (better(res["test"][o], gres.get("test", {}).get(o))
-                                and better(res["final"][o], gres.get("final", {}).get(o)))
-                adopted = bool(enough and beats_fav and beats_global)
+                # ベースライン超えは **CI下限** で判定 (まぐれ当たりを弾く)
+                beats_fav = (better(lo_test, fav_test.get(o))
+                             and better(lo_final, fav_final.get(o)))
+                beats_global = (better(lo_test, gres.get("test", {}).get(o))
+                                and better(lo_final, gres.get("final", {}).get(o)))
+                # 回収率は「CI下限>1.0 (実際に利益)」かつ「大穴くじでない」ことを要求
+                profitable = True
+                not_bomb = True
+                if o == "roi":
+                    profitable = lo_test > 1.0 and lo_final > 1.0
+                    fw_t, fw_f = fav_test.get("win_rate"), fav_final.get("win_rate")
+                    wt, wf = res["test"]["win_rate"], res["final"]["win_rate"]
+                    not_bomb = all(
+                        x is not None and y is not None and x >= roi_min_hit_ratio * y
+                        for x, y in ((wt, fw_t), (wf, fw_f)))
+                adopted = bool(enough and beats_fav and beats_global and profitable and not_bomb)
                 per_obj[o] = {
                     "status": "ok" if enough else "insufficient_oos",
-                    "weights": cand[ci], "periods": res,
+                    "weights": cand[ci], "n_nonzero_weights": len(cand[ci]),
+                    "periods": res,
+                    "ci_lower": {"test": round(lo_test, 4), "final": round(lo_final, 4)},
+                    "ci": {p: [round(v, 4) for v in ci_bounds[p]] for p in ci_bounds},
                     "favorite": {"test": fav_test, "final": fav_final},
                     "global_weight_in_segment": gres,
-                    "beats_favorite_both": bool(beats_fav),
-                    "beats_global_both": bool(beats_global),
+                    "beats_favorite_both_ci": bool(beats_fav),
+                    "beats_global_both_ci": bool(beats_global),
+                    "roi_ci_lower_above_1": bool(profitable) if o == "roi" else None,
+                    "hit_rate_guard_passed": bool(not_bomb) if o == "roi" else None,
                     "adopted": adopted,
                 }
             segs_out[key] = per_obj
@@ -244,8 +317,15 @@ def run_segment_search(prep: dict, *, train, valid, test, final,
         "levels": out_levels,
         "summary": {
             "n_candidates": len(cand),
+            "sparsity_levels": [("dense" if k is None else k) for k in sl],
+            "nonzero_weight_min": min(cand_k) if cand_k else 0,
+            "nonzero_weight_max": max(cand_k) if cand_k else 0,
             "objectives": list(objectives),
             "min_races": min_races,
+            "roi_min_hit_ratio": roi_min_hit_ratio,
+            "adoption_rule": ("CI下限(Wilson/bootstrap)がベースラインを超え、"
+                              "roiは更にCI下限>1.0かつ勝率が人気の"
+                              f"{roi_min_hit_ratio:.0%}以上"),
             "periods": {k: list(v) for k, v in periods.items()},
             "n_segment_objective_tested": n_tested,
             "expected_false_positives_at_valid": round(n_tested * 0.05, 1),

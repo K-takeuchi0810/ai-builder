@@ -112,9 +112,62 @@ def test_run_segment_search_structure_and_gates():
             assert o in per_obj
             r = per_obj[o]
             if r.get("status") == "ok":
-                # 採用は「両OOS期間でベースライン超え」が必須
-                assert r["adopted"] == (r["beats_favorite_both"] and r["beats_global_both"])
+                # 採用は「両OOS期間で CI下限がベースライン超え」が必須。
+                base = r["beats_favorite_both_ci"] and r["beats_global_both_ci"]
+                if o == "roi":   # roi は更に CI下限>1.0 と 大穴くじ除外が必要
+                    base = base and r["roi_ci_lower_above_1"] and r["hit_rate_guard_passed"]
+                assert r["adopted"] == bool(base)
                 assert r["periods"]["test"]["n"] >= 10
+                assert "ci_lower" in r and "n_nonzero_weights" in r
+
+
+def test_wilson_ci_properties():
+    lo, hi = segsearch.wilson_ci(5, 10)
+    assert 0.0 < lo < 0.5 < hi < 1.0
+    # n が増えると区間が狭まる (小標本で過信しない)
+    lo_s, hi_s = segsearch.wilson_ci(3, 10)
+    lo_b, hi_b = segsearch.wilson_ci(30, 100)
+    assert (hi_b - lo_b) < (hi_s - lo_s)
+    assert segsearch.wilson_ci(0, 0) == (0.0, 1.0)
+
+
+def test_bootstrap_roi_ci_heavy_tail():
+    # 43レース中 2本だけ25倍的中 → 点推定 ROI は 1.16 でも CI 下限は 1 を大きく下回る
+    ret = np.zeros(43)
+    ret[:2] = 25.0
+    point = ret.mean()
+    lo, hi = segsearch.bootstrap_roi_ci(ret, n_boot=1000, seed=1)
+    assert point > 1.0
+    assert lo < 1.0            # まぐれ当たりは CI 下限で弾ける
+    assert lo <= point <= hi
+    assert segsearch.bootstrap_roi_ci(np.array([]), n_boot=10) == (0.0, 0.0)
+
+
+def test_sparsity_sweep_recorded():
+    prep = vsearch.prepare_numpy(_matrix())
+    res = segsearch.run_segment_search(
+        prep, train=("20230101", "20231231"), valid=("20240101", "20241231"),
+        test=("20250101", "20251231"), final=("20260101", "20261231"),
+        n_candidates=21, min_races=10, sparsity_levels=(1, 2, None),
+        seed=5, progress_every=0)
+    s = res["summary"]
+    assert s["sparsity_levels"] == [1, 2, "dense"]
+    assert s["nonzero_weight_min"] == 1          # 疎な候補が実際に生成されている
+    assert s["nonzero_weight_max"] >= 2
+    assert "adoption_rule" in s
+
+
+def test_month_and_season_levels_present():
+    """ユーザー例「8月×新潟芝1800m良」の粒度が探索対象に含まれていること。"""
+    names = {n for n, _f in vsearch.SEG_LEVELS}
+    assert "track_surface_distance_condition_month" in names
+    assert "track_surface_distance_condition_season" in names
+    # season は month から派生する仮想フィールド
+    assert vsearch.seg_field({"month": "8"}, "season") == "summer"
+    assert vsearch.seg_key({"track": "04", "surface": "turf", "distance": 1800,
+                            "condition": "firm", "month": "8"},
+                           ("track", "surface", "distance", "condition", "month")) \
+        == "04/turf/1800/firm/8"
 
 
 def test_insufficient_data_marked():

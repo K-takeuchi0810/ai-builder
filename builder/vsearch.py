@@ -72,23 +72,48 @@ def prepare_numpy(matrix: dict) -> dict:
 # セグメント (条件) の定義と抽出
 # ---------------------------------------------------------------------------
 # 粒度: 細 → 粗。データが足りないセグメントは親粒度にフォールバックする。
+# 月/季節を含む粒度も**必ず**入れる (ユーザーの例「8月新潟芝1800m良」がこれ)。
+# サンプルが薄いことは事実だが、それは「厳格に信頼区間で判定する理由」であって
+# 「検証しない理由ではない」。n と CI を併記して正直に出す。
 SEG_LEVELS: list[tuple[str, tuple[str, ...]]] = [
+    ("track_surface_distance_condition_month",
+     ("track", "surface", "distance", "condition", "month")),
+    ("track_surface_distance_month", ("track", "surface", "distance", "month")),
+    ("track_surface_distance_condition_season",
+     ("track", "surface", "distance", "condition", "season")),
+    ("track_surface_distance_season", ("track", "surface", "distance", "season")),
     ("track_surface_distance_condition", ("track", "surface", "distance", "condition")),
     ("track_surface_distance", ("track", "surface", "distance")),
+    ("track_surface_bucket_condition_season",
+     ("track", "surface", "distance_bucket", "condition", "season")),
     ("track_surface_bucket_condition", ("track", "surface", "distance_bucket", "condition")),
     ("track_surface_bucket", ("track", "surface", "distance_bucket")),
+    ("surface_bucket_condition_season", ("surface", "distance_bucket", "condition", "season")),
     ("surface_bucket_condition", ("surface", "distance_bucket", "condition")),
     ("surface_bucket", ("surface", "distance_bucket")),
     ("surface", ("surface",)),
     ("global", ()),
 ]
 
+# 月 → 季節 (matrix の seg は month しか持たないので派生させる。行列の再構築は不要)
+_MONTH_TO_SEASON = {"3": "spring", "4": "spring", "5": "spring",
+                    "6": "summer", "7": "summer", "8": "summer",
+                    "9": "autumn", "10": "autumn", "11": "autumn",
+                    "12": "winter", "1": "winter", "2": "winter"}
+
+
+def seg_field(seg: dict, field: str) -> str:
+    """セグメント属性を1つ取り出す。season は month から派生 (仮想フィールド)。"""
+    if field == "season":
+        return _MONTH_TO_SEASON.get(str(seg.get("month")), "unknown")
+    return str(seg.get(field))
+
 
 def seg_key(seg: dict, fields: tuple[str, ...]) -> str:
     """セグメント属性から粒度 fields のキー文字列を作る。fields 空 = 全体。"""
     if not fields:
         return "ALL"
-    return "/".join(str(seg.get(f)) for f in fields)
+    return "/".join(seg_field(seg, f) for f in fields)
 
 
 def race_indices(prep: dict, lo: str, hi: str,
