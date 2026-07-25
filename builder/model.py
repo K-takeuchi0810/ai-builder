@@ -110,6 +110,95 @@ def _past_pop(r: dict):
     return _num(r.get("win_popularity"))
 
 
+# --- 派生集計メトリクス (DB に専用カラムが無いため導出する) -------------------
+# 設計書 §4 STEP2 の「着差 / タイム指数」は keiba.db に専用カラムが存在しない。
+# ただし finish_time と final_3f は 100% 充填されているので、そこから導出できる。
+# margin_to_winner / final3_rank は race 単位の他馬情報が必要なので
+# _enrich_past_runs() が事前に埋める (1 頭 1 クエリに集約)。
+def _margin(r: dict):
+    """着差: 勝ち馬との走破タイム差 (1/10秒)。0=勝ち馬。小さいほど良い。"""
+    return _num(r.get("_margin_to_winner"))
+
+
+def _time_index(r: dict):
+    """タイム指数: 100m あたり走破タイム (1/10秒)。距離差を正規化。小さいほど良い。"""
+    ft = _num(r.get("finish_time"))
+    d = _num(r.get("distance"))
+    if not ft or not d or d <= 0:
+        return None
+    return ft / d * 100.0
+
+
+def _final3f_rank(r: dict):
+    """上がり3F順位 (race 内)。小さいほど良い。"""
+    return _num(r.get("_final3_rank"))
+
+
+def _final3f_rank_ratio(r: dict):
+    """上がり3F順位 ÷ 出走頭数。頭数差を正規化。小さいほど良い。"""
+    rk = _num(r.get("_final3_rank"))
+    n = _num(r.get("_final3_n"))
+    if not rk or not n or n <= 0:
+        return None
+    return rk / n
+
+
+_RACE_KEY_COLS = ("race_year", "race_month_day", "track_code", "kaiji", "nichiji", "race_num")
+
+
+def _race_key(r: dict) -> str | None:
+    parts = [r.get(c) for c in _RACE_KEY_COLS]
+    if any(p is None for p in parts):
+        return None
+    return "".join(str(p) for p in parts)
+
+
+def _enrich_past_runs(conn, runs: list[dict], cache: dict) -> None:
+    """過去走に派生値 (_margin_to_winner, _final3_rank, _final3_n) を埋める。
+
+    レース単位の他馬情報が必要なため、未キャッシュのレースをまとめて 1 クエリで取得する
+    (過去走ごとに問い合わせると 1 頭で数十クエリになり実用速度にならない)。read-only。
+    """
+    need: list[str] = []
+    for r in runs:
+        k = _race_key(r)
+        if k and k not in cache:
+            need.append(k)
+    need = list(dict.fromkeys(need))
+    if need:
+        ph = ",".join("?" * len(need))
+        rows = conn.execute(
+            f"""SELECT (race_year||race_month_day||track_code||kaiji||nichiji||race_num) AS rk,
+                       horse_num, finish_time, final_3f
+                  FROM horse_races
+                 WHERE (race_year||race_month_day||track_code||kaiji||nichiji||race_num) IN ({ph})
+                   AND confirmed_order > 0""",
+            need,
+        ).fetchall()
+        grouped: dict[str, list] = {k: [] for k in need}
+        for row in rows:
+            grouped.setdefault(row["rk"], []).append(row)
+        for k, rs in grouped.items():
+            times = [_num(x["finish_time"]) for x in rs]
+            times = [t for t in times if t]
+            win_time = min(times) if times else None
+            f3 = [(str(x["horse_num"]), _num(x["final_3f"])) for x in rs if _num(x["final_3f"])]
+            f3.sort(key=lambda t: t[1])
+            rank = {num: i for i, (num, _v) in enumerate(f3, start=1)}
+            cache[k] = {"win_time": win_time, "f3_rank": rank, "f3_n": len(f3)}
+
+    for r in runs:
+        k = _race_key(r)
+        info = cache.get(k) if k else None
+        if not info:
+            continue
+        ft = _num(r.get("finish_time"))
+        wt = info["win_time"]
+        r["_margin_to_winner"] = (ft - wt) if (ft and wt is not None) else None
+        r["_final3_rank"] = info["f3_rank"].get(str(r.get("horse_num")))
+        r["_final3_n"] = info["f3_n"] or None
+
+
 # --- current 特徴のメトリクス -----------------------------------------------
 def _cur(key: str) -> Callable[[dict], float | None]:
     return lambda h: _num(h.get(key))
@@ -177,6 +266,12 @@ _FEATURE_LIST: list[Feature] = [
     _F("agg_top3_rate", "複勝率(可変集計)", "可変集計", "aggregate", True, _is_top3),
     _F("agg_avg_final3f", "平均上がり3F(可変集計)", "可変集計", "aggregate", False, _final3f),
     _F("agg_avg_popularity", "平均人気(可変集計)", "可変集計", "aggregate", False, _past_pop),
+    # 設計書 §4 STEP2 で必要だが DB に専用カラムが無く、導出で補った項目
+    _F("agg_margin", "着差(可変集計)", "可変集計", "aggregate", False, _margin),
+    _F("agg_time_index", "タイム指数(可変集計)", "可変集計", "aggregate", False, _time_index),
+    _F("agg_final3f_rank", "上がり3F順位(可変集計)", "可変集計", "aggregate", False, _final3f_rank),
+    _F("agg_final3f_rank_ratio", "上がり3F順位率(可変集計)", "可変集計", "aggregate", False,
+       _final3f_rank_ratio),
 ]
 
 FEATURES: dict[str, Feature] = {f.key: f for f in _FEATURE_LIST}
@@ -211,10 +306,19 @@ def _aggregate_value(feat: Feature, past: list[dict], race: dict,
     return (sum(vals) / len(vals)) if vals else None
 
 
-def _past_runs(conn, brn: str, before: str, limit: int = 50) -> list[dict]:
+def _past_runs(conn, brn: str, before: str, limit: int = 50,
+               cache: dict | None = None) -> list[dict]:
+    """過去走を取得し、派生値 (着差・上がり3F順位) を埋めて返す。
+
+    cache を渡すとレース単位の他馬情報を再利用する (行列構築で必須)。
+    """
     _ensure_keiba_on_path()
     from predictor.features import horse_past_runs  # type: ignore
-    return horse_past_runs(conn, brn, before, limit=limit)
+    runs = horse_past_runs(conn, brn, before, limit=limit)
+    if runs:
+        rc = cache.setdefault("_race_ctx", {}) if cache is not None else {}
+        _enrich_past_runs(conn, runs, rc)
+    return runs
 
 
 def _compute_features(conn, horse: dict, race: dict, cache: dict) -> dict:
@@ -247,7 +351,7 @@ def compute_feature_rows(conn, horses: list[dict], race: dict, cfg: dict,
             brn = h.get("blood_register_num")
             pkey = ("past50", brn, before)
             if pkey not in cache:
-                cache[pkey] = _past_runs(conn, brn, before) if brn else []
+                cache[pkey] = _past_runs(conn, brn, before, cache=cache) if brn else []
             past = cache[pkey]
 
         vals: dict[str, float | None] = {}

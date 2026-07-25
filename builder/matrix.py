@@ -142,7 +142,8 @@ def _races_for_range(conn, lo: str, hi: str, cols: list[dict],
             if need_past:
                 pkey = ("past50", h.get("blood_register_num"), before)
                 if pkey not in cache:
-                    cache[pkey] = model._past_runs(conn, h.get("blood_register_num"), before) \
+                    cache[pkey] = model._past_runs(conn, h.get("blood_register_num"), before,
+                                                   cache=cache) \
                         if h.get("blood_register_num") else []
                 past = cache[pkey]
             x: dict[str, float | None] = {}

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import sqlite3
 import sys
 
 import pytest
@@ -84,6 +85,69 @@ def test_score_none_is_neutral_and_zero_variance_skipped():
     rows2 = {"1": {"popularity": 3.0}, "2": {"popularity": 3.0}}
     d2 = dict(model.score_from_features(rows2, {"features": [{"key": "popularity", "weight": 1.0}]}))
     assert d2["1"] == 0.0 and d2["2"] == 0.0
+
+
+def test_time_index_derivation():
+    """タイム指数 = 100mあたり走破タイム。専用カラムが無いので導出する。"""
+    # 1600m を 96.0秒 (960 = 1/10秒) → 60.0 (1/10秒/100m)
+    assert model._time_index({"finish_time": 960, "distance": 1600}) == 60.0
+    # 距離が違っても比較可能になる: 2000m を 120.0秒 → 60.0
+    assert model._time_index({"finish_time": 1200, "distance": 2000}) == 60.0
+    # 欠損・ゼロ距離は None
+    assert model._time_index({"finish_time": 0, "distance": 1600}) is None
+    assert model._time_index({"finish_time": 960, "distance": 0}) is None
+    assert model._time_index({}) is None
+
+
+def test_derived_metric_readers():
+    r = {"_margin_to_winner": 12.0, "_final3_rank": 3, "_final3_n": 15}
+    assert model._margin(r) == 12.0
+    assert model._final3f_rank(r) == 3.0
+    assert model._final3f_rank_ratio(r) == 0.2       # 3/15
+    assert model._margin({}) is None
+    assert model._final3f_rank_ratio({"_final3_rank": 3}) is None
+
+
+def _mem_conn_with_race():
+    """1レース3頭ぶんの horse_races を持つ in-memory DB。"""
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        "CREATE TABLE horse_races (race_year TEXT, race_month_day TEXT, track_code TEXT,"
+        " kaiji TEXT, nichiji TEXT, race_num TEXT, horse_num TEXT, confirmed_order INTEGER,"
+        " finish_time INTEGER, final_3f INTEGER)")
+    rows = [
+        ("2025", "0105", "05", "01", "01", "01", "1", 1, 950, 350),   # 勝ち馬・上がり2位
+        ("2025", "0105", "05", "01", "01", "01", "2", 2, 962, 345),   # 着差12・上がり1位
+        ("2025", "0105", "05", "01", "01", "01", "3", 3, 975, 360),   # 着差25・上がり3位
+    ]
+    conn.executemany("INSERT INTO horse_races VALUES (?,?,?,?,?,?,?,?,?,?)", rows)
+    return conn
+
+
+def test_enrich_past_runs_margin_and_final3_rank():
+    conn = _mem_conn_with_race()
+    base = {"race_year": "2025", "race_month_day": "0105", "track_code": "05",
+            "kaiji": "01", "nichiji": "01", "race_num": "01"}
+    runs = [dict(base, horse_num="2", finish_time=962, final_3f=345, distance=1600),
+            dict(base, horse_num="3", finish_time=975, final_3f=360, distance=1600)]
+    cache: dict = {}
+    model._enrich_past_runs(conn, runs, cache)
+
+    assert runs[0]["_margin_to_winner"] == 12.0      # 962 - 950 (勝ち馬)
+    assert runs[0]["_final3_rank"] == 1              # 345 が最速
+    assert runs[0]["_final3_n"] == 3
+    assert runs[1]["_margin_to_winner"] == 25.0
+    assert runs[1]["_final3_rank"] == 3
+    # 2回目はキャッシュから (レースキーが1つだけ登録されている)
+    assert len(cache) == 1
+
+
+def test_new_aggregate_features_registered():
+    for k in ("agg_margin", "agg_time_index", "agg_final3f_rank", "agg_final3f_rank_ratio"):
+        assert k in model.FEATURES
+        assert model.FEATURES[k].kind == "aggregate"
+        assert model.FEATURES[k].higher_is_better is False   # いずれも小さいほど良い
 
 
 def test_default_config_valid():
