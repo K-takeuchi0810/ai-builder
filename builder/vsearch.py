@@ -61,10 +61,145 @@ def prepare_numpy(matrix: dict) -> dict:
         "order": np.array(order_l, dtype=np.int64),
         "tan": np.array(tan_l, dtype=np.float64),
         "dates": dates, "trusted": np.array(trusted, dtype=bool),
+        "segs": [r.get("seg", {}) for r in matrix["races"]],
         "fav": [next((hr["num"] for hr in r["horses"] if hr.get("pop") == 1), None)
                 for r in matrix["races"]],
         "nums": [[hr["num"] for hr in r["horses"]] for r in matrix["races"]],
     }
+
+
+# ---------------------------------------------------------------------------
+# セグメント (条件) の定義と抽出
+# ---------------------------------------------------------------------------
+# 粒度: 細 → 粗。データが足りないセグメントは親粒度にフォールバックする。
+SEG_LEVELS: list[tuple[str, tuple[str, ...]]] = [
+    ("track_surface_distance_condition", ("track", "surface", "distance", "condition")),
+    ("track_surface_distance", ("track", "surface", "distance")),
+    ("track_surface_bucket_condition", ("track", "surface", "distance_bucket", "condition")),
+    ("track_surface_bucket", ("track", "surface", "distance_bucket")),
+    ("surface_bucket_condition", ("surface", "distance_bucket", "condition")),
+    ("surface_bucket", ("surface", "distance_bucket")),
+    ("surface", ("surface",)),
+    ("global", ()),
+]
+
+
+def seg_key(seg: dict, fields: tuple[str, ...]) -> str:
+    """セグメント属性から粒度 fields のキー文字列を作る。fields 空 = 全体。"""
+    if not fields:
+        return "ALL"
+    return "/".join(str(seg.get(f)) for f in fields)
+
+
+def race_indices(prep: dict, lo: str, hi: str,
+                 fields: tuple[str, ...] = (), key: str | None = None) -> list[int]:
+    """[lo,hi] かつ (指定があれば) セグメントキーが一致するレースの index を返す。"""
+    out = []
+    for i, (dt, sg) in enumerate(zip(prep["dates"], prep["segs"])):
+        if not (lo <= dt <= hi):
+            continue
+        if key is not None and seg_key(sg, fields) != key:
+            continue
+        out.append(i)
+    return out
+
+
+def segment_keys(prep: dict, fields: tuple[str, ...], lo: str, hi: str) -> dict[str, int]:
+    """[lo,hi] における各セグメントキーのレース数。"""
+    counts: dict[str, int] = {}
+    for dt, sg in zip(prep["dates"], prep["segs"]):
+        if lo <= dt <= hi:
+            k = seg_key(sg, fields)
+            counts[k] = counts.get(k, 0) + 1
+    return counts
+
+
+# ---------------------------------------------------------------------------
+# 印 (◎ = スコア1位) ベースの評価 — ユーザーの本題「印を打った時の的中率/回収率」
+# ---------------------------------------------------------------------------
+def eval_pick_idx(prep: dict, w: np.ndarray, idx: list[int]) -> dict:
+    """指定レース群で ◎(スコア1位) の 勝率 / 複勝率 / 単勝回収率 を返す。"""
+    scores = prep["Z"] @ w
+    order, tan, odds = prep["order"], prep["tan"], prep["odds"]
+    n = wins = top3 = 0
+    stake = ret = 0.0
+    roi_n = 0
+    for i in idx:
+        s, e = prep["offsets"][i]
+        sc = scores[s:e]
+        if sc.size == 0:
+            continue
+        j = s + int(np.argmax(sc))
+        n += 1
+        o = order[j]
+        won = 1 if o == 1 else 0
+        wins += won
+        top3 += 1 if 1 <= o <= 3 else 0
+        if prep["trusted"][i]:            # オッズ不信頼レースは回収率に含めない
+            stake += 1.0
+            roi_n += 1
+            ret += (tan[j] / 100.0) if won else 0.0
+    return {"n": n,
+            "win_rate": round(wins / n, 4) if n else None,
+            "top3_rate": round(top3 / n, 4) if n else None,
+            "roi": round(ret / stake, 4) if stake else None,
+            "roi_n": roi_n}
+
+
+def eval_value_idx(prep: dict, w: np.ndarray, temperature: float, ev_threshold: float,
+                   idx: list[int]) -> dict:
+    """指定レース群でのバリューベット成績 (EV=確率×オッズ≥閾値 の馬を単勝で購入)。"""
+    scores = prep["Z"] @ w
+    t = max(temperature, 1e-6)
+    bets = hits = races = 0
+    stake = ret = 0.0
+    order, odds, tan = prep["order"], prep["odds"], prep["tan"]
+    for i in idx:
+        if not prep["trusted"][i]:
+            continue
+        s, e = prep["offsets"][i]
+        sc = scores[s:e]
+        if sc.size == 0:
+            continue
+        ex = np.exp((sc - sc.max()) / t)
+        p = ex / ex.sum()
+        od = odds[s:e]
+        sel = (p * od >= ev_threshold) & np.isfinite(od)
+        k = int(sel.sum())
+        if k:
+            bets += k
+            stake += k
+            won = sel & (order[s:e] == 1)
+            hits += int(won.sum())
+            ret += float(tan[s:e][won].sum()) / 100.0
+            races += 1
+    return _summ(bets, hits, stake, ret, races)
+
+
+def favorite_pick_idx(prep: dict, idx: list[int]) -> dict:
+    """ベースライン: そのレース群で市場1番人気を ◎ とした場合の 勝率/複勝率/回収率。"""
+    n = wins = top3 = roi_n = 0
+    stake = ret = 0.0
+    for i in idx:
+        fav = prep["fav"][i]
+        if fav is None:
+            continue
+        s, _e = prep["offsets"][i]
+        j = s + prep["nums"][i].index(fav)
+        n += 1
+        o = prep["order"][j]
+        won = 1 if o == 1 else 0
+        wins += won
+        top3 += 1 if 1 <= o <= 3 else 0
+        if prep["trusted"][i]:
+            stake += 1.0
+            roi_n += 1
+            ret += (prep["tan"][j] / 100.0) if won else 0.0
+    return {"n": n,
+            "win_rate": round(wins / n, 4) if n else None,
+            "top3_rate": round(top3 / n, 4) if n else None,
+            "roi": round(ret / stake, 4) if stake else None,
+            "roi_n": roi_n}
 
 
 def weights_to_vec(prep: dict, weights: dict[str, float]) -> np.ndarray:
@@ -86,30 +221,8 @@ def _summ(bets, hits, stake, ret, races):
 def eval_value_np(prep: dict, w: np.ndarray, temperature: float, ev_threshold: float,
                   lo: str, hi: str) -> dict:
     """[lo,hi] のレースに対するバリューベット成績 (ベクトル化)。"""
-    scores = prep["Z"] @ w
-    t = max(temperature, 1e-6)
-    bets = hits = races = 0
-    stake = ret = 0.0
-    order = prep["order"]
-    odds = prep["odds"]
-    tan = prep["tan"]
-    for (s, e), dt, tr in zip(prep["offsets"], prep["dates"], prep["trusted"]):
-        if not tr or not (lo <= dt <= hi):
-            continue
-        sc = scores[s:e]
-        ex = np.exp((sc - sc.max()) / t)
-        p = ex / ex.sum()
-        od = odds[s:e]
-        sel = (p * od >= ev_threshold) & np.isfinite(od)
-        k = int(sel.sum())
-        if k:
-            bets += k
-            stake += k
-            won = sel & (order[s:e] == 1)
-            hits += int(won.sum())
-            ret += float(tan[s:e][won].sum()) / 100.0
-            races += 1
-    return _summ(bets, hits, stake, ret, races)
+    return eval_value_idx(prep, w, temperature, ev_threshold,
+                          race_indices(prep, lo, hi))
 
 
 def favorite_np(prep: dict, lo: str, hi: str) -> dict:
