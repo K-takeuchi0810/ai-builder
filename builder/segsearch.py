@@ -136,6 +136,7 @@ def run_segment_search(prep: dict, *, train, valid, test, final,
                        levels=SEG_LEVELS, objectives=OBJECTIVES,
                        sparsity_levels=(1, 2, 3, 5, 8, 15, None),
                        roi_min_hit_ratio: float = 0.5,
+                       restrict_months: tuple[int, ...] | None = None,
                        seed: int = 0, progress_every: int = 500) -> dict:
     """全粒度 × 全目的関数でセグメント別に重みを探索し、OOS 再現したものだけ採用する。
 
@@ -145,6 +146,13 @@ def run_segment_search(prep: dict, *, train, valid, test, final,
     starts, counts, race_of_row = _race_geometry(prep)
     periods = {"train": train, "valid": valid, "test": test, "final": final}
     masks = _period_masks(prep, periods)
+    # 部分年 (例: 2026は7月まで) を OOS に使うと、月粒度では該当月が構造的にゼロになり、
+    # 粗い粒度でも「秋を含まない半年」対「通年」の季節構成差が混入する。restrict_months で
+    # 全期間を同じ月集合に揃えると like-for-like 比較になる (ベースラインにも同じ制約が効く)。
+    if restrict_months:
+        want = {str(int(x)) for x in restrict_months}
+        mm = np.array([str(sg.get("month")) in want for sg in prep["segs"]])
+        masks = {k: (v & mm) for k, v in masks.items()}
     order, tan, trusted = prep["order"], prep["tan"], np.asarray(prep["trusted"])
 
     lv = []
@@ -323,6 +331,7 @@ def run_segment_search(prep: dict, *, train, valid, test, final,
             "objectives": list(objectives),
             "min_races": min_races,
             "roi_min_hit_ratio": roi_min_hit_ratio,
+            "restrict_months": list(restrict_months) if restrict_months else None,
             "adoption_rule": ("CI下限(Wilson/bootstrap)がベースラインを超え、"
                               "roiは更にCI下限>1.0かつ勝率が人気の"
                               f"{roi_min_hit_ratio:.0%}以上"),

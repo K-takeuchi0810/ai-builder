@@ -170,6 +170,32 @@ def test_month_and_season_levels_present():
         == "04/turf/1800/firm/8"
 
 
+def test_restrict_months_makes_periods_like_for_like():
+    """部分年を OOS に使うための月限定が、対象レースとベースラインの両方に効くこと。"""
+    m = _matrix()
+    # 5月のみのデータなので、5月に限定すれば全件、8月に限定すれば0件になる
+    prep = vsearch.prepare_numpy(m)
+    common = dict(train=("20230101", "20231231"), valid=("20240101", "20241231"),
+                  test=("20250101", "20251231"), final=("20260101", "20261231"),
+                  n_candidates=12, min_races=5, sparsity_levels=(2,), seed=2,
+                  progress_every=0)
+    keep = segsearch.run_segment_search(prep, restrict_months=(5,), **common)
+    drop = segsearch.run_segment_search(prep, restrict_months=(8,), **common)
+
+    assert keep["summary"]["restrict_months"] == [5]
+    fine_keep = keep["levels"]["track_surface_distance_condition"]["segments"]
+    ok_keep = sum(1 for sv in fine_keep.values() for r in sv.values()
+                  if isinstance(r, dict) and r.get("status") == "ok")
+    assert ok_keep > 0                      # 5月限定なら評価できる
+
+    fine_drop = drop["levels"]["track_surface_distance_condition"]["segments"]
+    for sv in fine_drop.values():           # 8月限定なら該当レース0 → 全てデータ不足
+        for r in sv.values():
+            if isinstance(r, dict):
+                assert r.get("status") == "insufficient_data"
+    assert drop["summary"]["n_adopted"] == 0
+
+
 def test_insufficient_data_marked():
     """min_races を大きくすると全セグメントがデータ不足として扱われること。"""
     prep = vsearch.prepare_numpy(_matrix())
