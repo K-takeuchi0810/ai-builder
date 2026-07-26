@@ -1,0 +1,1836 @@
+{
+  "years": [
+    2021,
+    2022,
+    2023,
+    2024,
+    2025,
+    2026
+  ],
+  "n_races": 19251,
+  "n_columns": 425,
+  "peak_memory_gb": 10.43249152,
+  "ll_uniform": -2.5994694709679873,
+  "fit": {
+    "train_period": [
+      "20210101",
+      "20250630"
+    ],
+    "display_backtest_from": "20250701",
+    "n_races_trained": 15549,
+    "column_races_passed_gate": {
+      "popularity": 15549,
+      "burden_weight": 14869,
+      "burden_delta": 13537,
+      "horse_weight_change": 14262,
+      "days_since_last": 14252,
+      "draw_position": 15549,
+      "jockey_win_rate": 15547,
+      "jockey_recent_30d_top3_rate": 15524,
+      "jockey_track_top3_rate": 15425,
+      "trainer_win_rate": 15549,
+      "trainer_recent_30d_top3_rate": 15549,
+      "sire_surface_top3_rate": 15542,
+      "sire_distance_top3_rate": 15541,
+      "sire_going_top3_rate": 15112,
+      "dam_sire_surface_top3_rate": 15537,
+      "fit_course": 8542,
+      "fit_course_distance": 6285,
+      "fit_distance": 12246,
+      "fit_going": 10771,
+      "fit_surface": 11681,
+      "horse_track_top3_rate": 10175,
+      "horse_recent_90d_top3_rate": 13544,
+      "recent_avg_finish": 14253,
+      "recent_trend_delta": 13274,
+      "last_finish": 14242,
+      "avg_final_3f": 12682,
+      "best_final_3f_rank": 12671,
+      "recent_4corner_avg_position": 0,
+      "recent_4corner_position_change": 0,
+      "agg_avg_finish|lb=None|m=": 14253,
+      "agg_avg_finish|lb=1|m=": 14242,
+      "agg_avg_finish|lb=2|m=": 14253,
+      "agg_avg_finish|lb=3|m=": 14253,
+      "agg_avg_finish|lb=4|m=": 14253,
+      "agg_avg_finish|lb=5|m=": 14253,
+      "agg_avg_finish|lb=6|m=": 14253,
+      "agg_avg_finish|lb=7|m=": 14253,
+      "agg_avg_finish|lb=8|m=": 14253,
+      "agg_avg_finish|lb=9|m=": 14253,
+      "agg_avg_finish|lb=10|m=": 14253,
+      "agg_avg_finish|lb=None|m=distance": 11113,
+      "agg_avg_finish|lb=1|m=distance": 11101,
+      "agg_avg_finish|lb=2|m=distance": 11113,
+      "agg_avg_finish|lb=3|m=distance": 11113,
+      "agg_avg_finish|lb=4|m=distance": 11113,
+      "agg_avg_finish|lb=5|m=distance": 11113,
+      "agg_avg_finish|lb=6|m=distance": 11113,
+      "agg_avg_finish|lb=7|m=distance": 11113,
+      "agg_avg_finish|lb=8|m=distance": 11113,
+      "agg_avg_finish|lb=9|m=distance": 11113,
+      "agg_avg_finish|lb=10|m=distance": 11113,
+      "agg_avg_finish|lb=None|m=track": 10419,
+      "agg_avg_finish|lb=1|m=track": 10416,
+      "agg_avg_finish|lb=2|m=track": 10419,
+      "agg_avg_finish|lb=3|m=track": 10419,
+      "agg_avg_finish|lb=4|m=track": 10419,
+      "agg_avg_finish|lb=5|m=track": 10419,
+      "agg_avg_finish|lb=6|m=track": 10419,
+      "agg_avg_finish|lb=7|m=track": 10419,
+      "agg_avg_finish|lb=8|m=track": 10419,
+      "agg_avg_finish|lb=9|m=track": 10419,
+      "agg_avg_finish|lb=10|m=track": 10419,
+      "agg_avg_finish|lb=None|m=surface": 14046,
+      "agg_avg_finish|lb=1|m=surface": 14029,
+      "agg_avg_finish|lb=2|m=surface": 14046,
+      "agg_avg_finish|lb=3|m=surface": 14046,
+      "agg_avg_finish|lb=4|m=surface": 14046,
+      "agg_avg_finish|lb=5|m=surface": 14046,
+      "agg_avg_finish|lb=6|m=surface": 14046,
+      "agg_avg_finish|lb=7|m=surface": 14046,
+      "agg_avg_finish|lb=8|m=surface": 14046,
+      "agg_avg_finish|lb=9|m=surface": 14046,
+      "agg_avg_finish|lb=10|m=surface": 14046,
+      "agg_margin|lb=None|m=": 14227,
+      "agg_margin|lb=1|m=": 14209,
+      "agg_margin|lb=2|m=": 14226,
+      "agg_margin|lb=3|m=": 14227,
+      "agg_margin|lb=4|m=": 14227,
+      "agg_margin|lb=5|m=": 14227,
+      "agg_margin|lb=6|m=": 14227,
+      "agg_margin|lb=7|m=": 14227,
+      "agg_margin|lb=8|m=": 14227,
+      "agg_margin|lb=9|m=": 14227,
+      "agg_margin|lb=10|m=": 14227,
+      "agg_margin|lb=None|m=distance": 11046,
+      "agg_margin|lb=1|m=distance": 11015,
+      "agg_margin|lb=2|m=distance": 11044,
+      "agg_margin|lb=3|m=distance": 11045,
+      "agg_margin|lb=4|m=distance": 11046,
+      "agg_margin|lb=5|m=distance": 11046,
+      "agg_margin|lb=6|m=distance": 11046,
+      "agg_margin|lb=7|m=distance": 11046,
+      "agg_margin|lb=8|m=distance": 11046,
+      "agg_margin|lb=9|m=distance": 11046,
+      "agg_margin|lb=10|m=distance": 11046,
+      "agg_margin|lb=None|m=track": 10338,
+      "agg_margin|lb=1|m=track": 10308,
+      "agg_margin|lb=2|m=track": 10337,
+      "agg_margin|lb=3|m=track": 10338,
+      "agg_margin|lb=4|m=track": 10338,
+      "agg_margin|lb=5|m=track": 10338,
+      "agg_margin|lb=6|m=track": 10338,
+      "agg_margin|lb=7|m=track": 10338,
+      "agg_margin|lb=8|m=track": 10338,
+      "agg_margin|lb=9|m=track": 10338,
+      "agg_margin|lb=10|m=track": 10338,
+      "agg_margin|lb=None|m=surface": 14008,
+      "agg_margin|lb=1|m=surface": 13975,
+      "agg_margin|lb=2|m=surface": 14007,
+      "agg_margin|lb=3|m=surface": 14008,
+      "agg_margin|lb=4|m=surface": 14008,
+      "agg_margin|lb=5|m=surface": 14008,
+      "agg_margin|lb=6|m=surface": 14008,
+      "agg_margin|lb=7|m=surface": 14008,
+      "agg_margin|lb=8|m=surface": 14008,
+      "agg_margin|lb=9|m=surface": 14008,
+      "agg_margin|lb=10|m=surface": 14008,
+      "agg_time_index|lb=None|m=": 14204,
+      "agg_time_index|lb=1|m=": 14137,
+      "agg_time_index|lb=2|m=": 14185,
+      "agg_time_index|lb=3|m=": 14198,
+      "agg_time_index|lb=4|m=": 14202,
+      "agg_time_index|lb=5|m=": 14203,
+      "agg_time_index|lb=6|m=": 14204,
+      "agg_time_index|lb=7|m=": 14204,
+      "agg_time_index|lb=8|m=": 14204,
+      "agg_time_index|lb=9|m=": 14204,
+      "agg_time_index|lb=10|m=": 14204,
+      "agg_time_index|lb=None|m=distance": 11047,
+      "agg_time_index|lb=1|m=distance": 11029,
+      "agg_time_index|lb=2|m=distance": 11045,
+      "agg_time_index|lb=3|m=distance": 11046,
+      "agg_time_index|lb=4|m=distance": 11047,
+      "agg_time_index|lb=5|m=distance": 11047,
+      "agg_time_index|lb=6|m=distance": 11047,
+      "agg_time_index|lb=7|m=distance": 11047,
+      "agg_time_index|lb=8|m=distance": 11047,
+      "agg_time_index|lb=9|m=distance": 11047,
+      "agg_time_index|lb=10|m=distance": 11047,
+      "agg_time_index|lb=None|m=track": 10198,
+      "agg_time_index|lb=1|m=track": 10151,
+      "agg_time_index|lb=2|m=track": 10190,
+      "agg_time_index|lb=3|m=track": 10196,
+      "agg_time_index|lb=4|m=track": 10198,
+      "agg_time_index|lb=5|m=track": 10198,
+      "agg_time_index|lb=6|m=track": 10198,
+      "agg_time_index|lb=7|m=track": 10198,
+      "agg_time_index|lb=8|m=track": 10198,
+      "agg_time_index|lb=9|m=track": 10198,
+      "agg_time_index|lb=10|m=track": 10198,
+      "agg_time_index|lb=None|m=surface": 13995,
+      "agg_time_index|lb=1|m=surface": 13967,
+      "agg_time_index|lb=2|m=surface": 13993,
+      "agg_time_index|lb=3|m=surface": 13995,
+      "agg_time_index|lb=4|m=surface": 13995,
+      "agg_time_index|lb=5|m=surface": 13995,
+      "agg_time_index|lb=6|m=surface": 13995,
+      "agg_time_index|lb=7|m=surface": 13995,
+      "agg_time_index|lb=8|m=surface": 13995,
+      "agg_time_index|lb=9|m=surface": 13995,
+      "agg_time_index|lb=10|m=surface": 13995,
+      "agg_prize|lb=None|m=": 175,
+      "agg_prize|lb=1|m=": 173,
+      "agg_prize|lb=2|m=": 175,
+      "agg_prize|lb=3|m=": 175,
+      "agg_prize|lb=4|m=": 175,
+      "agg_prize|lb=5|m=": 175,
+      "agg_prize|lb=6|m=": 175,
+      "agg_prize|lb=7|m=": 175,
+      "agg_prize|lb=8|m=": 175,
+      "agg_prize|lb=9|m=": 175,
+      "agg_prize|lb=10|m=": 175,
+      "agg_prize|lb=None|m=distance": 26,
+      "agg_prize|lb=1|m=distance": 26,
+      "agg_prize|lb=2|m=distance": 26,
+      "agg_prize|lb=3|m=distance": 26,
+      "agg_prize|lb=4|m=distance": 26,
+      "agg_prize|lb=5|m=distance": 26,
+      "agg_prize|lb=6|m=distance": 26,
+      "agg_prize|lb=7|m=distance": 26,
+      "agg_prize|lb=8|m=distance": 26,
+      "agg_prize|lb=9|m=distance": 26,
+      "agg_prize|lb=10|m=distance": 26,
+      "agg_prize|lb=None|m=track": 53,
+      "agg_prize|lb=1|m=track": 53,
+      "agg_prize|lb=2|m=track": 53,
+      "agg_prize|lb=3|m=track": 53,
+      "agg_prize|lb=4|m=track": 53,
+      "agg_prize|lb=5|m=track": 53,
+      "agg_prize|lb=6|m=track": 53,
+      "agg_prize|lb=7|m=track": 53,
+      "agg_prize|lb=8|m=track": 53,
+      "agg_prize|lb=9|m=track": 53,
+      "agg_prize|lb=10|m=track": 53,
+      "agg_prize|lb=None|m=surface": 145,
+      "agg_prize|lb=1|m=surface": 143,
+      "agg_prize|lb=2|m=surface": 145,
+      "agg_prize|lb=3|m=surface": 145,
+      "agg_prize|lb=4|m=surface": 145,
+      "agg_prize|lb=5|m=surface": 145,
+      "agg_prize|lb=6|m=surface": 145,
+      "agg_prize|lb=7|m=surface": 145,
+      "agg_prize|lb=8|m=surface": 145,
+      "agg_prize|lb=9|m=surface": 145,
+      "agg_prize|lb=10|m=surface": 145,
+      "agg_corner_first|lb=None|m=": 173,
+      "agg_corner_first|lb=1|m=": 173,
+      "agg_corner_first|lb=2|m=": 173,
+      "agg_corner_first|lb=3|m=": 173,
+      "agg_corner_first|lb=4|m=": 173,
+      "agg_corner_first|lb=5|m=": 173,
+      "agg_corner_first|lb=6|m=": 173,
+      "agg_corner_first|lb=7|m=": 173,
+      "agg_corner_first|lb=8|m=": 173,
+      "agg_corner_first|lb=9|m=": 173,
+      "agg_corner_first|lb=10|m=": 173,
+      "agg_corner_first|lb=None|m=distance": 25,
+      "agg_corner_first|lb=1|m=distance": 25,
+      "agg_corner_first|lb=2|m=distance": 25,
+      "agg_corner_first|lb=3|m=distance": 25,
+      "agg_corner_first|lb=4|m=distance": 25,
+      "agg_corner_first|lb=5|m=distance": 25,
+      "agg_corner_first|lb=6|m=distance": 25,
+      "agg_corner_first|lb=7|m=distance": 25,
+      "agg_corner_first|lb=8|m=distance": 25,
+      "agg_corner_first|lb=9|m=distance": 25,
+      "agg_corner_first|lb=10|m=distance": 25,
+      "agg_corner_first|lb=None|m=track": 53,
+      "agg_corner_first|lb=1|m=track": 53,
+      "agg_corner_first|lb=2|m=track": 53,
+      "agg_corner_first|lb=3|m=track": 53,
+      "agg_corner_first|lb=4|m=track": 53,
+      "agg_corner_first|lb=5|m=track": 53,
+      "agg_corner_first|lb=6|m=track": 53,
+      "agg_corner_first|lb=7|m=track": 53,
+      "agg_corner_first|lb=8|m=track": 53,
+      "agg_corner_first|lb=9|m=track": 53,
+      "agg_corner_first|lb=10|m=track": 53,
+      "agg_corner_first|lb=None|m=surface": 140,
+      "agg_corner_first|lb=1|m=surface": 140,
+      "agg_corner_first|lb=2|m=surface": 140,
+      "agg_corner_first|lb=3|m=surface": 140,
+      "agg_corner_first|lb=4|m=surface": 140,
+      "agg_corner_first|lb=5|m=surface": 140,
+      "agg_corner_first|lb=6|m=surface": 140,
+      "agg_corner_first|lb=7|m=surface": 140,
+      "agg_corner_first|lb=8|m=surface": 140,
+      "agg_corner_first|lb=9|m=surface": 140,
+      "agg_corner_first|lb=10|m=surface": 140,
+      "agg_corner_last|lb=None|m=": 173,
+      "agg_corner_last|lb=1|m=": 173,
+      "agg_corner_last|lb=2|m=": 173,
+      "agg_corner_last|lb=3|m=": 173,
+      "agg_corner_last|lb=4|m=": 173,
+      "agg_corner_last|lb=5|m=": 173,
+      "agg_corner_last|lb=6|m=": 173,
+      "agg_corner_last|lb=7|m=": 173,
+      "agg_corner_last|lb=8|m=": 173,
+      "agg_corner_last|lb=9|m=": 173,
+      "agg_corner_last|lb=10|m=": 173,
+      "agg_corner_last|lb=None|m=distance": 25,
+      "agg_corner_last|lb=1|m=distance": 25,
+      "agg_corner_last|lb=2|m=distance": 25,
+      "agg_corner_last|lb=3|m=distance": 25,
+      "agg_corner_last|lb=4|m=distance": 25,
+      "agg_corner_last|lb=5|m=distance": 25,
+      "agg_corner_last|lb=6|m=distance": 25,
+      "agg_corner_last|lb=7|m=distance": 25,
+      "agg_corner_last|lb=8|m=distance": 25,
+      "agg_corner_last|lb=9|m=distance": 25,
+      "agg_corner_last|lb=10|m=distance": 25,
+      "agg_corner_last|lb=None|m=track": 53,
+      "agg_corner_last|lb=1|m=track": 53,
+      "agg_corner_last|lb=2|m=track": 53,
+      "agg_corner_last|lb=3|m=track": 53,
+      "agg_corner_last|lb=4|m=track": 53,
+      "agg_corner_last|lb=5|m=track": 53,
+      "agg_corner_last|lb=6|m=track": 53,
+      "agg_corner_last|lb=7|m=track": 53,
+      "agg_corner_last|lb=8|m=track": 53,
+      "agg_corner_last|lb=9|m=track": 53,
+      "agg_corner_last|lb=10|m=track": 53,
+      "agg_corner_last|lb=None|m=surface": 140,
+      "agg_corner_last|lb=1|m=surface": 140,
+      "agg_corner_last|lb=2|m=surface": 140,
+      "agg_corner_last|lb=3|m=surface": 140,
+      "agg_corner_last|lb=4|m=surface": 140,
+      "agg_corner_last|lb=5|m=surface": 140,
+      "agg_corner_last|lb=6|m=surface": 140,
+      "agg_corner_last|lb=7|m=surface": 140,
+      "agg_corner_last|lb=8|m=surface": 140,
+      "agg_corner_last|lb=9|m=surface": 140,
+      "agg_corner_last|lb=10|m=surface": 140,
+      "agg_gain_first_to_last|lb=None|m=": 173,
+      "agg_gain_first_to_last|lb=1|m=": 172,
+      "agg_gain_first_to_last|lb=2|m=": 173,
+      "agg_gain_first_to_last|lb=3|m=": 173,
+      "agg_gain_first_to_last|lb=4|m=": 173,
+      "agg_gain_first_to_last|lb=5|m=": 173,
+      "agg_gain_first_to_last|lb=6|m=": 173,
+      "agg_gain_first_to_last|lb=7|m=": 173,
+      "agg_gain_first_to_last|lb=8|m=": 173,
+      "agg_gain_first_to_last|lb=9|m=": 173,
+      "agg_gain_first_to_last|lb=10|m=": 173,
+      "agg_gain_first_to_last|lb=None|m=distance": 25,
+      "agg_gain_first_to_last|lb=1|m=distance": 25,
+      "agg_gain_first_to_last|lb=2|m=distance": 25,
+      "agg_gain_first_to_last|lb=3|m=distance": 25,
+      "agg_gain_first_to_last|lb=4|m=distance": 25,
+      "agg_gain_first_to_last|lb=5|m=distance": 25,
+      "agg_gain_first_to_last|lb=6|m=distance": 25,
+      "agg_gain_first_to_last|lb=7|m=distance": 25,
+      "agg_gain_first_to_last|lb=8|m=distance": 25,
+      "agg_gain_first_to_last|lb=9|m=distance": 25,
+      "agg_gain_first_to_last|lb=10|m=distance": 25,
+      "agg_gain_first_to_last|lb=None|m=track": 53,
+      "agg_gain_first_to_last|lb=1|m=track": 53,
+      "agg_gain_first_to_last|lb=2|m=track": 53,
+      "agg_gain_first_to_last|lb=3|m=track": 53,
+      "agg_gain_first_to_last|lb=4|m=track": 53,
+      "agg_gain_first_to_last|lb=5|m=track": 53,
+      "agg_gain_first_to_last|lb=6|m=track": 53,
+      "agg_gain_first_to_last|lb=7|m=track": 53,
+      "agg_gain_first_to_last|lb=8|m=track": 53,
+      "agg_gain_first_to_last|lb=9|m=track": 53,
+      "agg_gain_first_to_last|lb=10|m=track": 53,
+      "agg_gain_first_to_last|lb=None|m=surface": 140,
+      "agg_gain_first_to_last|lb=1|m=surface": 139,
+      "agg_gain_first_to_last|lb=2|m=surface": 140,
+      "agg_gain_first_to_last|lb=3|m=surface": 140,
+      "agg_gain_first_to_last|lb=4|m=surface": 140,
+      "agg_gain_first_to_last|lb=5|m=surface": 140,
+      "agg_gain_first_to_last|lb=6|m=surface": 140,
+      "agg_gain_first_to_last|lb=7|m=surface": 140,
+      "agg_gain_first_to_last|lb=8|m=surface": 140,
+      "agg_gain_first_to_last|lb=9|m=surface": 140,
+      "agg_gain_first_to_last|lb=10|m=surface": 140,
+      "agg_gain_first_to_finish|lb=None|m=": 173,
+      "agg_gain_first_to_finish|lb=1|m=": 173,
+      "agg_gain_first_to_finish|lb=2|m=": 173,
+      "agg_gain_first_to_finish|lb=3|m=": 173,
+      "agg_gain_first_to_finish|lb=4|m=": 173,
+      "agg_gain_first_to_finish|lb=5|m=": 173,
+      "agg_gain_first_to_finish|lb=6|m=": 173,
+      "agg_gain_first_to_finish|lb=7|m=": 173,
+      "agg_gain_first_to_finish|lb=8|m=": 173,
+      "agg_gain_first_to_finish|lb=9|m=": 173,
+      "agg_gain_first_to_finish|lb=10|m=": 173,
+      "agg_gain_first_to_finish|lb=None|m=distance": 25,
+      "agg_gain_first_to_finish|lb=1|m=distance": 25,
+      "agg_gain_first_to_finish|lb=2|m=distance": 25,
+      "agg_gain_first_to_finish|lb=3|m=distance": 25,
+      "agg_gain_first_to_finish|lb=4|m=distance": 25,
+      "agg_gain_first_to_finish|lb=5|m=distance": 25,
+      "agg_gain_first_to_finish|lb=6|m=distance": 25,
+      "agg_gain_first_to_finish|lb=7|m=distance": 25,
+      "agg_gain_first_to_finish|lb=8|m=distance": 25,
+      "agg_gain_first_to_finish|lb=9|m=distance": 25,
+      "agg_gain_first_to_finish|lb=10|m=distance": 25,
+      "agg_gain_first_to_finish|lb=None|m=track": 53,
+      "agg_gain_first_to_finish|lb=1|m=track": 53,
+      "agg_gain_first_to_finish|lb=2|m=track": 53,
+      "agg_gain_first_to_finish|lb=3|m=track": 53,
+      "agg_gain_first_to_finish|lb=4|m=track": 53,
+      "agg_gain_first_to_finish|lb=5|m=track": 53,
+      "agg_gain_first_to_finish|lb=6|m=track": 53,
+      "agg_gain_first_to_finish|lb=7|m=track": 53,
+      "agg_gain_first_to_finish|lb=8|m=track": 53,
+      "agg_gain_first_to_finish|lb=9|m=track": 53,
+      "agg_gain_first_to_finish|lb=10|m=track": 53,
+      "agg_gain_first_to_finish|lb=None|m=surface": 140,
+      "agg_gain_first_to_finish|lb=1|m=surface": 140,
+      "agg_gain_first_to_finish|lb=2|m=surface": 140,
+      "agg_gain_first_to_finish|lb=3|m=surface": 140,
+      "agg_gain_first_to_finish|lb=4|m=surface": 140,
+      "agg_gain_first_to_finish|lb=5|m=surface": 140,
+      "agg_gain_first_to_finish|lb=6|m=surface": 140,
+      "agg_gain_first_to_finish|lb=7|m=surface": 140,
+      "agg_gain_first_to_finish|lb=8|m=surface": 140,
+      "agg_gain_first_to_finish|lb=9|m=surface": 140,
+      "agg_gain_first_to_finish|lb=10|m=surface": 140,
+      "agg_gain_last_to_finish|lb=None|m=": 173,
+      "agg_gain_last_to_finish|lb=1|m=": 173,
+      "agg_gain_last_to_finish|lb=2|m=": 173,
+      "agg_gain_last_to_finish|lb=3|m=": 173,
+      "agg_gain_last_to_finish|lb=4|m=": 173,
+      "agg_gain_last_to_finish|lb=5|m=": 173,
+      "agg_gain_last_to_finish|lb=6|m=": 173,
+      "agg_gain_last_to_finish|lb=7|m=": 173,
+      "agg_gain_last_to_finish|lb=8|m=": 173,
+      "agg_gain_last_to_finish|lb=9|m=": 173,
+      "agg_gain_last_to_finish|lb=10|m=": 173,
+      "agg_gain_last_to_finish|lb=None|m=distance": 25,
+      "agg_gain_last_to_finish|lb=1|m=distance": 25,
+      "agg_gain_last_to_finish|lb=2|m=distance": 25,
+      "agg_gain_last_to_finish|lb=3|m=distance": 25,
+      "agg_gain_last_to_finish|lb=4|m=distance": 25,
+      "agg_gain_last_to_finish|lb=5|m=distance": 25,
+      "agg_gain_last_to_finish|lb=6|m=distance": 25,
+      "agg_gain_last_to_finish|lb=7|m=distance": 25,
+      "agg_gain_last_to_finish|lb=8|m=distance": 25,
+      "agg_gain_last_to_finish|lb=9|m=distance": 25,
+      "agg_gain_last_to_finish|lb=10|m=distance": 25,
+      "agg_gain_last_to_finish|lb=None|m=track": 53,
+      "agg_gain_last_to_finish|lb=1|m=track": 53,
+      "agg_gain_last_to_finish|lb=2|m=track": 53,
+      "agg_gain_last_to_finish|lb=3|m=track": 53,
+      "agg_gain_last_to_finish|lb=4|m=track": 53,
+      "agg_gain_last_to_finish|lb=5|m=track": 53,
+      "agg_gain_last_to_finish|lb=6|m=track": 53,
+      "agg_gain_last_to_finish|lb=7|m=track": 53,
+      "agg_gain_last_to_finish|lb=8|m=track": 53,
+      "agg_gain_last_to_finish|lb=9|m=track": 53,
+      "agg_gain_last_to_finish|lb=10|m=track": 53,
+      "agg_gain_last_to_finish|lb=None|m=surface": 140,
+      "agg_gain_last_to_finish|lb=1|m=surface": 140,
+      "agg_gain_last_to_finish|lb=2|m=surface": 140,
+      "agg_gain_last_to_finish|lb=3|m=surface": 140,
+      "agg_gain_last_to_finish|lb=4|m=surface": 140,
+      "agg_gain_last_to_finish|lb=5|m=surface": 140,
+      "agg_gain_last_to_finish|lb=6|m=surface": 140,
+      "agg_gain_last_to_finish|lb=7|m=surface": 140,
+      "agg_gain_last_to_finish|lb=8|m=surface": 140,
+      "agg_gain_last_to_finish|lb=9|m=surface": 140,
+      "agg_gain_last_to_finish|lb=10|m=surface": 140
+    },
+    "low_sample_columns": [
+      {
+        "column": "recent_4corner_avg_position",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "recent_4corner_position_change",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=None|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=1|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=2|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=3|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=4|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=5|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=6|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=7|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=8|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=9|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=10|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=None|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=1|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=2|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=3|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=4|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=5|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=6|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=7|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=8|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=9|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=10|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=None|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=1|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=2|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=3|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=4|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=5|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=6|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=7|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=8|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=9|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=10|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=None|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=1|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=2|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=3|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=4|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=5|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=6|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=7|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=8|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=9|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=10|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=None|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=1|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=2|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=3|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=4|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=5|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=6|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=7|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=8|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=9|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=10|m=distance",
+        "races_passed_gate": 25,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=None|m=distance",
+        "races_passed_gate": 26,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=1|m=distance",
+        "races_passed_gate": 26,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=2|m=distance",
+        "races_passed_gate": 26,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=3|m=distance",
+        "races_passed_gate": 26,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=4|m=distance",
+        "races_passed_gate": 26,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=5|m=distance",
+        "races_passed_gate": 26,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=6|m=distance",
+        "races_passed_gate": 26,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=7|m=distance",
+        "races_passed_gate": 26,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=8|m=distance",
+        "races_passed_gate": 26,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=9|m=distance",
+        "races_passed_gate": 26,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=10|m=distance",
+        "races_passed_gate": 26,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=None|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=1|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=2|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=3|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=4|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=5|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=6|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=7|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=8|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=9|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=10|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=None|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=1|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=2|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=3|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=4|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=5|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=6|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=7|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=8|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=9|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=10|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=None|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=1|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=2|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=3|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=4|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=5|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=6|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=7|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=8|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=9|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=10|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=None|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=1|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=2|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=3|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=4|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=5|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=6|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=7|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=8|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=9|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=10|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=None|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=1|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=2|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=3|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=4|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=5|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=6|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=7|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=8|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=9|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=10|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=None|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=1|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=2|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=3|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=4|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=5|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=6|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=7|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=8|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=9|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=10|m=track",
+        "races_passed_gate": 53,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=1|m=surface",
+        "races_passed_gate": 139,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=None|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=1|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=2|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=3|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=4|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=5|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=6|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=7|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=8|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=9|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=10|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=None|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=1|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=2|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=3|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=4|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=5|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=6|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=7|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=8|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=9|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=10|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=None|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=2|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=3|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=4|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=5|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=6|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=7|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=8|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=9|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=10|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=None|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=1|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=2|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=3|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=4|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=5|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=6|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=7|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=8|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=9|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=10|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=None|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=1|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=2|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=3|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=4|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=5|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=6|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=7|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=8|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=9|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=10|m=surface",
+        "races_passed_gate": 140,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=1|m=surface",
+        "races_passed_gate": 143,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=None|m=surface",
+        "races_passed_gate": 145,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=2|m=surface",
+        "races_passed_gate": 145,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=3|m=surface",
+        "races_passed_gate": 145,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=4|m=surface",
+        "races_passed_gate": 145,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=5|m=surface",
+        "races_passed_gate": 145,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=6|m=surface",
+        "races_passed_gate": 145,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=7|m=surface",
+        "races_passed_gate": 145,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=8|m=surface",
+        "races_passed_gate": 145,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=9|m=surface",
+        "races_passed_gate": 145,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=10|m=surface",
+        "races_passed_gate": 145,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=1|m=",
+        "races_passed_gate": 172,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=1|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=None|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=1|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=2|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=3|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=4|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=5|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=6|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=7|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=8|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=9|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=10|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=None|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=1|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=2|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=3|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=4|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=5|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=6|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=7|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=8|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=9|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=10|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=None|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=2|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=3|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=4|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=5|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=6|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=7|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=8|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=9|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=10|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=None|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=1|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=2|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=3|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=4|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=5|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=6|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=7|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=8|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=9|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=10|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=None|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=1|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=2|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=3|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=4|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=5|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=6|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=7|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=8|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=9|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=10|m=",
+        "races_passed_gate": 173,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=None|m=",
+        "races_passed_gate": 175,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=2|m=",
+        "races_passed_gate": 175,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=3|m=",
+        "races_passed_gate": 175,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=4|m=",
+        "races_passed_gate": 175,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=5|m=",
+        "races_passed_gate": 175,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=6|m=",
+        "races_passed_gate": 175,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=7|m=",
+        "races_passed_gate": 175,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=8|m=",
+        "races_passed_gate": 175,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=9|m=",
+        "races_passed_gate": 175,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=10|m=",
+        "races_passed_gate": 175,
+        "threshold": 500
+      }
+    ],
+    "mean_log_likelihood_train": -1.991256,
+    "confidence_thresholds": {
+      "solid": 0.496309,
+      "strong": 0.276668,
+      "n": 15549
+    },
+    "gate": {
+      "min_horses": 4,
+      "min_fraction": 0.5
+    },
+    "n_columns": 425,
+    "columns_fingerprint": "9071c04cd52feae9"
+  },
+  "responsiveness": {
+    "n_races_evaluated": 400,
+    "min_differs_rate": 0.05,
+    "n_cells": 425,
+    "n_responsive": 423,
+    "n_dead": 2,
+    "dead_rate": 0.0047,
+    "dead_reasons": {
+      "zero_weight": 2,
+      "column_never_usable": 0,
+      "coefficient_collapsed": 0
+    }
+  },
+  "collinearity_collapse_rate": 0.0,
+  "dead_cells_sample": [
+    {
+      "column": "recent_4corner_avg_position",
+      "label": "4角平均位置",
+      "weight": 0.0,
+      "races": 400,
+      "races_column_used": 0,
+      "differs_from_favorite": 0,
+      "differs_rate": 0.0,
+      "flat_rate": null,
+      "responsive": false,
+      "reason": "zero_weight"
+    },
+    {
+      "column": "recent_4corner_position_change",
+      "label": "コーナーでの押し上げ",
+      "weight": 0.0,
+      "races": 400,
+      "races_column_used": 0,
+      "differs_from_favorite": 0,
+      "differs_rate": 0.0,
+      "flat_rate": null,
+      "responsive": false,
+      "reason": "zero_weight"
+    }
+  ],
+  "verdict": [
+    "ok"
+  ]
+}

@@ -1,0 +1,87 @@
+{
+  "years": [
+    2021,
+    2022,
+    2023,
+    2024,
+    2025,
+    2026
+  ],
+  "ll_uniform": -2.5994694709679873,
+  "ll_per_column_all_columns": -15.388250758897792,
+  "popularity_weight_per_column": 1.353408,
+  "popularity_weight_joint": 1.203719,
+  "n_nonzero": 423,
+  "subsets": [
+    {
+      "subset": "人気だけ",
+      "columns": [
+        "popularity"
+      ],
+      "ll_per_column": -2.0048,
+      "ll_joint": -2.0099,
+      "ll_uniform": -2.5995
+    },
+    {
+      "subset": "タイム指数(同距離・直近3走)のみ",
+      "columns": [
+        "agg_time_index|lb=3|m=distance"
+      ],
+      "ll_per_column": -2.5793,
+      "ll_joint": -2.5984,
+      "ll_uniform": -2.5995
+    },
+    {
+      "subset": "平均着順(全レース・直近5走)のみ",
+      "columns": [
+        "agg_avg_finish|lb=5|m="
+      ],
+      "ll_per_column": -2.4108,
+      "ll_joint": -2.6074,
+      "ll_uniform": -2.5995
+    },
+    {
+      "subset": "人気なし・集計3種",
+      "columns": [
+        "agg_avg_finish|lb=5|m=",
+        "agg_time_index|lb=3|m=distance",
+        "agg_margin|lb=5|m="
+      ],
+      "ll_per_column": -2.4363,
+      "ll_joint": -2.5959,
+      "ll_uniform": -2.5995
+    },
+    {
+      "subset": "人気 + 集計3種",
+      "columns": [
+        "popularity",
+        "agg_avg_finish|lb=5|m=",
+        "agg_time_index|lb=3|m=distance",
+        "agg_margin|lb=5|m="
+      ],
+      "ll_per_column": -2.2352,
+      "ll_joint": -2.0096,
+      "ll_uniform": -2.5995
+    },
+    {
+      "subset": "コーナー系2種",
+      "columns": [
+        "agg_corner_first|lb=3|m=",
+        "agg_gain_last_to_finish|lb=3|m="
+      ],
+      "ll_per_column": -2.5987,
+      "ll_joint": -2.5995,
+      "ll_uniform": -2.5995
+    },
+    {
+      "subset": "騎手・近走2種",
+      "columns": [
+        "jockey_track_top3_rate",
+        "horse_recent_90d_top3_rate"
+      ],
+      "ll_per_column": -2.3499,
+      "ll_joint": -2.5347,
+      "ll_uniform": -2.5995
+    }
+  ]
+}

@@ -1,0 +1,1022 @@
+{
+  "n_candidates": 1500,
+  "n_tried": 1500,
+  "n_qualified": 1500,
+  "expected_false_positives_at_valid": 75.0,
+  "min_bets": 200,
+  "columns": [
+    "popularity",
+    "burden_weight",
+    "horse_weight_change",
+    "agg_top3_rate|lb=5|m=",
+    "agg_top3_rate|lb=5|m=surface",
+    "agg_top3_rate|lb=5|m=distance",
+    "agg_top3_rate|lb=10|m=",
+    "agg_top3_rate|lb=10|m=surface",
+    "agg_top3_rate|lb=10|m=distance",
+    "agg_top3_rate|lb=None|m=",
+    "agg_top3_rate|lb=None|m=surface",
+    "agg_top3_rate|lb=None|m=distance",
+    "agg_win_rate|lb=5|m=",
+    "agg_win_rate|lb=5|m=surface",
+    "agg_win_rate|lb=5|m=distance",
+    "agg_win_rate|lb=10|m=",
+    "agg_win_rate|lb=10|m=surface",
+    "agg_win_rate|lb=10|m=distance",
+    "agg_win_rate|lb=None|m=",
+    "agg_win_rate|lb=None|m=surface",
+    "agg_win_rate|lb=None|m=distance",
+    "agg_avg_finish|lb=5|m=",
+    "agg_avg_finish|lb=5|m=surface",
+    "agg_avg_finish|lb=5|m=distance",
+    "agg_avg_finish|lb=10|m=",
+    "agg_avg_finish|lb=10|m=surface",
+    "agg_avg_finish|lb=10|m=distance",
+    "agg_avg_finish|lb=None|m=",
+    "agg_avg_finish|lb=None|m=surface",
+    "agg_avg_finish|lb=None|m=distance",
+    "agg_avg_final3f|lb=5|m=",
+    "agg_avg_final3f|lb=5|m=surface",
+    "agg_avg_final3f|lb=5|m=distance",
+    "agg_avg_final3f|lb=10|m=",
+    "agg_avg_final3f|lb=10|m=surface",
+    "agg_avg_final3f|lb=10|m=distance",
+    "agg_avg_final3f|lb=None|m=",
+    "agg_avg_final3f|lb=None|m=surface",
+    "agg_avg_final3f|lb=None|m=distance",
+    "agg_avg_popularity|lb=5|m=",
+    "agg_avg_popularity|lb=5|m=surface",
+    "agg_avg_popularity|lb=5|m=distance",
+    "agg_avg_popularity|lb=10|m=",
+    "agg_avg_popularity|lb=10|m=surface",
+    "agg_avg_popularity|lb=10|m=distance",
+    "agg_avg_popularity|lb=None|m=",
+    "agg_avg_popularity|lb=None|m=surface",
+    "agg_avg_popularity|lb=None|m=distance"
+  ],
+  "baselines": {
+    "favorite_train": {
+      "bets": 10368,
+      "hit_rate": 0.3338,
+      "roi": 0.7998
+    },
+    "favorite_valid": {
+      "bets": 3454,
+      "hit_rate": 0.3448,
+      "roi": 0.7979
+    },
+    "favorite_test": {
+      "bets": 3455,
+      "hit_rate": 0.3294,
+      "roi": 0.776
+    },
+    "favorite_final": {
+      "bets": 1368,
+      "hit_rate": 0.326,
+      "roi": 0.7741
+    }
+  },
+  "top": [
+    {
+      "weights": {
+        "popularity": 1.0,
+        "agg_top3_rate|lb=5|m=surface": 1.0,
+        "agg_top3_rate|lb=5|m=distance": -1.0,
+        "agg_top3_rate|lb=None|m=": 0.5,
+        "agg_top3_rate|lb=None|m=surface": 0.5,
+        "agg_top3_rate|lb=None|m=distance": -1.0,
+        "agg_win_rate|lb=5|m=": -1.0,
+        "agg_win_rate|lb=5|m=surface": 1.0,
+        "agg_win_rate|lb=5|m=distance": -1.0,
+        "agg_win_rate|lb=10|m=": -1.0,
+        "agg_win_rate|lb=10|m=surface": 0.5,
+        "agg_win_rate|lb=10|m=distance": 0.5,
+        "agg_win_rate|lb=None|m=": 0.5,
+        "agg_win_rate|lb=None|m=distance": -1.0,
+        "agg_avg_finish|lb=5|m=": 0.5,
+        "agg_avg_finish|lb=5|m=surface": -0.5,
+        "agg_avg_finish|lb=10|m=": -0.5,
+        "agg_avg_finish|lb=10|m=surface": -1.0,
+        "agg_avg_finish|lb=10|m=distance": 0.5,
+        "agg_avg_final3f|lb=5|m=": 1.0,
+        "agg_avg_final3f|lb=5|m=surface": -0.5,
+        "agg_avg_final3f|lb=None|m=surface": -1.0,
+        "agg_avg_final3f|lb=None|m=distance": -0.5,
+        "agg_avg_popularity|lb=5|m=": -1.0,
+        "agg_avg_popularity|lb=5|m=distance": 1.0,
+        "agg_avg_popularity|lb=10|m=surface": -0.5,
+        "agg_avg_popularity|lb=10|m=distance": 0.5,
+        "agg_avg_popularity|lb=None|m=": 1.0,
+        "agg_avg_popularity|lb=None|m=surface": 1.0,
+        "agg_avg_popularity|lb=None|m=distance": 0.5
+      },
+      "temperature": 0.5,
+      "ev_threshold": 1.0,
+      "train": {
+        "races_with_bet": 10248,
+        "bets": 17561,
+        "hit_rate": 0.1073,
+        "roi": 0.79,
+        "profit_units": -3688.5
+      },
+      "valid": {
+        "races_with_bet": 3392,
+        "bets": 5926,
+        "hit_rate": 0.1019,
+        "roi": 0.8516,
+        "profit_units": -879.4
+      },
+      "test": {
+        "races_with_bet": 3412,
+        "bets": 5853,
+        "hit_rate": 0.1073,
+        "roi": 0.7362,
+        "profit_units": -1543.8
+      },
+      "final": {
+        "races_with_bet": 1356,
+        "bets": 2407,
+        "hit_rate": 0.0968,
+        "roi": 0.7265,
+        "profit_units": -658.2
+      }
+    },
+    {
+      "weights": {
+        "popularity": 1.0,
+        "burden_weight": 1.0,
+        "agg_top3_rate|lb=5|m=surface": -0.5,
+        "agg_top3_rate|lb=5|m=distance": -1.0,
+        "agg_top3_rate|lb=10|m=": -0.5,
+        "agg_top3_rate|lb=10|m=surface": -0.5,
+        "agg_top3_rate|lb=10|m=distance": -1.0,
+        "agg_top3_rate|lb=None|m=surface": 0.5,
+        "agg_win_rate|lb=5|m=": -1.0,
+        "agg_win_rate|lb=5|m=surface": 0.5,
+        "agg_win_rate|lb=5|m=distance": -1.0,
+        "agg_win_rate|lb=None|m=distance": 0.5,
+        "agg_avg_finish|lb=5|m=": 1.0,
+        "agg_avg_finish|lb=5|m=surface": 0.5,
+        "agg_avg_finish|lb=10|m=distance": 1.0,
+        "agg_avg_finish|lb=None|m=surface": 0.5,
+        "agg_avg_finish|lb=None|m=distance": 0.5,
+        "agg_avg_final3f|lb=10|m=surface": -0.5,
+        "agg_avg_final3f|lb=10|m=distance": 1.0,
+        "agg_avg_final3f|lb=None|m=surface": -1.0,
+        "agg_avg_final3f|lb=None|m=distance": 0.5,
+        "agg_avg_popularity|lb=5|m=surface": 1.0,
+        "agg_avg_popularity|lb=10|m=surface": 1.0,
+        "agg_avg_popularity|lb=None|m=": -1.0,
+        "agg_avg_popularity|lb=None|m=surface": -0.5
+      },
+      "temperature": 0.5,
+      "ev_threshold": 1.3,
+      "train": {
+        "races_with_bet": 10059,
+        "bets": 16610,
+        "hit_rate": 0.0851,
+        "roi": 0.7496,
+        "profit_units": -4159.5
+      },
+      "valid": {
+        "races_with_bet": 3324,
+        "bets": 5259,
+        "hit_rate": 0.0974,
+        "roi": 0.8498,
+        "profit_units": -789.7
+      },
+      "test": {
+        "races_with_bet": 3320,
+        "bets": 5368,
+        "hit_rate": 0.0874,
+        "roi": 0.6646,
+        "profit_units": -1800.3
+      },
+      "final": {
+        "races_with_bet": 1338,
+        "bets": 2088,
+        "hit_rate": 0.0967,
+        "roi": 0.8185,
+        "profit_units": -378.9
+      }
+    },
+    {
+      "weights": {
+        "popularity": 0.5,
+        "horse_weight_change": -1.0,
+        "agg_top3_rate|lb=5|m=": -1.0,
+        "agg_top3_rate|lb=5|m=surface": -1.0,
+        "agg_top3_rate|lb=10|m=": -0.5,
+        "agg_top3_rate|lb=10|m=surface": -1.0,
+        "agg_top3_rate|lb=10|m=distance": -0.5,
+        "agg_top3_rate|lb=None|m=": 1.0,
+        "agg_win_rate|lb=5|m=": -1.0,
+        "agg_win_rate|lb=5|m=surface": -1.0,
+        "agg_win_rate|lb=5|m=distance": 0.5,
+        "agg_win_rate|lb=10|m=": -1.0,
+        "agg_win_rate|lb=10|m=distance": -0.5,
+        "agg_win_rate|lb=None|m=": -0.5,
+        "agg_win_rate|lb=None|m=distance": 0.5,
+        "agg_avg_finish|lb=5|m=": 0.5,
+        "agg_avg_finish|lb=5|m=surface": 1.0,
+        "agg_avg_finish|lb=10|m=": 0.5,
+        "agg_avg_finish|lb=10|m=surface": 1.0,
+        "agg_avg_finish|lb=10|m=distance": -1.0,
+        "agg_avg_finish|lb=None|m=": 1.0,
+        "agg_avg_finish|lb=None|m=surface": -1.0,
+        "agg_avg_final3f|lb=5|m=": 0.5,
+        "agg_avg_final3f|lb=5|m=surface": 0.5,
+        "agg_avg_final3f|lb=10|m=surface": 0.5,
+        "agg_avg_final3f|lb=10|m=distance": 0.5,
+        "agg_avg_final3f|lb=None|m=": -1.0,
+        "agg_avg_final3f|lb=None|m=surface": -1.0,
+        "agg_avg_popularity|lb=5|m=": 1.0,
+        "agg_avg_popularity|lb=5|m=surface": 0.5,
+        "agg_avg_popularity|lb=5|m=distance": -0.5,
+        "agg_avg_popularity|lb=10|m=": 0.5,
+        "agg_avg_popularity|lb=10|m=surface": 1.0,
+        "agg_avg_popularity|lb=10|m=distance": -0.5,
+        "agg_avg_popularity|lb=None|m=": 1.0,
+        "agg_avg_popularity|lb=None|m=distance": -0.5
+      },
+      "temperature": 0.5,
+      "ev_threshold": 1.2,
+      "train": {
+        "races_with_bet": 10270,
+        "bets": 20319,
+        "hit_rate": 0.0624,
+        "roi": 0.7702,
+        "profit_units": -4669.7
+      },
+      "valid": {
+        "races_with_bet": 3409,
+        "bets": 6537,
+        "hit_rate": 0.0699,
+        "roi": 0.8414,
+        "profit_units": -1036.6
+      },
+      "test": {
+        "races_with_bet": 3419,
+        "bets": 6532,
+        "hit_rate": 0.0666,
+        "roi": 0.6909,
+        "profit_units": -2019.0
+      },
+      "final": {
+        "races_with_bet": 1351,
+        "bets": 2366,
+        "hit_rate": 0.0773,
+        "roi": 0.883,
+        "profit_units": -276.8
+      }
+    },
+    {
+      "weights": {
+        "popularity": 1.0,
+        "burden_weight": 1.0,
+        "horse_weight_change": -0.5,
+        "agg_top3_rate|lb=5|m=surface": -1.0,
+        "agg_top3_rate|lb=5|m=distance": 0.5,
+        "agg_top3_rate|lb=10|m=surface": 0.5,
+        "agg_top3_rate|lb=10|m=distance": -1.0,
+        "agg_top3_rate|lb=None|m=surface": 0.5,
+        "agg_win_rate|lb=5|m=": -1.0,
+        "agg_win_rate|lb=5|m=surface": 1.0,
+        "agg_win_rate|lb=5|m=distance": 0.5,
+        "agg_win_rate|lb=10|m=surface": -0.5,
+        "agg_win_rate|lb=10|m=distance": 0.5,
+        "agg_win_rate|lb=None|m=": 1.0,
+        "agg_win_rate|lb=None|m=surface": 1.0,
+        "agg_win_rate|lb=None|m=distance": 1.0,
+        "agg_avg_finish|lb=5|m=": 0.5,
+        "agg_avg_finish|lb=5|m=surface": -0.5,
+        "agg_avg_finish|lb=10|m=surface": 1.0,
+        "agg_avg_finish|lb=None|m=": 0.5,
+        "agg_avg_finish|lb=None|m=surface": -1.0,
+        "agg_avg_finish|lb=None|m=distance": -0.5,
+        "agg_avg_final3f|lb=5|m=surface": -0.5,
+        "agg_avg_final3f|lb=5|m=distance": 1.0,
+        "agg_avg_final3f|lb=None|m=": -1.0,
+        "agg_avg_popularity|lb=5|m=": 1.0,
+        "agg_avg_popularity|lb=5|m=surface": 0.5,
+        "agg_avg_popularity|lb=5|m=distance": 0.5,
+        "agg_avg_popularity|lb=10|m=": -1.0,
+        "agg_avg_popularity|lb=10|m=distance": -1.0,
+        "agg_avg_popularity|lb=None|m=": -1.0,
+        "agg_avg_popularity|lb=None|m=surface": 1.0
+      },
+      "temperature": 0.5,
+      "ev_threshold": 1.2,
+      "train": {
+        "races_with_bet": 10136,
+        "bets": 17849,
+        "hit_rate": 0.0971,
+        "roi": 0.6644,
+        "profit_units": -5989.6
+      },
+      "valid": {
+        "races_with_bet": 3357,
+        "bets": 5913,
+        "hit_rate": 0.1087,
+        "roi": 0.8257,
+        "profit_units": -1030.4
+      },
+      "test": {
+        "races_with_bet": 3365,
+        "bets": 5926,
+        "hit_rate": 0.1038,
+        "roi": 0.6566,
+        "profit_units": -2034.7
+      },
+      "final": {
+        "races_with_bet": 1342,
+        "bets": 2454,
+        "hit_rate": 0.0848,
+        "roi": 0.6243,
+        "profit_units": -921.9
+      }
+    },
+    {
+      "weights": {
+        "popularity": 1.0,
+        "burden_weight": 1.0,
+        "agg_top3_rate|lb=5|m=": 1.0,
+        "agg_top3_rate|lb=10|m=surface": -1.0,
+        "agg_top3_rate|lb=None|m=": -1.0,
+        "agg_win_rate|lb=5|m=": -1.0,
+        "agg_win_rate|lb=5|m=surface": -1.0,
+        "agg_win_rate|lb=5|m=distance": 1.0,
+        "agg_win_rate|lb=10|m=": 0.5,
+        "agg_win_rate|lb=None|m=surface": 0.5,
+        "agg_win_rate|lb=None|m=distance": 1.0,
+        "agg_avg_finish|lb=5|m=surface": -0.5,
+        "agg_avg_finish|lb=5|m=distance": 1.0,
+        "agg_avg_finish|lb=10|m=": 0.5,
+        "agg_avg_finish|lb=10|m=distance": 0.5,
+        "agg_avg_finish|lb=None|m=": 0.5,
+        "agg_avg_finish|lb=None|m=distance": 0.5,
+        "agg_avg_final3f|lb=10|m=": -1.0,
+        "agg_avg_final3f|lb=10|m=surface": -1.0,
+        "agg_avg_final3f|lb=10|m=distance": 1.0,
+        "agg_avg_final3f|lb=None|m=": 1.0,
+        "agg_avg_final3f|lb=None|m=surface": -0.5,
+        "agg_avg_popularity|lb=5|m=": -0.5,
+        "agg_avg_popularity|lb=5|m=surface": 1.0,
+        "agg_avg_popularity|lb=10|m=": -0.5,
+        "agg_avg_popularity|lb=10|m=distance": -1.0,
+        "agg_avg_popularity|lb=None|m=surface": -0.5
+      },
+      "temperature": 0.5,
+      "ev_threshold": 1.1,
+      "train": {
+        "races_with_bet": 10242,
+        "bets": 19681,
+        "hit_rate": 0.073,
+        "roi": 0.6248,
+        "profit_units": -7384.4
+      },
+      "valid": {
+        "races_with_bet": 3405,
+        "bets": 6331,
+        "hit_rate": 0.078,
+        "roi": 0.8139,
+        "profit_units": -1177.9
+      },
+      "test": {
+        "races_with_bet": 3403,
+        "bets": 6221,
+        "hit_rate": 0.0767,
+        "roi": 0.6117,
+        "profit_units": -2415.5
+      },
+      "final": {
+        "races_with_bet": 1354,
+        "bets": 2573,
+        "hit_rate": 0.0777,
+        "roi": 0.7171,
+        "profit_units": -727.9
+      }
+    },
+    {
+      "weights": {
+        "horse_weight_change": -1.0,
+        "agg_top3_rate|lb=5|m=": -0.5,
+        "agg_top3_rate|lb=5|m=distance": 0.5,
+        "agg_top3_rate|lb=10|m=": 0.5,
+        "agg_top3_rate|lb=None|m=": 1.0,
+        "agg_win_rate|lb=5|m=distance": -0.5,
+        "agg_win_rate|lb=10|m=": -1.0,
+        "agg_win_rate|lb=10|m=surface": -1.0,
+        "agg_win_rate|lb=None|m=": 1.0,
+        "agg_win_rate|lb=None|m=distance": 1.0,
+        "agg_avg_finish|lb=10|m=": -1.0,
+        "agg_avg_finish|lb=10|m=surface": 1.0,
+        "agg_avg_finish|lb=10|m=distance": -1.0,
+        "agg_avg_finish|lb=None|m=": -0.5,
+        "agg_avg_finish|lb=None|m=surface": 0.5,
+        "agg_avg_finish|lb=None|m=distance": 0.5,
+        "agg_avg_final3f|lb=5|m=": 1.0,
+        "agg_avg_final3f|lb=5|m=distance": -0.5,
+        "agg_avg_final3f|lb=10|m=surface": 1.0,
+        "agg_avg_final3f|lb=10|m=distance": -1.0,
+        "agg_avg_final3f|lb=None|m=": 1.0,
+        "agg_avg_final3f|lb=None|m=surface": 1.0,
+        "agg_avg_popularity|lb=5|m=": 0.5,
+        "agg_avg_popularity|lb=10|m=surface": 1.0,
+        "agg_avg_popularity|lb=10|m=distance": -0.5,
+        "agg_avg_popularity|lb=None|m=distance": -0.5
+      },
+      "temperature": 0.5,
+      "ev_threshold": 1.2,
+      "train": {
+        "races_with_bet": 10285,
+        "bets": 21424,
+        "hit_rate": 0.0862,
+        "roi": 0.7815,
+        "profit_units": -4681.8
+      },
+      "valid": {
+        "races_with_bet": 3421,
+        "bets": 7025,
+        "hit_rate": 0.0921,
+        "roi": 0.8029,
+        "profit_units": -1384.6
+      },
+      "test": {
+        "races_with_bet": 3417,
+        "bets": 6971,
+        "hit_rate": 0.0888,
+        "roi": 0.6809,
+        "profit_units": -2224.2
+      },
+      "final": {
+        "races_with_bet": 1350,
+        "bets": 2503,
+        "hit_rate": 0.0979,
+        "roi": 0.8986,
+        "profit_units": -253.7
+      }
+    },
+    {
+      "weights": {
+        "popularity": -1.0,
+        "burden_weight": 1.0,
+        "horse_weight_change": 0.5,
+        "agg_top3_rate|lb=5|m=": -0.5,
+        "agg_top3_rate|lb=5|m=distance": -1.0,
+        "agg_top3_rate|lb=10|m=surface": 1.0,
+        "agg_top3_rate|lb=None|m=distance": 0.5,
+        "agg_win_rate|lb=5|m=surface": -1.0,
+        "agg_win_rate|lb=5|m=distance": -1.0,
+        "agg_win_rate|lb=10|m=": -1.0,
+        "agg_win_rate|lb=10|m=surface": -0.5,
+        "agg_win_rate|lb=10|m=distance": 0.5,
+        "agg_win_rate|lb=None|m=": 1.0,
+        "agg_avg_finish|lb=5|m=surface": 1.0,
+        "agg_avg_finish|lb=5|m=distance": -0.5,
+        "agg_avg_finish|lb=10|m=": -0.5,
+        "agg_avg_finish|lb=10|m=surface": 1.0,
+        "agg_avg_finish|lb=10|m=distance": 1.0,
+        "agg_avg_finish|lb=None|m=surface": 0.5,
+        "agg_avg_final3f|lb=5|m=": -0.5,
+        "agg_avg_final3f|lb=5|m=surface": 0.5,
+        "agg_avg_final3f|lb=5|m=distance": 0.5,
+        "agg_avg_final3f|lb=10|m=": 0.5,
+        "agg_avg_final3f|lb=10|m=surface": 0.5,
+        "agg_avg_final3f|lb=None|m=surface": 1.0,
+        "agg_avg_popularity|lb=5|m=": 1.0,
+        "agg_avg_popularity|lb=5|m=distance": 0.5,
+        "agg_avg_popularity|lb=10|m=": 1.0,
+        "agg_avg_popularity|lb=10|m=distance": -1.0,
+        "agg_avg_popularity|lb=None|m=distance": -1.0
+      },
+      "temperature": 0.5,
+      "ev_threshold": 1.1,
+      "train": {
+        "races_with_bet": 10340,
+        "bets": 19908,
+        "hit_rate": 0.0813,
+        "roi": 0.7664,
+        "profit_units": -4651.3
+      },
+      "valid": {
+        "races_with_bet": 3431,
+        "bets": 6312,
+        "hit_rate": 0.0922,
+        "roi": 0.7999,
+        "profit_units": -1263.0
+      },
+      "test": {
+        "races_with_bet": 3440,
+        "bets": 6394,
+        "hit_rate": 0.0887,
+        "roi": 0.6452,
+        "profit_units": -2268.4
+      },
+      "final": {
+        "races_with_bet": 1356,
+        "bets": 2364,
+        "hit_rate": 0.1049,
+        "roi": 0.744,
+        "profit_units": -605.3
+      }
+    },
+    {
+      "weights": {
+        "popularity": 1.0,
+        "burden_weight": 1.0,
+        "agg_top3_rate|lb=5|m=": -0.5,
+        "agg_top3_rate|lb=10|m=": 0.5,
+        "agg_top3_rate|lb=10|m=distance": 1.0,
+        "agg_top3_rate|lb=None|m=surface": 0.5,
+        "agg_top3_rate|lb=None|m=distance": -0.5,
+        "agg_win_rate|lb=5|m=": 0.5,
+        "agg_win_rate|lb=5|m=surface": 1.0,
+        "agg_win_rate|lb=10|m=surface": -0.5,
+        "agg_win_rate|lb=10|m=distance": -0.5,
+        "agg_win_rate|lb=None|m=": 1.0,
+        "agg_win_rate|lb=None|m=surface": 0.5,
+        "agg_win_rate|lb=None|m=distance": -1.0,
+        "agg_avg_finish|lb=5|m=": -0.5,
+        "agg_avg_finish|lb=5|m=surface": 0.5,
+        "agg_avg_finish|lb=10|m=": 1.0,
+        "agg_avg_finish|lb=10|m=surface": 1.0,
+        "agg_avg_finish|lb=None|m=": 0.5,
+        "agg_avg_finish|lb=None|m=surface": 0.5,
+        "agg_avg_final3f|lb=5|m=": 1.0,
+        "agg_avg_final3f|lb=5|m=surface": 0.5,
+        "agg_avg_final3f|lb=5|m=distance": 1.0,
+        "agg_avg_final3f|lb=10|m=": -1.0,
+        "agg_avg_final3f|lb=None|m=surface": 1.0,
+        "agg_avg_final3f|lb=None|m=distance": 1.0,
+        "agg_avg_popularity|lb=5|m=distance": 1.0,
+        "agg_avg_popularity|lb=10|m=": -1.0,
+        "agg_avg_popularity|lb=10|m=surface": -0.5,
+        "agg_avg_popularity|lb=None|m=": -0.5,
+        "agg_avg_popularity|lb=None|m=distance": -0.5
+      },
+      "temperature": 0.5,
+      "ev_threshold": 1.0,
+      "train": {
+        "races_with_bet": 10288,
+        "bets": 13985,
+        "hit_rate": 0.1727,
+        "roi": 0.7998,
+        "profit_units": -2799.9
+      },
+      "valid": {
+        "races_with_bet": 3417,
+        "bets": 4412,
+        "hit_rate": 0.209,
+        "roi": 0.7973,
+        "profit_units": -894.2
+      },
+      "test": {
+        "races_with_bet": 3424,
+        "bets": 4477,
+        "hit_rate": 0.1899,
+        "roi": 0.6966,
+        "profit_units": -1358.3
+      },
+      "final": {
+        "races_with_bet": 1360,
+        "bets": 1737,
+        "hit_rate": 0.1796,
+        "roi": 0.7843,
+        "profit_units": -374.7
+      }
+    },
+    {
+      "weights": {
+        "burden_weight": 0.5,
+        "agg_top3_rate|lb=5|m=": 0.5,
+        "agg_top3_rate|lb=5|m=surface": 1.0,
+        "agg_top3_rate|lb=5|m=distance": 1.0,
+        "agg_top3_rate|lb=10|m=": 0.5,
+        "agg_top3_rate|lb=10|m=distance": 1.0,
+        "agg_top3_rate|lb=None|m=": -1.0,
+        "agg_top3_rate|lb=None|m=surface": -0.5,
+        "agg_top3_rate|lb=None|m=distance": 0.5,
+        "agg_win_rate|lb=5|m=surface": 1.0,
+        "agg_win_rate|lb=10|m=distance": 0.5,
+        "agg_win_rate|lb=None|m=distance": -1.0,
+        "agg_avg_finish|lb=5|m=": 0.5,
+        "agg_avg_finish|lb=5|m=surface": -1.0,
+        "agg_avg_finish|lb=5|m=distance": 1.0,
+        "agg_avg_finish|lb=10|m=surface": 0.5,
+        "agg_avg_finish|lb=10|m=distance": -0.5,
+        "agg_avg_finish|lb=None|m=": 0.5,
+        "agg_avg_finish|lb=None|m=surface": -0.5,
+        "agg_avg_finish|lb=None|m=distance": 0.5,
+        "agg_avg_final3f|lb=5|m=": -1.0,
+        "agg_avg_final3f|lb=5|m=surface": -1.0,
+        "agg_avg_final3f|lb=10|m=distance": 1.0,
+        "agg_avg_final3f|lb=None|m=surface": 0.5,
+        "agg_avg_final3f|lb=None|m=distance": 1.0,
+        "agg_avg_popularity|lb=5|m=surface": -1.0,
+        "agg_avg_popularity|lb=10|m=": -1.0,
+        "agg_avg_popularity|lb=10|m=surface": -1.0,
+        "agg_avg_popularity|lb=10|m=distance": -0.5,
+        "agg_avg_popularity|lb=None|m=distance": 1.0
+      },
+      "temperature": 0.5,
+      "ev_threshold": 1.2,
+      "train": {
+        "races_with_bet": 10331,
+        "bets": 20923,
+        "hit_rate": 0.0582,
+        "roi": 0.6164,
+        "profit_units": -8026.4
+      },
+      "valid": {
+        "races_with_bet": 3438,
+        "bets": 6967,
+        "hit_rate": 0.0606,
+        "roi": 0.7909,
+        "profit_units": -1456.6
+      },
+      "test": {
+        "races_with_bet": 3441,
+        "bets": 7131,
+        "hit_rate": 0.06,
+        "roi": 0.5788,
+        "profit_units": -3003.4
+      },
+      "final": {
+        "races_with_bet": 1362,
+        "bets": 2574,
+        "hit_rate": 0.0637,
+        "roi": 0.6362,
+        "profit_units": -936.5
+      }
+    },
+    {
+      "weights": {
+        "popularity": 1.0,
+        "burden_weight": 1.0,
+        "horse_weight_change": -0.5,
+        "agg_top3_rate|lb=5|m=surface": -0.5,
+        "agg_top3_rate|lb=10|m=": 1.0,
+        "agg_top3_rate|lb=10|m=surface": -0.5,
+        "agg_top3_rate|lb=10|m=distance": -1.0,
+        "agg_win_rate|lb=5|m=": 0.5,
+        "agg_win_rate|lb=5|m=distance": -0.5,
+        "agg_win_rate|lb=10|m=": -1.0,
+        "agg_win_rate|lb=10|m=surface": 1.0,
+        "agg_avg_finish|lb=5|m=": -1.0,
+        "agg_avg_finish|lb=5|m=surface": -0.5,
+        "agg_avg_finish|lb=10|m=": 1.0,
+        "agg_avg_finish|lb=None|m=surface": 1.0,
+        "agg_avg_final3f|lb=5|m=surface": -0.5,
+        "agg_avg_final3f|lb=5|m=distance": 0.5,
+        "agg_avg_final3f|lb=10|m=": 0.5,
+        "agg_avg_final3f|lb=None|m=": 1.0,
+        "agg_avg_popularity|lb=5|m=surface": -0.5,
+        "agg_avg_popularity|lb=5|m=distance": 1.0,
+        "agg_avg_popularity|lb=10|m=surface": -1.0,
+        "agg_avg_popularity|lb=10|m=distance": -1.0,
+        "agg_avg_popularity|lb=None|m=": 0.5,
+        "agg_avg_popularity|lb=None|m=surface": 1.0
+      },
+      "temperature": 0.5,
+      "ev_threshold": 1.0,
+      "train": {
+        "races_with_bet": 10286,
+        "bets": 19991,
+        "hit_rate": 0.1052,
+        "roi": 0.7703,
+        "profit_units": -4592.7
+      },
+      "valid": {
+        "races_with_bet": 3414,
+        "bets": 6317,
+        "hit_rate": 0.1138,
+        "roi": 0.7885,
+        "profit_units": -1336.3
+      },
+      "test": {
+        "races_with_bet": 3430,
+        "bets": 6419,
+        "hit_rate": 0.1129,
+        "roi": 0.7754,
+        "profit_units": -1441.6
+      },
+      "final": {
+        "races_with_bet": 1359,
+        "bets": 2560,
+        "hit_rate": 0.1012,
+        "roi": 0.9185,
+        "profit_units": -208.6
+      }
+    },
+    {
+      "weights": {
+        "popularity": 1.0,
+        "burden_weight": 0.5,
+        "agg_top3_rate|lb=5|m=": -1.0,
+        "agg_top3_rate|lb=5|m=surface": -1.0,
+        "agg_top3_rate|lb=5|m=distance": 1.0,
+        "agg_top3_rate|lb=10|m=": -1.0,
+        "agg_top3_rate|lb=10|m=surface": -0.5,
+        "agg_win_rate|lb=5|m=surface": -1.0,
+        "agg_win_rate|lb=5|m=distance": 1.0,
+        "agg_avg_finish|lb=5|m=surface": 1.0,
+        "agg_avg_finish|lb=10|m=": 1.0,
+        "agg_avg_finish|lb=10|m=distance": 1.0,
+        "agg_avg_finish|lb=None|m=": -0.5,
+        "agg_avg_final3f|lb=5|m=": 0.5,
+        "agg_avg_final3f|lb=5|m=surface": 0.5,
+        "agg_avg_final3f|lb=10|m=distance": -0.5,
+        "agg_avg_final3f|lb=None|m=": -0.5,
+        "agg_avg_final3f|lb=None|m=surface": 0.5,
+        "agg_avg_final3f|lb=None|m=distance": 0.5,
+        "agg_avg_popularity|lb=5|m=": 1.0,
+        "agg_avg_popularity|lb=5|m=surface": 1.0,
+        "agg_avg_popularity|lb=10|m=distance": -0.5,
+        "agg_avg_popularity|lb=None|m=": 0.5,
+        "agg_avg_popularity|lb=None|m=surface": 0.5,
+        "agg_avg_popularity|lb=None|m=distance": -1.0
+      },
+      "temperature": 1.0,
+      "ev_threshold": 1.0,
+      "train": {
+        "races_with_bet": 10339,
+        "bets": 29693,
+        "hit_rate": 0.0689,
+        "roi": 0.7441,
+        "profit_units": -7598.2
+      },
+      "valid": {
+        "races_with_bet": 3433,
+        "bets": 9077,
+        "hit_rate": 0.0728,
+        "roi": 0.782,
+        "profit_units": -1978.8
+      },
+      "test": {
+        "races_with_bet": 3443,
+        "bets": 9355,
+        "hit_rate": 0.0708,
+        "roi": 0.6029,
+        "profit_units": -3714.6
+      },
+      "final": {
+        "races_with_bet": 1362,
+        "bets": 3323,
+        "hit_rate": 0.0855,
+        "roi": 0.7845,
+        "profit_units": -716.1
+      }
+    },
+    {
+      "weights": {
+        "popularity": 1.0,
+        "burden_weight": 1.0,
+        "horse_weight_change": -1.0,
+        "agg_top3_rate|lb=5|m=surface": 0.5,
+        "agg_top3_rate|lb=5|m=distance": 0.5,
+        "agg_top3_rate|lb=10|m=distance": 0.5,
+        "agg_top3_rate|lb=None|m=": 1.0,
+        "agg_top3_rate|lb=None|m=surface": 1.0,
+        "agg_top3_rate|lb=None|m=distance": -0.5,
+        "agg_win_rate|lb=5|m=surface": -1.0,
+        "agg_win_rate|lb=10|m=distance": -1.0,
+        "agg_win_rate|lb=None|m=": -0.5,
+        "agg_win_rate|lb=None|m=distance": 0.5,
+        "agg_avg_finish|lb=5|m=surface": 1.0,
+        "agg_avg_finish|lb=None|m=": -0.5,
+        "agg_avg_final3f|lb=5|m=surface": -0.5,
+        "agg_avg_final3f|lb=10|m=": -1.0,
+        "agg_avg_final3f|lb=10|m=surface": -1.0,
+        "agg_avg_final3f|lb=None|m=": -0.5,
+        "agg_avg_final3f|lb=None|m=surface": 1.0,
+        "agg_avg_final3f|lb=None|m=distance": 0.5,
+        "agg_avg_popularity|lb=5|m=": 1.0,
+        "agg_avg_popularity|lb=5|m=distance": 1.0,
+        "agg_avg_popularity|lb=10|m=surface": -0.5,
+        "agg_avg_popularity|lb=10|m=distance": -1.0,
+        "agg_avg_popularity|lb=None|m=": 1.0
+      },
+      "temperature": 1.0,
+      "ev_threshold": 1.1,
+      "train": {
+        "races_with_bet": 10300,
+        "bets": 20487,
+        "hit_rate": 0.1165,
+        "roi": 0.7446,
+        "profit_units": -5231.4
+      },
+      "valid": {
+        "races_with_bet": 3406,
+        "bets": 6427,
+        "hit_rate": 0.133,
+        "roi": 0.7762,
+        "profit_units": -1438.5
+      },
+      "test": {
+        "races_with_bet": 3415,
+        "bets": 6526,
+        "hit_rate": 0.1234,
+        "roi": 0.6666,
+        "profit_units": -2176.0
+      },
+      "final": {
+        "races_with_bet": 1342,
+        "bets": 2283,
+        "hit_rate": 0.1345,
+        "roi": 0.8491,
+        "profit_units": -344.6
+      }
+    },
+    {
+      "weights": {
+        "popularity": -0.5,
+        "horse_weight_change": -0.5,
+        "agg_top3_rate|lb=5|m=": 0.5,
+        "agg_top3_rate|lb=5|m=surface": 1.0,
+        "agg_top3_rate|lb=10|m=": 0.5,
+        "agg_top3_rate|lb=10|m=surface": 1.0,
+        "agg_win_rate|lb=5|m=": -0.5,
+        "agg_win_rate|lb=5|m=surface": 1.0,
+        "agg_win_rate|lb=5|m=distance": 1.0,
+        "agg_win_rate|lb=10|m=": -1.0,
+        "agg_win_rate|lb=None|m=surface": 1.0,
+        "agg_avg_finish|lb=5|m=": -0.5,
+        "agg_avg_finish|lb=5|m=surface": 0.5,
+        "agg_avg_finish|lb=5|m=distance": 0.5,
+        "agg_avg_finish|lb=10|m=surface": 0.5,
+        "agg_avg_final3f|lb=5|m=surface": 1.0,
+        "agg_avg_final3f|lb=5|m=distance": 1.0,
+        "agg_avg_final3f|lb=10|m=": 0.5,
+        "agg_avg_final3f|lb=10|m=distance": 1.0,
+        "agg_avg_final3f|lb=None|m=": -1.0,
+        "agg_avg_popularity|lb=5|m=": -1.0,
+        "agg_avg_popularity|lb=5|m=distance": -0.5,
+        "agg_avg_popularity|lb=10|m=surface": -0.5,
+        "agg_avg_popularity|lb=10|m=distance": 0.5,
+        "agg_avg_popularity|lb=None|m=": -0.5
+      },
+      "temperature": 0.5,
+      "ev_threshold": 1.0,
+      "train": {
+        "races_with_bet": 10346,
+        "bets": 19222,
+        "hit_rate": 0.1004,
+        "roi": 0.7853,
+        "profit_units": -4127.3
+      },
+      "valid": {
+        "races_with_bet": 3448,
+        "bets": 6454,
+        "hit_rate": 0.1094,
+        "roi": 0.7749,
+        "profit_units": -1452.6
+      },
+      "test": {
+        "races_with_bet": 3445,
+        "bets": 6445,
+        "hit_rate": 0.1012,
+        "roi": 0.6223,
+        "profit_units": -2434.2
+      },
+      "final": {
+        "races_with_bet": 1365,
+        "bets": 2332,
+        "hit_rate": 0.1085,
+        "roi": 0.7485,
+        "profit_units": -586.5
+      }
+    },
+    {
+      "weights": {
+        "popularity": 1.0,
+        "burden_weight": 1.0,
+        "horse_weight_change": -0.5,
+        "agg_top3_rate|lb=5|m=distance": -1.0,
+        "agg_top3_rate|lb=10|m=": -0.5,
+        "agg_top3_rate|lb=None|m=": -0.5,
+        "agg_top3_rate|lb=None|m=distance": -0.5,
+        "agg_win_rate|lb=5|m=": -0.5,
+        "agg_win_rate|lb=5|m=surface": -1.0,
+        "agg_win_rate|lb=5|m=distance": 0.5,
+        "agg_win_rate|lb=10|m=": 0.5,
+        "agg_win_rate|lb=10|m=distance": 0.5,
+        "agg_win_rate|lb=None|m=": -1.0,
+        "agg_win_rate|lb=None|m=distance": -1.0,
+        "agg_avg_finish|lb=None|m=distance": 0.5,
+        "agg_avg_final3f|lb=5|m=": -0.5,
+        "agg_avg_final3f|lb=5|m=surface": -0.5,
+        "agg_avg_final3f|lb=5|m=distance": 1.0,
+        "agg_avg_final3f|lb=10|m=": 0.5,
+        "agg_avg_final3f|lb=None|m=surface": 1.0,
+        "agg_avg_final3f|lb=None|m=distance": 1.0,
+        "agg_avg_popularity|lb=5|m=": 1.0,
+        "agg_avg_popularity|lb=5|m=surface": 0.5,
+        "agg_avg_popularity|lb=10|m=": 0.5,
+        "agg_avg_popularity|lb=10|m=surface": -0.5,
+        "agg_avg_popularity|lb=10|m=distance": 1.0,
+        "agg_avg_popularity|lb=None|m=": 1.0
+      },
+      "temperature": 0.5,
+      "ev_threshold": 1.1,
+      "train": {
+        "races_with_bet": 10239,
+        "bets": 15819,
+        "hit_rate": 0.113,
+        "roi": 0.7438,
+        "profit_units": -4053.4
+      },
+      "valid": {
+        "races_with_bet": 3392,
+        "bets": 4965,
+        "hit_rate": 0.1239,
+        "roi": 0.7747,
+        "profit_units": -1118.6
+      },
+      "test": {
+        "races_with_bet": 3405,
+        "bets": 5022,
+        "hit_rate": 0.1143,
+        "roi": 0.7623,
+        "profit_units": -1193.6
+      },
+      "final": {
+        "races_with_bet": 1349,
+        "bets": 1933,
+        "hit_rate": 0.1236,
+        "roi": 0.9473,
+        "profit_units": -101.8
+      }
+    },
+    {
+      "weights": {
+        "agg_top3_rate|lb=5|m=": -1.0,
+        "agg_top3_rate|lb=10|m=surface": 0.5,
+        "agg_top3_rate|lb=None|m=": -1.0,
+        "agg_win_rate|lb=10|m=": 1.0,
+        "agg_win_rate|lb=None|m=": 1.0,
+        "agg_win_rate|lb=None|m=surface": 1.0,
+        "agg_win_rate|lb=None|m=distance": -0.5,
+        "agg_avg_finish|lb=5|m=": 1.0,
+        "agg_avg_finish|lb=5|m=surface": 1.0,
+        "agg_avg_finish|lb=5|m=distance": 1.0,
+        "agg_avg_final3f|lb=5|m=": -1.0,
+        "agg_avg_final3f|lb=5|m=surface": -1.0,
+        "agg_avg_final3f|lb=5|m=distance": 1.0,
+        "agg_avg_final3f|lb=10|m=distance": 0.5,
+        "agg_avg_final3f|lb=None|m=distance": -0.5,
+        "agg_avg_popularity|lb=5|m=surface": -0.5,
+        "agg_avg_popularity|lb=5|m=distance": -0.5,
+        "agg_avg_popularity|lb=10|m=surface": 0.5
+      },
+      "temperature": 0.5,
+      "ev_threshold": 1.0,
+      "train": {
+        "races_with_bet": 10352,
+        "bets": 27025,
+        "hit_rate": 0.0512,
+        "roi": 0.718,
+        "profit_units": -7619.8
+      },
+      "valid": {
+        "races_with_bet": 3445,
+        "bets": 8992,
+        "hit_rate": 0.0567,
+        "roi": 0.7742,
+        "profit_units": -2030.0
+      },
+      "test": {
+        "races_with_bet": 3448,
+        "bets": 8952,
+        "hit_rate": 0.0545,
+        "roi": 0.6197,
+        "profit_units": -3404.4
+      },
+      "final": {
+        "races_with_bet": 1366,
+        "bets": 3399,
+        "hit_rate": 0.0518,
+        "roi": 0.6217,
+        "profit_units": -1285.7
+      }
+    }
+  ],
+  "periods": {
+    "train": [
+      "20210101",
+      "20231231"
+    ],
+    "valid": [
+      "20240101",
+      "20241231"
+    ],
+    "test": [
+      "20250101",
+      "20251231"
+    ],
+    "final": [
+      "20260101",
+      "20261231"
+    ]
+  }
+}

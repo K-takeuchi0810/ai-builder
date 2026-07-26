@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MAIBuilder</title>
+<link rel="stylesheet" href="/web/app.css">
+</head>
+<body>
+
+<header class="app">
+  <div class="brand">
+    <span class="logo">M<em>·AI·</em>Builder</span>
+    <span class="date num" id="hdrDate">—</span>
+  </div>
+  <div class="screen-title">
+    <h1 id="screenTitle">きょうのレース</h1>
+    <span class="sub" id="screenSub">予想できるレースから選べます</span>
+  </div>
+</header>
+
+<main>
+
+  <!-- ============ 画面1: きょうのレース ============ -->
+  <section class="screen active" id="scr-races">
+    <div id="racesWarn"></div>
+    <div class="card" id="raceList"></div>
+    <p class="note" style="margin-top:10px">「馬体重の発表待ち」のレースは、発表(発走の約50分前)後に自動で予想できるようになります。</p>
+  </section>
+
+  <!-- ============ 画面2: マイAIをつくる ============ -->
+  <section class="screen" id="scr-build">
+    <div class="build-intro">
+      重視したい項目を選ぶだけで、あなた専用の予想AI「マイAI」ができます。<br>
+      選んだ項目がそのまま予想の根拠になります。<b>所要2〜3分。</b>
+    </div>
+
+    <div class="section-label">STEP 1 — 重視する項目</div>
+    <div class="param-chips" id="step1chips"></div>
+
+    <div class="section-label">STEP 2 — 過去レースの成績(条件 × さかのぼる範囲)</div>
+    <div class="card step2" id="step2list"></div>
+
+    <div class="ai-name">
+      <div class="section-label" style="margin-top:0">マイAIの名前</div>
+      <input type="text" id="aiName" value="参加者AI 1" aria-label="マイAIの名前">
+    </div>
+    <button class="cta" id="saveBtn" disabled>このマイAIで予想する</button>
+    <p class="cta-reason" id="saveReason">項目を1つ以上選んでください</p>
+
+    <div class="bt-result hidden" id="btResult"></div>
+    <p class="note" style="margin-top:10px">※ 名前は自由につけられます(あとから変更できます)。</p>
+  </section>
+
+  <!-- ============ 画面3: 予想 ============ -->
+  <section class="screen" id="scr-predict">
+    <!-- マイAI未作成 -->
+    <div class="empty hidden" id="predEmpty">
+      <div class="t">まだマイAIがありません</div>
+      <div class="d">重視したい項目を選ぶと、あなた専用の予想AIができます。<br>所要2〜3分です。</div>
+      <button class="cta" data-go="build">マイAIをつくる</button>
+    </div>
+    <!-- レース未選択 -->
+    <div class="empty hidden" id="predNoRace">
+      <div class="t">レースが選ばれていません</div>
+      <div class="d">きょうのレースから選べます。</div>
+      <button class="cta" data-go="races">きょうのレースを見る</button>
+    </div>
+
+    <div id="predBody" class="hidden">
+      <div class="race-head" id="raceHead"></div>
+      <div id="predWarn" class="warns" style="margin-top:12px"></div>
+      <div class="card marks" id="markList"></div>
+      <div class="demo-strip hidden" id="demoStrip">
+        <button class="demo-btn" id="demoBtn">▶ 馬体重発表をシミュレート(デモ演出)</button>
+      </div>
+      <p class="note disclaimer">印は参加者が選んだ項目にもとづく分析です。過去の成績は将来の結果を保証しません。</p>
+    </div>
+  </section>
+
+  <!-- ============ 画面4: 本日の成績比較 ============ -->
+  <section class="screen" id="scr-board">
+    <div class="board-hero">
+      <div class="h">本日の成績比較</div>
+      <div class="s" id="boardSub">◎的中数で並べています</div>
+    </div>
+    <div id="boardWarn"></div>
+    <div class="card board" id="boardList"></div>
+    <p class="note" style="margin-top:10px">
+      「人気を出し抜いた的中」= 1番人気ではない馬を◎にして的中したレース。
+      基準の「1番人気AI」との差として見てください。
+    </p>
+    <p class="note" id="boardRule" style="margin-top:6px"></p>
+    <p class="note" style="margin-top:6px">
+      市場人気は基準の「1番人気AI」専用です。マイAIは選んだ項目だけで印を決めます。
+    </p>
+  </section>
+
+</main>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<div class="legend" id="legend" role="dialog" aria-modal="true" aria-labelledby="legendTitle">
+  <div class="box">
+    <h3 id="legendTitle">自信度の見かた</h3>
+    <p>鉄板級 / 有力 / 混戦 — 1位と2位の差で決まります。差が大きいほど「鉄板級」、小さいほど「混戦」です。</p>
+    <button id="legendClose">閉じる</button>
+  </div>
+</div>
+
+<nav class="tabs">
+  <button class="on" data-scr="races"><span class="ic">日</span>レース</button>
+  <button data-scr="build"><span class="ic">作</span>マイAI</button>
+  <button data-scr="predict"><span class="ic">◎</span>予想</button>
+  <button data-scr="board"><span class="ic">比</span>成績</button>
+</nav>
+
+<script src="/web/app.js"></script>
+</body>
+</html>

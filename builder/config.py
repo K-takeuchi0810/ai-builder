@@ -23,3 +23,27 @@ DEFAULT_MIN_N = int(os.environ.get("BUILDER_MIN_N", "50"))
 
 # hold-out 既定分割日 (この日以降を HOLDOUT)。環境や運用に合わせて調整。
 DEFAULT_SPLIT_DATE = os.environ.get("BUILDER_SPLIT_DATE", "20250101")
+
+# 生 JV-Data (read-only 参照) と、そこから復元したコーナー通過順位索引の保存先。
+# keiba.db の corner_order_* は全ゼロなので、RA レコードから ai-builder 側で復元する。
+KEIBA_RAW_RACE_DIR = Path(os.environ.get(
+    "KEIBA_RAW_RACE_DIR", KEIBA_YOSOU_PATH / "data" / "raw" / "RACE"))
+CORNER_INDEX_PATH = Path(os.environ.get(
+    "BUILDER_CORNER_INDEX", _HERE / "out" / "cache" / "corner_index.json"))
+# 賞金も keiba.db にカラムが無いため生 SE レコードから復元する。
+PRIZE_INDEX_PATH = Path(os.environ.get(
+    "BUILDER_PRIZE_INDEX", _HERE / "out" / "cache" / "prize_index.json"))
+
+# --- プリセット重み (方式B) と表示期間の分離 -------------------------------
+# 参加者に見せる的中率が「重みの学習に使ったデータ上の成績」になると僅かに盛られる。
+# エッジ商品ではないが「誠実な指標」を売りにする設計なので、学習期間と表示期間を分ける。
+PRESET_TRAIN_FROM = os.environ.get("BUILDER_PRESET_TRAIN_FROM", "20210101")
+PRESET_TRAIN_TO = os.environ.get("BUILDER_PRESET_TRAIN_TO", "20250630")
+# バックテスト再生 (§7) の既定表示期間 = 学習に使っていない期間
+DISPLAY_BACKTEST_FROM = os.environ.get("BUILDER_DISPLAY_FROM", "20250701")
+
+# 列ごとの「ゲート通過レース数」がこれ未満なら警告 (係数が少数レースに過適合)
+MIN_RACES_PER_COLUMN = int(os.environ.get("BUILDER_MIN_RACES_PER_COLUMN", "500"))
+
+PRESET_WEIGHTS_PATH = Path(os.environ.get(
+    "BUILDER_PRESET_WEIGHTS", _HERE / "out" / "cache" / "preset_weights.json"))
