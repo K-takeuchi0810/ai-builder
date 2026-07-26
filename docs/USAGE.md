@@ -5,12 +5,39 @@
 前提: `keiba-yosou` が兄弟ディレクトリにあり、`keiba.db` が最新であること。
 このツールは **keiba.db を読むだけ** で、書き込みは一切しません。
 
+## 0. 最初に: `python` ではなく `.bat` を使う
+
+**システムの `python` では動きません。** 32bit で numpy が入っておらず、
+`ModuleNotFoundError: No module named 'numpy'` になります。仮に入れても
+425列 × 6年の行列 (約5GB) は 32bit では扱えません。
+
+使うのは `keiba-yosou` の 64bit venv (Python 3.14 / numpy 2.4) です。
+毎回パスを打たずに済むよう、リポジトリ直下にランチャーを置いてあります。
+
+| コマンド | 中身 |
+|---|---|
+| `build_daily.bat` | 当日の基底列を構築 |
+| `serve.bat` | サーバを起動 |
+
+別の Python を使いたい場合は環境変数で上書きできます。
+
+```
+set MAIB_PYTHON=C:\path\to\python.exe
+```
+
+自分で直接叩く場合はこちら (どちらも同じ):
+
+```
+..\keiba-yosou\.venv64\Scripts\python.exe scripts_build_daily.py
+..\keiba-yosou\.venv64\Scripts\python.exe -m builder.api
+```
+
 ---
 
 ## 1. 当日朝: 基底列を作る (唯一の準備作業)
 
 ```
-python scripts_build_daily.py
+build_daily.bat
 ```
 
 実測で **36レースで約5分**。発走直前に始めると待たされるので朝に済ませます。
@@ -34,8 +61,7 @@ python scripts_build_daily.py
 (`LONG_RUNNING_JOBS.md`)。原子的書き込みなので途中で落ちてもキャッシュは壊れません。
 
 ```powershell
-Start-Process -FilePath "..\keiba-yosou\.venv64\Scripts\python.exe" `
-  -ArgumentList "scripts_build_daily.py" `
+Start-Process -FilePath "C:\Users\kizun\dev\ai-builder\build_daily.bat" `
   -WorkingDirectory "C:\Users\kizun\dev\ai-builder" `
   -RedirectStandardOutput "out\logs\build_daily.log" `
   -RedirectStandardError "out\logs\build_daily.log.err" -WindowStyle Hidden
@@ -44,17 +70,21 @@ Start-Process -FilePath "..\keiba-yosou\.venv64\Scripts\python.exe" `
 ## 2. サーバを起動する
 
 ```
-python -m builder.api --date 20260726 --backtest-from 20250701 --backtest-to 20251231
+serve.bat
 ```
 
+引数なしで動きます (日付は今日、バックテスト期間も既定が入ります)。
 朝の準備が済んでいれば数秒で立ち上がります。
 `http://127.0.0.1:8780/` をブラウザで開きます (スマホ幅で作ってあります)。
 
+止めるときは `Ctrl+C`。
+
 | 引数 | 用途 |
 |---|---|
-| `--date` | 対象日 (必須) |
-| `--backtest-from` / `--to` | 「これまでの成績」カードに使う期間。**省略するとカードが出ません** |
+| `--date` | 対象日 (既定: 今日) |
 | `--build` | 当日行列が無ければ起動時に構築する (朝の準備を省いた場合。5分待つ) |
+| `--no-backtest` | バックテスト用行列を読まない (起動が最速。成績カードは出ない) |
+| `--backtest-from` / `--to` | 成績カードの期間 (既定: 表示期間の開始〜当日) |
 | `--port` | 既定 8780 |
 | `--weights` | 重みファイルを差し替える (通常は指定不要) |
 | `--require-confirmed` | 過去日で試すとき |
@@ -110,7 +140,8 @@ python -m builder.api --date 20260726 --backtest-from 20250701 --backtest-to 202
 
 | 症状 | 原因と対処 |
 |---|---|
-| 「きょうのレースがまだ準備できていません」 | その日の行列が未構築。`scripts_build_daily.py --date ...` |
+| `ModuleNotFoundError: No module named 'numpy'` | システムの `python` を使っている。`build_daily.bat` / `serve.bat` を使う (§0) |
+| 「きょうのレースがまだ準備できていません」 | その日の行列が未構築。`build_daily.bat --date ...` |
 | 「予想に使える項目が選ばれていません」 | 項目未選択。人気だけを選んだ旧設定もここに落ちる |
 | 「更新できていません」のチップ | サーバが落ちている。表示は最後に取得できた内容 |
 | 自信度が「—」 | 重みファイルの閾値が旧形式。`scripts_recompute_thresholds.py` |

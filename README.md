@@ -8,9 +8,12 @@
 確認する個人利用主体の分析ツール。
 
 ```
-python scripts_build_daily.py                  # 当日朝の準備 (約5分)
-python -m builder.api --date 20260726 --backtest-from 20250701 --backtest-to 20251231
+build_daily.bat     # 当日朝の準備 (約5分)
+serve.bat           # サーバ起動 → http://127.0.0.1:8780/
 ```
+
+> システムの `python` では動きません (32bit・numpy 無し)。上の `.bat` が
+> `keiba-yosou` の 64bit venv を使います。詳細は USAGE.md §0。
 
 → **使い方: [docs/USAGE.md](docs/USAGE.md)**
 / 設計: [docs/MAIBUILDER_DESIGN_v0.3.md](docs/MAIBUILDER_DESIGN_v0.3.md)

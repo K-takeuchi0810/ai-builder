@@ -21,6 +21,7 @@ import argparse
 import json
 import logging
 import mimetypes
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
@@ -204,12 +205,19 @@ class Handler(BaseHTTPRequestHandler):
 def main() -> int:
     logging.basicConfig(level=logging.INFO)
     ap = argparse.ArgumentParser(description="MAIBuilder API (read-only)")
-    ap.add_argument("--date", required=True, help="当日日付 YYYYMMDD")
+    ap.add_argument("--date", default=None,
+                    help="当日日付 YYYYMMDD (既定: 今日)")
     ap.add_argument("--build", action="store_true", help="当日行列を無ければ構築する")
     ap.add_argument("--require-confirmed", action="store_true",
                     help="確定済みレースのみ (過去日で試すとき)")
-    ap.add_argument("--backtest-from", default=None, help="バックテスト用行列の開始日")
-    ap.add_argument("--backtest-to", default=None, help="同 終了日")
+    # 既定で表示期間 (学習未使用) を入れる。指定しないと「これまでの成績」カードが
+    # 出ないのに理由が分からない、という迷い方をするため。
+    ap.add_argument("--backtest-from", default=cfgmod.DISPLAY_BACKTEST_FROM,
+                    help="バックテスト用行列の開始日 (既定: 表示期間の開始)")
+    ap.add_argument("--backtest-to", default=None,
+                    help="同 終了日 (既定: 当日)")
+    ap.add_argument("--no-backtest", action="store_true",
+                    help="バックテスト用行列を読まない (起動を最速にする)")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8780)
     ap.add_argument("--weights", default=None,
@@ -217,7 +225,10 @@ def main() -> int:
                          "同時学習と列別学習を同じUIで見比べるために指定できる)")
     args = ap.parse_args()
 
-    _STATE["date"] = args.date
+    # 既定の「今日」はここだけでシステム時刻を使う。PIT には影響しない
+    # (過去走の絞り込みは対象レースの開催日を基準に model._past_runs が行う)。
+    date = args.date or time.strftime("%Y%m%d")
+    _STATE["date"] = date
     _STATE["specs"] = sp.maib_all_specs()
     _STATE["preset"] = ps.load_presets(args.weights)
     logger.info("プリセット重み: %s (%s)", args.weights or cfgmod.PRESET_WEIGHTS_PATH,
@@ -230,19 +241,26 @@ def main() -> int:
         logger.warning("プリセット重みの問題: %s (%s)", problem["code"], problem["message"])
         logger.warning("  → %s", problem["hint"])
 
-    _STATE["daily"] = md.load_daily(args.date, _STATE["specs"])
+    _STATE["daily"] = md.load_daily(date, _STATE["specs"])
     if not _STATE["daily"] and args.build:
-        logger.info("当日行列を構築します date=%s", args.date)
-        _STATE["daily"] = md.build_daily(args.date, _STATE["specs"],
+        logger.info("当日行列を構築します date=%s (36レースで約5分)", date)
+        _STATE["daily"] = md.build_daily(date, _STATE["specs"],
                                          require_confirmed=args.require_confirmed)
-    logger.info("当日レース数: %d", len(_STATE["daily"].get("races", [])))
+    n_races = len(_STATE["daily"].get("races", []))
+    logger.info("当日レース数: %d (date=%s)", n_races, date)
+    if not n_races:
+        logger.warning("当日行列がありません。先に build_daily.bat を実行してください")
+        logger.warning("  build_daily.bat --date %s", date)
 
-    if args.backtest_from:
+    if args.backtest_from and not args.no_backtest:
         from . import matrix as mx
         _STATE["backtest_matrix"] = mx.build_matrix(
-            args.backtest_from, args.backtest_to or args.backtest_from, _STATE["specs"])
-        logger.info("バックテスト用レース数: %d",
-                    len(_STATE["backtest_matrix"].get("races", [])))
+            args.backtest_from, args.backtest_to or date, _STATE["specs"])
+        logger.info("バックテスト用レース数: %d (%s〜%s)",
+                    len(_STATE["backtest_matrix"].get("races", [])),
+                    args.backtest_from, args.backtest_to or date)
+    else:
+        logger.info("バックテスト用行列なし → 「これまでの成績」カードは表示されません")
 
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     logger.info("MAIBuilder API: http://%s:%d/api/races/today", args.host, args.port)

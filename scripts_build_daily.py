@@ -5,15 +5,13 @@
 `python -m builder.api --build` で構築を始めると待たされる。朝に済ませておけば
 API は即起動する (同じキャッシュを読む)。
 
-    # 今日ぶんを構築
-    python scripts_build_daily.py
+**システムの python では動かない** (32bit・numpy 無し)。`build_daily.bat` が
+keiba-yosou の 64bit venv を使うので、そちらから呼ぶこと。
 
-    # 日付を指定 / 既存キャッシュを作り直す
-    python scripts_build_daily.py --date 20260802
-    python scripts_build_daily.py --date 20260802 --rebuild
-
-    # 確定済みの過去日で試す (結果が入る)
-    python scripts_build_daily.py --date 20250705 --require-confirmed
+    build_daily.bat                              今日ぶんを構築
+    build_daily.bat --date 20260802              日付を指定
+    build_daily.bat --date 20260802 --rebuild    作り直す
+    build_daily.bat --date 20250705 --require-confirmed   確定済みの過去日で試す
 
 長時間ジョブなので、アプリと一緒に落ちないよう独立プロセスで起動することを推奨
 (docs/LONG_RUNNING_JOBS.md)。原子的書き込みなので途中で落ちてもキャッシュは壊れない。
