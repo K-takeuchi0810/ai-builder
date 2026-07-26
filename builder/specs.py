@@ -37,3 +37,63 @@ def cheap_specs() -> list[dict]:
     """compute 非依存の軽量セット (現在属性 + 可変集計)。"""
     base = [{"key": k} for k, f in model.FEATURES.items() if f.kind == "current"]
     return base + _agg_variants()
+
+
+# ---------------------------------------------------------------------------
+# MAIBuilder 設計書 v0.3 §4.2 の基底列定義
+#   集計対象 9 項目 × 一致条件 4 種 × 期間 11 種 = 396 基底列
+# ---------------------------------------------------------------------------
+MAIB_STEP2_METRICS: tuple[str, ...] = (
+    "agg_avg_finish",             # 着順
+    "agg_margin",                 # 着差 (導出)
+    "agg_time_index",             # タイム指数 (導出)
+    "agg_prize",                  # 獲得本賞金 (生 SE から復元)
+    "agg_corner_first",           # 第1コーナー着順 (生 RA から復元)
+    "agg_corner_last",            # 最終コーナー着順
+    "agg_gain_first_to_last",     # 第1→最終コーナーの着順上昇
+    "agg_gain_first_to_finish",   # 第1コーナーからの着順上昇
+    "agg_gain_last_to_finish",    # 最終コーナーからの着順上昇
+)
+# 一致条件(4): 全レース / 距離が同じ / 競馬場が同じ / 芝ダート別
+MAIB_MATCHES: tuple[list[str], ...] = ([], ["distance"], ["track"], ["surface"])
+# 期間(11): 全レース + 直近1〜10
+MAIB_LOOKBACKS: tuple[int | None, ...] = (None, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
+
+# STEP1 (単項目特徴量): レジストリから参加者に意味が伝わるものを curate。
+# 全公開はしない (UI の認知負荷を優先。設計書 §4.1)。
+MAIB_STEP1_KEYS: tuple[str, ...] = (
+    "popularity",                     # 人気(市場)
+    "burden_weight", "burden_delta",  # 斤量・斤量変化
+    "horse_weight_change",            # 馬体重変化
+    "days_since_last",                # 出走間隔
+    "draw_position",                  # 枠順
+    "jockey_win_rate", "jockey_recent_30d_top3_rate", "jockey_track_top3_rate",
+    "trainer_win_rate", "trainer_recent_30d_top3_rate",
+    "sire_surface_top3_rate", "sire_distance_top3_rate", "sire_going_top3_rate",
+    "dam_sire_surface_top3_rate",
+    "fit_course", "fit_course_distance", "fit_distance", "fit_going", "fit_surface",
+    "horse_track_top3_rate", "horse_recent_90d_top3_rate",
+    "recent_avg_finish", "recent_trend_delta", "last_finish",
+    "avg_final_3f", "best_final_3f_rank",
+    "recent_4corner_avg_position", "recent_4corner_position_change",
+)
+
+
+def maib_step2_specs() -> list[dict]:
+    """設計書 §4.2 の STEP2 基底列 (9 × 4 × 11 = 396)。"""
+    out = []
+    for met in MAIB_STEP2_METRICS:
+        for m in MAIB_MATCHES:
+            for lb in MAIB_LOOKBACKS:
+                out.append({"key": met, "lookback": lb, "match": list(m)})
+    return out
+
+
+def maib_step1_specs() -> list[dict]:
+    """設計書 §4.1 の STEP1 単項目特徴量 (curate 済み)。"""
+    return [{"key": k} for k in MAIB_STEP1_KEYS if k in model.FEATURES]
+
+
+def maib_all_specs() -> list[dict]:
+    """MAIBuilder が事前計算する全基底列 (STEP1 + STEP2)。"""
+    return maib_step1_specs() + maib_step2_specs()

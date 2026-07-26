@@ -393,6 +393,8 @@ def prepare_races(matrix: dict) -> list[dict]:
                 z[n][cid] = zv
         fav = next((hr["num"] for hr in hrows if hr.get("pop") == 1), None)
         out.append({
+            "index": len(out),                       # 入力順の位置 (呼び出し側の紐付け用)
+            "race_id": r.get("race_id"),             # あれば透過 (日次バッチが付与)
             "date": r["date"], "trusted": r.get("trusted", False), "tan": r["tan"],
             "odds": {hr["num"]: hr.get("odds") for hr in hrows},
             "order": {hr["num"]: hr.get("order") for hr in hrows},

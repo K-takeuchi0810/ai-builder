@@ -67,13 +67,14 @@ def gate_check(prep_races: list[dict], col_ids: list[str]) -> list[dict]:
     当日朝のバッチで呼び、通らないレースがあれば進行台本側で回避できるようにする。
     """
     out = []
-    for r in prep_races:
+    for i, r in enumerate(prep_races):
         seen = set()
         for zc in r["z"].values():
             seen.update(zc.keys())
         missing = [cid for cid in col_ids if cid not in seen]
         if missing:
-            out.append({"date": r["date"], "missing_columns": missing,
+            out.append({"index": r.get("index", i), "race_id": r.get("race_id"),
+                        "date": r["date"], "missing_columns": missing,
                         "n_missing": len(missing)})
     return out
 
