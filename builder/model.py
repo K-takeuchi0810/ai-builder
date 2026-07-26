@@ -24,12 +24,12 @@ keiba-yosou は read-only 参照のみ (compute_features / horse_past_runs)。�
 
 from __future__ import annotations
 
-import statistics
 import sys
 from dataclasses import dataclass
 from typing import Callable
 
 from . import config
+from . import normalize as nrm
 
 
 def _ensure_keiba_on_path() -> None:
@@ -457,11 +457,26 @@ def compute_feature_rows(conn, horses: list[dict], race: dict, cfg: dict,
     return rows
 
 
-def score_from_features(feature_rows: dict[str, dict[str, float | None]],
-                        cfg: dict) -> list[tuple[str, float]]:
-    """特徴量の生値 → レース内 z-score 正規化 → 向き調整 → 重み付き和。純粋関数。"""
+def score_race_detailed(feature_rows: dict[str, dict[str, float | None]],
+                        cfg: dict) -> dict:
+    """スコア + **寄与分解** + 列の採否 + 馬ごとのカバレッジを返す (純粋関数)。
+
+    欠損ポリシーは builder/normalize.py に単一実装 (レース内カバレッジ不足の列は
+    そのレースで不使用、使用列で値が無い馬は寄与 0=中立、カバレッジを明示)。
+
+    戻り: {
+      "ranked": [(馬番, スコア), ...降順],
+      "contributions": {馬番: [{key,label,weight,z,contribution,available}, ...寄与降順]},
+      "columns": [{key,label,weight,decision,n_with_value}],   # 列の採否と理由
+      "coverage": {馬番: {"n_used":使用列数, "n_with_value":値があった列数}},
+    }
+    """
     horse_nums = list(feature_rows.keys())
+    n_runners = len(horse_nums)
     scores = {hn: 0.0 for hn in horse_nums}
+    contribs: dict[str, list] = {hn: [] for hn in horse_nums}
+    columns: list[dict] = []
+    used_cols = 0
 
     for spec in cfg.get("features", []):
         feat = FEATURES.get(spec.get("key"))
@@ -471,21 +486,38 @@ def score_from_features(feature_rows: dict[str, dict[str, float | None]],
         if weight == 0.0:
             continue
         present = {hn: feature_rows.get(hn, {}).get(feat.key) for hn in horse_nums}
-        vals = [v for v in present.values() if v is not None]
-        if len(vals) < 2:
+        zs, decision, n_have = nrm.race_z(present, feat.higher_is_better, n_runners)
+        columns.append({"key": feat.key, "label": feat.label, "weight": weight,
+                        "decision": decision, "n_with_value": n_have})
+        if decision != nrm.USE:
             continue
-        mean = statistics.fmean(vals)
-        stdev = statistics.pstdev(vals)
-        if stdev == 0:
-            continue
-        direction = 1.0 if feat.higher_is_better else -1.0
+        used_cols += 1
         for hn in horse_nums:
-            v = present[hn]
-            if v is None:
+            z = zs.get(hn)
+            if z is None:                     # 値なし → 中立 (寄与 0)。隠さず記録する
+                contribs[hn].append({"key": feat.key, "label": feat.label,
+                                     "weight": weight, "z": None,
+                                     "contribution": 0.0, "available": False})
                 continue
-            scores[hn] += weight * direction * ((v - mean) / stdev)
+            c = weight * z
+            scores[hn] += c
+            contribs[hn].append({"key": feat.key, "label": feat.label,
+                                 "weight": weight, "z": round(z, 4),
+                                 "contribution": round(c, 4), "available": True})
 
-    return sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
+    coverage = {hn: {"n_used": used_cols,
+                     "n_with_value": sum(1 for c in contribs[hn] if c["available"])}
+                for hn in horse_nums}
+    for hn in contribs:
+        contribs[hn].sort(key=lambda c: abs(c["contribution"]), reverse=True)
+    return {"ranked": sorted(scores.items(), key=lambda kv: kv[1], reverse=True),
+            "contributions": contribs, "columns": columns, "coverage": coverage}
+
+
+def score_from_features(feature_rows: dict[str, dict[str, float | None]],
+                        cfg: dict) -> list[tuple[str, float]]:
+    """特徴量の生値 → スコア降順の (馬番, スコア)。詳細は score_race_detailed。"""
+    return score_race_detailed(feature_rows, cfg)["ranked"]
 
 
 def predict(conn, race: dict, horses: list[dict], cfg: dict,

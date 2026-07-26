@@ -9,11 +9,13 @@ numpy 配列にして候補評価を高速化する (速度のためでなく検
 
 from __future__ import annotations
 
+import math
 import random
 
 import numpy as np
 
 from . import matrix as mx
+from . import normalize as nrm
 
 
 def prepare_numpy(matrix: dict) -> dict:
@@ -43,6 +45,11 @@ def prepare_numpy(matrix: dict) -> dict:
             z = (R - mean) / std
         z = z * hib
         z[~np.isfinite(z)] = 0.0                # 欠損・分散0 は中立(0)
+        # 欠損ポリシー (normalize.py と同一): レース内カバレッジ不足の列は列ごと不使用。
+        # 2 頭だけの平均/標準偏差から作った z が印を独占するのを防ぐ。
+        n_have = np.count_nonzero(np.isfinite(R), axis=0)
+        need = max(nrm.MIN_HORSES, math.ceil(nrm.MIN_FRACTION * n))
+        z[:, n_have < need] = 0.0
         Zs.append(z)
         offsets.append((pos, pos + n))
         pos += n

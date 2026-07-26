@@ -19,6 +19,7 @@ from pathlib import Path
 
 from . import axes as ax
 from . import config, model
+from . import normalize as nrm
 from .keiba_bridge import open_conn, _ensure_keiba_on_path
 
 # v2: per-horse に decimal odds(win_odds/10) と win_popularity を追加 (バリューベット EV 用)。
@@ -383,20 +384,13 @@ def prepare_races(matrix: dict) -> list[dict]:
         z: dict[str, dict[str, float]] = {n: {} for n in nums}
         for c in cols:
             cid = c["id"]
-            direction = 1.0 if c["hib"] else -1.0
             present = {hr["num"]: hr["x"].get(cid) for hr in hrows}
-            vals = [v for v in present.values() if v is not None]
-            if len(vals) < 2:
+            # 欠損ポリシーは normalize.py に単一実装 (カバレッジ不足の列はレース内で不使用)
+            zs, decision, _n = nrm.race_z(present, c["hib"], len(nums))
+            if decision != nrm.USE:
                 continue
-            mean = sum(vals) / len(vals)
-            var = sum((v - mean) ** 2 for v in vals) / len(vals)
-            if var == 0:
-                continue
-            std = var ** 0.5
-            for n in nums:
-                v = present[n]
-                if v is not None:
-                    z[n][cid] = direction * ((v - mean) / std)
+            for n, zv in zs.items():
+                z[n][cid] = zv
         fav = next((hr["num"] for hr in hrows if hr.get("pop") == 1), None)
         out.append({
             "date": r["date"], "trusted": r.get("trusted", False), "tan": r["tan"],

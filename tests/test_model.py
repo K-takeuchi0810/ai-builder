@@ -58,33 +58,77 @@ def test_aggregate_value_lookback_and_match():
 
 
 def _rows():
+    """6頭立て相当。欠損ポリシー (列のカバレッジ最低4頭・半数以上) を満たす。"""
     return {
         "1": {"agg_avg_finish": 2.0, "popularity": 1.0},
         "2": {"agg_avg_finish": 6.0, "popularity": 5.0},
         "3": {"agg_avg_finish": 4.0, "popularity": 3.0},
+        "4": {"agg_avg_finish": 5.0, "popularity": 4.0},
+        "5": {"agg_avg_finish": 3.0, "popularity": 2.0},
+        "6": {"agg_avg_finish": 7.0, "popularity": 6.0},
     }
 
 
 def test_score_direction_and_weight():
-    # 平均着順は小さいほど良い → 馬1が上位
+    # 平均着順は小さいほど良い → 最小の馬1が1位、最大の馬6が最下位
     r = model.score_from_features(_rows(), {"features": [{"key": "agg_avg_finish", "weight": 1.0}]})
-    assert r[0][0] == "1" and r[-1][0] == "2"
+    assert r[0][0] == "1" and r[-1][0] == "6"
     # 負の重みで反転
     rn = model.score_from_features(_rows(), {"features": [{"key": "agg_avg_finish", "weight": -1.0}]})
-    assert rn[0][0] == "2"
+    assert rn[0][0] == "6" and rn[-1][0] == "1"
     # popularity も小さいほど良い
     rp = model.score_from_features(_rows(), {"features": [{"key": "popularity", "weight": 1.0}]})
     assert rp[0][0] == "1"
 
 
 def test_score_none_is_neutral_and_zero_variance_skipped():
-    rows = {"1": {"agg_avg_finish": None}, "2": {"agg_avg_finish": 2.0}, "3": {"agg_avg_finish": 6.0}}
+    """値が無い馬は中立(0)。分散ゼロの列は寄与しない。"""
+    rows = {"1": {"agg_avg_finish": None}, "2": {"agg_avg_finish": 2.0},
+            "3": {"agg_avg_finish": 6.0}, "4": {"agg_avg_finish": 3.0},
+            "5": {"agg_avg_finish": 7.0}, "6": {"agg_avg_finish": 4.0}}
     d = dict(model.score_from_features(rows, {"features": [{"key": "agg_avg_finish", "weight": 1.0}]}))
-    assert d["2"] > d["1"] > d["3"]              # None の馬1 は中立(0)
+    assert d["2"] > d["1"] > d["5"]              # 値なしの馬1 は中立(0) で中間に来る
+    assert d["1"] == 0.0
     # 分散ゼロは寄与しない
-    rows2 = {"1": {"popularity": 3.0}, "2": {"popularity": 3.0}}
+    rows2 = {str(i): {"popularity": 3.0} for i in range(1, 7)}
     d2 = dict(model.score_from_features(rows2, {"features": [{"key": "popularity", "weight": 1.0}]}))
-    assert d2["1"] == 0.0 and d2["2"] == 0.0
+    assert all(v == 0.0 for v in d2.values())
+
+
+def test_missing_policy_low_coverage_column_is_dropped():
+    """レース内カバレッジ不足の列は、そのレースで一切使わない (2頭のzが印を独占しない)。"""
+    rows = {str(i): {"agg_prize": None} for i in range(1, 13)}    # 12頭立て
+    rows["1"]["agg_prize"] = 8_000_000                            # 2頭だけ値がある
+    rows["2"]["agg_prize"] = 1_000_000
+    res = model.score_race_detailed(rows, {"features": [{"key": "agg_prize", "weight": 1.0}]})
+    col = res["columns"][0]
+    assert col["decision"] == "skipped_low_coverage"
+    assert col["n_with_value"] == 2
+    assert all(s == 0.0 for _hn, s in res["ranked"])               # 誰の寄与にもならない
+    assert res["coverage"]["1"]["n_used"] == 0
+
+
+def test_missing_policy_contributions_and_coverage_reported():
+    """寄与分解に「データなし」を明示し、馬ごとのカバレッジを返すこと。"""
+    rows = {str(i): {"agg_avg_finish": float(i), "agg_prize": None} for i in range(1, 9)}
+    for hn in ("1", "2", "3", "4", "5", "6"):                      # 6/8頭は賞金あり
+        rows[hn]["agg_prize"] = float(hn) * 1_000_000
+    cfg = {"features": [{"key": "agg_avg_finish", "weight": 1.0},
+                        {"key": "agg_prize", "weight": 0.5}]}
+    res = model.score_race_detailed(rows, cfg)
+
+    decisions = {c["key"]: c["decision"] for c in res["columns"]}
+    assert decisions["agg_avg_finish"] == "used"
+    assert decisions["agg_prize"] == "used"                        # 6/8 = 75% で閾値クリア
+
+    # 賞金が無い馬 (7,8) は available=False・寄与0 として明示される
+    c78 = [c for c in res["contributions"]["7"] if c["key"] == "agg_prize"][0]
+    assert c78["available"] is False and c78["contribution"] == 0.0
+    assert res["coverage"]["7"] == {"n_used": 2, "n_with_value": 1}
+    assert res["coverage"]["1"] == {"n_used": 2, "n_with_value": 2}
+    # 寄与は絶対値降順に並ぶ (UI がそのまま「◎の理由」に使える)
+    top = res["contributions"]["1"]
+    assert abs(top[0]["contribution"]) >= abs(top[-1]["contribution"])
 
 
 def test_time_index_derivation():
