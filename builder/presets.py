@@ -68,6 +68,20 @@ def check_preset_matches_spec(preset: dict, col_ids: list[str]) -> dict | None:
                 "hint": f"期待={want} 実際={got}。現在の spec で再学習してください",
                 "expected_fingerprint": want, "actual_fingerprint": got,
                 "preset_n_columns": preset.get("n_columns")}
+    if not got:
+        # 指紋を持たないファイルは **検証不能** = 指紋導入前の旧モデル。
+        # 「不一致でないから OK」と扱うと 128列モデルのような別構成の重みが
+        # そのまま通ってしまう (実際に素通りしていた)。列集合の重なりで判定する。
+        keys = set((preset.get("weights") or {}).keys())
+        overlap = len(keys & set(col_ids))
+        return {"code": "preset_fingerprint_missing",
+                "message": "プリセット重みに列構成の記録がありません (指紋導入前の旧モデル)",
+                "hint": f"現在の spec は {len(col_ids)}列。このファイルの重みは "
+                        f"{len(keys)}件でうち {overlap}件が一致します。"
+                        f"現在の spec で再学習してください",
+                "expected_fingerprint": want, "actual_fingerprint": None,
+                "preset_n_columns": preset.get("n_columns") or len(keys),
+                "n_overlapping_columns": overlap}
     return None
 
 

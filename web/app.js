@@ -418,9 +418,11 @@ function renderPredict(p, prev) {
       <div class="m">${esc(w.message)}</div>
       ${w.hint ? `<div class="h">${esc(w.hint)}</div>` : ''}
       ${warnColumns(w)}</div>`).join('');
-  const blocked = warns.some((w) =>
-    w.code === 'no_preset_weights' || w.code === 'all_columns_gated_out'
-    || w.code === 'preset_column_mismatch');
+  // 印が意味を持たない警告が1つでもあれば印を出さない。ここは **列挙で塞ぐ**
+  // (新しい警告コードが増えたときに黙って印を出してしまわないよう、
+  //  「印を出しても良い警告」の側を列挙する)
+  const HARMLESS = ['low_sample_columns', 'excluded_columns_dropped'];
+  const blocked = warns.some((w) => !HARMLESS.includes(w.code));
   if (blocked) { $('#markList').innerHTML = ''; return; }
 
   const marks = p.marks || [];

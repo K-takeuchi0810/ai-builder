@@ -192,6 +192,44 @@ def test_no_hardcoded_performance_numbers():
     assert "hit_rate_win" in CODE["app.js"]
 
 
+def test_marks_are_suppressed_by_default_on_unknown_warnings():
+    """警告コードは「印を出して良い側」を列挙して塞ぐこと (fail-closed)。
+
+    以前は「印を出さない側」を列挙していたため、新しい警告コード
+    (preset_fingerprint_missing など) が増えると黙って印が出てしまった。
+    """
+    js = CODE["app.js"]
+    m = re.search(r"const HARMLESS = \[([^\]]*)\]", js)
+    assert m is not None, "HARMLESS の列挙が無い"
+    harmless = re.findall(r"'([a-z_]+)'", m.group(1))
+    # 印を出して良いのは「開示のみ」の警告だけ
+    assert set(harmless) == {"low_sample_columns", "excluded_columns_dropped"}, harmless
+    # 判定は「HARMLESS 以外があれば止める」向きであること
+    assert "!HARMLESS.includes" in js
+    # 個別コードの直接列挙で塞いでいないこと (漏れの原因)
+    assert "=== 'preset_column_mismatch'" not in js
+
+
+def test_server_side_warning_codes_are_all_classified():
+    """サーバが出す警告コードが UI 側の分類から漏れていないこと。"""
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parent.parent / "builder"
+    codes = set()
+    for f in ("predict_service.py", "presets.py"):
+        codes |= set(re.findall(r'"code":\s*"([a-z_]+)"',
+                                (root / f).read_text(encoding="utf-8")))
+    js = CODE["app.js"]
+    harmless = set(re.findall(r"'([a-z_]+)'",
+                              re.search(r"const HARMLESS = \[([^\]]*)\]", js).group(1)))
+    # 開示系は HARMLESS に、それ以外は「印を止める」側に落ちる (既定で止まる)
+    assert harmless <= codes, f"UI が知らないコードを許可している: {harmless - codes}"
+    # 印を止めるべきコードが HARMLESS に混ざっていないこと
+    for blocking in ("no_preset_weights", "all_columns_gated_out",
+                     "preset_column_mismatch", "preset_fingerprint_missing"):
+        assert blocking in codes, f"{blocking} がサーバ側に無い"
+        assert blocking not in harmless, f"{blocking} を許可してはいけない"
+
+
 def test_no_personal_names_or_titles():
     """§10 全体DON'T: 個人名・役職名を含めない (「参加者」で統一)。"""
     banned = ["社長", "部長", "課長", "会長", "専務", "常務", "取締役", "様専用"]

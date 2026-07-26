@@ -111,8 +111,10 @@ def handle_predict(payload: dict) -> tuple[dict, int]:
     if race is None:
         return {"error": "race_not_found", "race_id": race_id}, 404
     got = svc.predict_race(race, user_cfg, _STATE["preset"])
+    # 起動時に検出したプリセットの問題は **どの種類でも** 必ず応答に載せる。
+    # コードを1つだけ許可すると、新しい種類 (指紋なし等) が黙って素通りする。
     problem = _STATE.get("preset_problem")
-    if problem and problem["code"] == "preset_column_mismatch":
+    if problem:
         got.setdefault("warnings", []).append(problem)
     return got, 200
 

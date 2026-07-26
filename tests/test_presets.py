@@ -318,3 +318,70 @@ def test_log_likelihood_per_column_treats_zero_weight_as_uniform():
 def test_log_likelihood_per_column_handles_no_races():
     got, ll = presets.log_likelihood_per_column([], ["form"], {"form": 1.0})
     assert math.isnan(got["form"]) and math.isnan(ll)
+
+
+# ---------------------------------------------------------------------------
+# 旧モデル誤用の検出 (指紋が無いファイルも弾く)
+# ---------------------------------------------------------------------------
+def test_missing_fingerprint_is_treated_as_an_old_model():
+    """指紋を持たないプリセットは「検証不能」として警告すること。
+
+    回帰テスト: `if got and got != want` だと指紋キーが無いファイルが素通りし、
+    128列で学習した旧モデルが 425列構成でそのまま使われていた。
+    """
+    col_ids = ["a", "b", "c"]
+    old = {"weights": {"x": 1.0, "y": 2.0}}          # 指紋なし・別の列集合
+    got = presets.check_preset_matches_spec(old, col_ids)
+    assert got is not None
+    assert got["code"] == "preset_fingerprint_missing"
+    assert got["n_overlapping_columns"] == 0
+    assert got["preset_n_columns"] == 2
+
+
+def test_fingerprint_present_and_matching_passes():
+    col_ids = ["a", "b"]
+    ok = {"weights": {"a": 1.0, "b": 1.0},
+          "columns_fingerprint": presets.columns_fingerprint(col_ids)}
+    assert presets.check_preset_matches_spec(ok, col_ids) is None
+
+
+def test_fingerprint_mismatch_is_reported():
+    col_ids = ["a", "b"]
+    bad = {"weights": {"a": 1.0}, "columns_fingerprint": "deadbeef", "n_columns": 1}
+    got = presets.check_preset_matches_spec(bad, col_ids)
+    assert got["code"] == "preset_column_mismatch"
+    assert got["actual_fingerprint"] == "deadbeef"
+
+
+def test_empty_preset_is_reported():
+    got = presets.check_preset_matches_spec({}, ["a"])
+    assert got["code"] == "no_preset_weights"
+
+
+def test_archived_models_are_rejected_against_the_current_spec(tmp_path):
+    """退避済みの旧モデルは現行 spec で必ず警告になること (実ファイルで確認)。"""
+    import json
+    import pathlib
+    from builder import matrix as mx
+    from builder.specs import maib_all_specs
+    models = pathlib.Path(__file__).resolve().parent.parent / "docs" / "evidence" / "models"
+    if not models.exists():
+        pytest.skip("退避ディレクトリが無い")
+    col_ids = [c["id"] for c in mx._columns(maib_all_specs())]
+    checked = 0
+    for f in models.glob("*.json"):
+        d = json.loads(f.read_text(encoding="utf-8"))
+        if not d.get("weights"):
+            continue
+        checked += 1
+        got = presets.check_preset_matches_spec(d, col_ids)
+        if "cheap128" in f.name:
+            # 128列モデル: 指紋が無いので「検証不能」として弾かれる
+            assert got is not None and got["code"] == "preset_fingerprint_missing", f.name
+        elif "joint425" in f.name:
+            # 同時学習425列モデル: 列構成は同じなので指紋は一致する。
+            # 本番経路から外してあること (out/cache の外) が隔離の手段。
+            assert f.parent.name == "models", f.name
+            assert "NOT_FOR_PRODUCTION" in f.name, f.name
+            assert d.get("archived_reason"), f.name
+    assert checked >= 1
