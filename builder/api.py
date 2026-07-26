@@ -398,11 +398,18 @@ def main() -> int:
     if not n_races:
         # 平日は JRA 開催が無いので「レース0件」が正常。行列未構築と区別して案内する。
         built = _built_dates()
-        logger.warning("date=%s に対象レースがありません", date)
-        if built:
-            logger.warning("構築済みの日付: %s", ", ".join(built))
+        # いま開いている日 (レース0件) を勧めても意味がないので候補から外す
+        others = [d for d in built if d != date]
+        logger.warning("date=%s に対象レースがありません "
+                       "(平日は JRA 開催が無いので通常です)", date)
+        if others:
+            logger.warning("構築済みの日付: %s", ", ".join(others))
             logger.warning("過去の開催日で画面を確認するには:")
-            logger.warning("  serve.bat --date %s --preview", built[-1])
+            logger.warning("  serve.bat --date %s --preview", others[-1])
+        elif built:
+            logger.warning("構築済みなのは %s だけです。開催日を構築してください:",
+                           ", ".join(built))
+            logger.warning("  build_daily.bat --date <開催日>")
         else:
             logger.warning("先に build_daily.bat を実行してください")
 
