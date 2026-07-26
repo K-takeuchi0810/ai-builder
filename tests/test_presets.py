@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import random
 import sys
@@ -147,6 +148,37 @@ def test_fit_learns_correct_sign_and_improves_likelihood():
     prep = matrix.prepare_races(m)
     ll_zero = presets.log_likelihood(prep, ["form", "prize"], {"form": 0.0, "prize": 0.0})
     assert res["mean_log_likelihood_train"] > ll_zero
+
+
+def test_fit_never_ends_worse_than_uniform_even_with_huge_lr():
+    """回帰テスト: 大きすぎる学習率でも発散しないこと。
+
+    実測で lr=0.5・128列・15,549レースの学習が発散し、平均対数尤度が一様分布
+    (14頭なら約 -2.6) より遥かに悪い -13.16 になった。バックテスト再生で
+    参加者に無意味な印を見せてしまうため、単調改善を保証する。
+    """
+    m = _matrix(n_races=120)
+    prep = matrix.prepare_races(m)
+    cols = ["form", "prize"]
+    ll_uniform = presets.log_likelihood(prep, cols, {c: 0.0 for c in cols})
+
+    for lr in (0.1, 1.0, 50.0):                 # 極端な学習率でも
+        res = presets.fit_presets(m, train_from="20210101", train_to="20251231",
+                                  iters=80, lr=lr, min_races_per_column=1)
+        assert res["mean_log_likelihood_train"] >= ll_uniform, f"lr={lr} で発散"
+        # 一様分布 = log(1/頭数) より良い側にいること
+        assert res["mean_log_likelihood_train"] > math.log(1.0 / FIELD) - 1e-9
+
+
+def test_confidence_thresholds_are_ordered():
+    m = _matrix(n_races=80)
+    res = presets.fit_presets(m, train_from="20210101", train_to="20251231",
+                              iters=40, min_races_per_column=1)
+    th = res["confidence_thresholds"]
+    assert th["n"] > 0
+    assert th["solid"] >= th["strong"] >= 0      # 鉄板級の閾値 ≥ 有力の閾値
+    assert presets.confidence_label(th["solid"] + 1, th) == "鉄板級"
+    assert presets.confidence_label(-1.0, th) == "混戦"
 
 
 def test_train_period_is_respected_and_recorded():

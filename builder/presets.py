@@ -98,28 +98,55 @@ def _race_arrays(prep_races: list[dict], col_ids: list[str]):
         yield Z, win
 
 
+def _ll_and_grad(races, w, l2: float):
+    """平均対数尤度と、その勾配 (L2 込み) を返す。"""
+    ll = 0.0
+    grad = np.zeros_like(w)
+    for Z, win in races:
+        s = Z @ w
+        s -= s.max()
+        e = np.exp(s)
+        p = e / e.sum()
+        ll += math.log(max(p[win], 1e-12))
+        grad += Z[win] - (p @ Z)
+    n = len(races)
+    reg = 0.5 * l2 * float(w @ w) / n
+    return ll / n - reg, grad / n - l2 * w / n
+
+
 def fit_conditional_logit(prep_races: list[dict], col_ids: list[str], *,
-                          l2: float = 1.0, iters: int = 200, lr: float = 0.1) -> dict:
-    """conditional logit を勾配上昇で学習し {col_id: weight} を返す。
+                          l2: float = 1.0, iters: int = 200, lr: float = 0.1,
+                          tol: float = 1e-7) -> dict:
+    """conditional logit を学習し {col_id: weight} を返す。
 
     ゲートを通らなかった列は z が全て 0 なので勾配も 0 → 重みは初期値 0 のまま。
     (= カレンダーで窓を切らずに「充填レースからのみ学習」が自動的に成立する)
+
+    **単調改善を保証する**: 目的関数は凹だが固定学習率では発散し得る (実測: lr=0.5 で
+    平均対数尤度が一様分布より悪化した)。各反復で対数尤度が下がったらステップを半分に
+    戻すバックトラッキングを入れ、改善が tol 未満で打ち切る。
     """
     races = list(_race_arrays(prep_races, col_ids))
     w = np.zeros(len(col_ids), dtype=np.float64)
     if not races:
         return {cid: 0.0 for cid in col_ids}
-    n = len(races)
+
+    ll, grad = _ll_and_grad(races, w, l2)
+    step = lr
     for _ in range(iters):
-        grad = np.zeros_like(w)
-        for Z, win in races:
-            s = Z @ w
-            s -= s.max()
-            p = np.exp(s)
-            p /= p.sum()
-            grad += Z[win] - (p @ Z)
-        grad = grad / n - l2 * w / n
-        w += lr * grad
+        improved = False
+        for _try in range(30):                    # ステップを縮めながら改善点を探す
+            cand = w + step * grad
+            cand_ll, cand_grad = _ll_and_grad(races, cand, l2)
+            if cand_ll > ll:
+                gain = cand_ll - ll
+                w, ll, grad = cand, cand_ll, cand_grad
+                improved = True
+                break
+            step *= 0.5                           # 発散したので後退
+        if not improved or gain < tol:
+            break
+        step *= 1.2                               # 順調なら少しだけ伸ばす
     return {cid: float(round(w[j], 6)) for j, cid in enumerate(col_ids)}
 
 
