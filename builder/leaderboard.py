@@ -27,6 +27,7 @@
 from __future__ import annotations
 
 from . import configs as cf
+from . import labels as lb
 from . import model
 from . import predict_service as svc
 
@@ -134,9 +135,10 @@ def build_leaderboard(daily: dict, preset: dict, *,
         "as_of": as_of or daily.get("date"),
         "date": daily.get("date"),
         "n_races_finished": len(races),
-        # 判断C: 規則を画面に明記する (ポイント制は不採用)
-        "ranking_rule": "並び順は ①◎的中数 → ②人気を出し抜いた的中数 → ③◎複勝率 "
-                        "の順です。それでも同じなら同順位で並びます。",
+        # 判断C: 規則を画面に明記する (ポイント制は不採用)。
+        # 文言は labels.RANKING_RULE が正本 (board が空でも UI が出せるよう
+        # /api/features からも供給される)。
+        "ranking_rule": lb.RANKING_RULE,
         "entries": entries,
         "marks": svc.MARKS,
     }

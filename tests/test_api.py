@@ -691,3 +691,119 @@ def test_built_dates_lists_current_version_caches(tmp_path, monkeypatch):
     (d / "daily_20240101_old.json").write_text("{}", encoding="utf-8")   # 旧版は無視
     monkeypatch.setattr(c, "CORNER_INDEX_PATH", tmp_path / "corner.json")
     assert api._built_dates() == ["20250705", "20260726"]
+
+
+# ---------------------------------------------------------------------------
+# F2: 枠番はデータが正 (馬番からの計算は禁止)
+# ---------------------------------------------------------------------------
+def test_waku_comes_from_the_data_not_from_the_horse_number():
+    """枠番は DB 由来の値をそのまま返すこと。
+
+    JRA の枠割は頭数依存で、7頭立てでは馬番=枠番になる。実測で ceil(馬番/2)
+    は 7頭立ての 6/7 件を外した。UI 側の導出は原理的に不可能。
+    """
+    race = _race(n=7)
+    for i, h in enumerate(race["horses"], start=1):
+        h["waku"] = i                          # 7頭立て: 枠番 = 馬番
+        h["x"]["burden_weight"] = float(i)
+    got = svc.predict_race(race, USER_CFG, PRESET)
+    by_num = {m["horse_num"]: m["waku"] for m in got["marks"]}
+    assert by_num == {f"{i:02d}": i for i in range(1, 8)}
+
+
+def test_waku_is_none_when_absent():
+    """データに無ければ None (UI は色を付けない)。"""
+    race = _race(n=8)
+    for h in race["horses"]:
+        h.pop("waku", None)
+        h["x"]["burden_weight"] = float(h["num"])
+    got = svc.predict_race(race, USER_CFG, PRESET)
+    assert all(m["waku"] is None for m in got["marks"])
+
+
+def test_matrix_daily_waku_parsing():
+    """waku_num の解釈: 1〜8 の数字のみ採用、それ以外は None。"""
+    from builder import matrix_daily as mdmod
+    assert mdmod._waku({"waku_num": "3"}) == 3
+    assert mdmod._waku({"waku_num": 8}) == 8
+    assert mdmod._waku({"waku_num": "0"}) is None       # 枠は1始まり
+    assert mdmod._waku({"waku_num": "9"}) is None
+    assert mdmod._waku({"waku_num": ""}) is None
+    assert mdmod._waku({"waku_num": None}) is None
+    assert mdmod._waku({}) is None
+
+
+# ---------------------------------------------------------------------------
+# F9: 未知config / 使用項目0 で印を返さない (fail-closed)
+# ---------------------------------------------------------------------------
+def test_unknown_config_id_returns_404(tmp_path, monkeypatch):
+    """未知の config_id は 404。空 config に落として印を返してはいけない。"""
+    monkeypatch.setattr(cfgmod, "PRESET_WEIGHTS_PATH", tmp_path / "p.json")
+    monkeypatch.setitem(api._STATE, "daily", {"races": [_race("R1")]})
+    monkeypatch.setitem(api._STATE, "preset", PRESET)
+    got, status = api.handle_predict({"race_id": "R1", "config_id": "nope"})
+    assert status == 404 and got["error"] == "config_not_found"
+    assert "marks" not in got
+
+
+def test_known_config_id_is_resolved(tmp_path, monkeypatch):
+    monkeypatch.setattr(cfgmod, "PRESET_WEIGHTS_PATH", tmp_path / "p.json")
+    saved = cf.save_config(USER_CFG)
+    race = _race("R1")
+    for h in race["horses"]:
+        h["x"]["burden_weight"] = float(h["num"])
+    monkeypatch.setitem(api._STATE, "daily", {"races": [race]})
+    monkeypatch.setitem(api._STATE, "preset", PRESET)
+    got, status = api.handle_predict({"race_id": "R1", "config_id": saved["id"]})
+    assert status == 200 and got["marks"]
+
+
+def test_no_marks_when_no_column_is_usable():
+    """使える項目0なら marks を空にすること。
+
+    全馬スコア0だと順位は入力順のままで、それに ◎○▲△× を付けると
+    「入力順を順位として提示する」ことになる。UI のガードだけに頼らない。
+    """
+    # 空選択
+    empty = svc.predict_race(_race(), {"step1": [], "step2": []}, PRESET)
+    assert empty["marks"] == []
+    assert "no_columns_selected" in {w["code"] for w in empty["warnings"]}
+    # 人気だけ (判断A の除外で空になる)
+    pop = svc.predict_race(_race(), {"step1": ["popularity"], "step2": []}, PRESET)
+    assert pop["marks"] == []
+    # 重みが無い
+    nw = svc.predict_race(_race(), USER_CFG, {"weights": {}})
+    assert nw["marks"] == []
+    assert "no_preset_weights" in {w["code"] for w in nw["warnings"]}
+    # 全項目がゲート落ち
+    race = _race(n=12)
+    for i, h in enumerate(race["horses"]):
+        if i >= 2:
+            h["x"] = {k: None for k in h["x"]}
+    gated = svc.predict_race(race, USER_CFG, PRESET)
+    assert gated["marks"] == []
+
+
+def test_marks_are_returned_when_a_column_is_usable():
+    """逆に、使える項目が1つでもあれば印は返る (過剰に塞がない)。"""
+    race = _race()
+    for h in race["horses"]:
+        h["x"]["burden_weight"] = float(h["num"])
+    got = svc.predict_race(race, USER_CFG, PRESET)
+    assert len(got["marks"]) == len(race["horses"])
+    assert got["marks"][0]["mark"] == "◎"
+
+
+# ---------------------------------------------------------------------------
+# F6: 順位規則は labels.py の静的文字列
+# ---------------------------------------------------------------------------
+def test_ranking_rule_is_static_and_served_with_the_catalog():
+    """board が空でも読めるよう、規則文を選択肢と同じ経路で供給すること。"""
+    from builder import labels as lbl, leaderboard as lb
+    cat = api.feature_catalog()
+    assert cat["ranking_rule"] == lbl.RANKING_RULE
+    for part in ("◎的中数", "出し抜", "複勝率", "同順位"):
+        assert part in lbl.RANKING_RULE, part
+    # leaderboard も同じ文字列を使う (二重管理しない)
+    board = lb.build_leaderboard({"races": []}, PRESET, configs=[])
+    assert board["ranking_rule"] == lbl.RANKING_RULE

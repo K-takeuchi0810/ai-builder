@@ -70,6 +70,10 @@ def predict_race(race: dict, user_config: dict, preset: dict) -> dict:
     res = model.score_columns_detailed(rows, columns, weights)
     ranked = res["ranked"]
     used = sum(1 for c in res["columns"] if c["decision"] == "used")
+    # **使える項目が0なら印を返さない。** 全馬スコア0だと ranked は入力順のままで、
+    # それに ◎○▲△× を付けると「入力順を順位として提示する」ことになる。
+    # UI 側のガードだけに頼らず、API がそもそも印を出さない (fail-closed)。
+    suppress_marks = used == 0
     if columns and used == 0 and not warnings:
         warnings.append({
             "code": "all_columns_gated_out",
@@ -86,7 +90,7 @@ def predict_race(race: dict, user_config: dict, preset: dict) -> dict:
 
     by_num = {h["num"]: h for h in race["horses"]}
     marks = []
-    for i, (num, score) in enumerate(ranked):
+    for i, (num, score) in enumerate([] if suppress_marks else ranked):
         h = by_num.get(num, {})
         cov = res["coverage"].get(num, {})
         contribs = res["contributions"].get(num, [])
@@ -96,6 +100,7 @@ def predict_race(race: dict, user_config: dict, preset: dict) -> dict:
             # 初心者にはこの一文が本文。サーバで生成して表示ロジックを複製させない
             "decisive": _decisive_sentence(contribs, MARKS[i] if i < len(MARKS) else ""),
             "horse_num": num,
+            "waku": h.get("waku"),        # DB 由来。UI は表示のみ (計算しない)
             "horse_name": h.get("name"),
             "score": round(score, 4),
             "popularity": h.get("pop"),

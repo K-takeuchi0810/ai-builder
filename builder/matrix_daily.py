@@ -22,8 +22,10 @@ from pathlib import Path
 from . import config, matrix as mx, model
 from .keiba_bridge import _ensure_keiba_on_path, open_conn
 
-# v2: UI が必要とする start_time / 確定状態を各レースに持たせた (UI指示書 §1)。
-DAILY_VERSION = 2
+# v2: UI が必要とする start_time / 確定状態を各レースに持たせた。
+# v3: 枠番 (waku) を各馬に持たせた。UI が馬番から計算していたため誤った枠色が
+#     出ていた (7頭立てで 6/7 件外れる)。枠割は頭数依存なので UI 導出は不可能。
+DAILY_VERSION = 3
 
 
 def _daily_dir() -> Path:
@@ -94,6 +96,10 @@ def build_daily(date: str, specs: list[dict], *, rebuild: bool = False,
                 wo = model._num(h.get("win_odds"))
                 hrows.append({
                     "num": str(h.get("horse_num")),
+                    # 枠番は DB の値をそのまま持つ。**馬番から計算してはいけない** —
+                    # JRA の枠割は頭数依存で、7頭立てでは馬番=枠番になる
+                    # (ceil(馬番/2) 式は実測で 6/7 件外れた)。
+                    "waku": _waku(h),
                     "order": h.get("confirmed_order"),          # 当日は 0/None
                     "odds": (wo / 10.0) if (wo and wo > 0) else None,
                     "pop": model._num(h.get("win_popularity")),
@@ -153,6 +159,18 @@ def _race_id(race: dict) -> str:
     return (f"{race.get('race_year')}{race.get('race_month_day')}"
             f"{race.get('track_code')}{race.get('kaiji')}"
             f"{race.get('nichiji')}{race.get('race_num')}")
+
+
+def _waku(horse: dict) -> int | None:
+    """枠番 (1〜8)。DB に無ければ None を返し、UI は色を付けない。
+
+    間違った枠色を出すくらいなら出さない (推測式は禁止)。
+    """
+    raw = str(horse.get("waku_num") or "").strip()
+    if not raw.isdigit():
+        return None
+    n = int(raw)
+    return n if 1 <= n <= 8 else None
 
 
 def _odds_as_of(horses: list[dict]) -> str | None:

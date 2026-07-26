@@ -308,6 +308,52 @@ def test_start_time_stays_visible():
     assert re.search(r"updateMiniHead\(\);\s*//", js), "描画時に呼んでいない"
 
 
+def test_ui_does_not_derive_the_frame_number():
+    """F2: 枠色を馬番から計算しないこと。
+
+    JRA の枠割は頭数依存なので UI 導出は原理的に不可能。実測で ceil(馬番/2) は
+    7頭立ての 6/7 件を外した。サーバの waku をそのまま出す。
+    """
+    js = CODE["app.js"]
+    assert "wakuColor" not in js, "馬番からの導出関数が残っている"
+    assert "Math.ceil" not in js, "枠の計算式が残っている"
+    assert "m.waku" in js, "API の waku を使っていない"
+    assert "w-none" in js, "枠番が無いときの無色表示が無い"
+
+
+def test_race_id_is_carried_in_the_url():
+    """F3: リロード・共有・戻るで同じレースに戻れること。"""
+    js = CODE["app.js"]
+    assert "#predict/${" in js or "`#predict/" in js, "URL にレースを載せていない"
+    assert "parseHash" in js
+    assert "state.selectedRaceId = h.raceId" in js or "if (h.raceId)" in js
+
+
+def test_race_list_has_jump_affordances():
+    """F4: 会場チップと sticky 見出しで長い一覧を移動できること。"""
+    js, css = CODE["app.js"], CSS
+    assert "venue-chips" in js and "vchip" in js
+    assert "scrollToNextRace" in js
+    block = _rule_block(css, ".track-head")
+    assert block and "sticky" in block, "会場見出しが sticky でない"
+    # チップもタップ標的の下限を守る
+    vb = _rule_block(css, ".vchip")
+    assert vb and "min-height" in vb
+
+
+def test_provisional_chip_means_weight_not_announced():
+    """F5: 「暫定印」は馬体重未発表のときだけ。項目不足には使わない。"""
+    js = CODE["app.js"]
+    # 「暫定印」の出現はすべて weight_announced の文脈であること
+    for m in re.finditer(r"暫定印", js):
+        ctx = js[max(0, m.start() - 90):m.start() + 30]
+        assert "weight_announced" in ctx, f"馬体重以外の文脈で使っている: {ctx!r}"
+    # カバレッジ不足には別の言葉を使う
+    assert "一部の項目が使えません" in js
+    # 終了レースは「終了」チップのみ
+    assert "'<span class=\"chip\">終了</span>'" in js
+
+
 def test_no_personal_names_or_titles():
     """§10 全体DON'T: 個人名・役職名を含めない (「参加者」で統一)。"""
     banned = ["社長", "部長", "課長", "会長", "専務", "常務", "取締役", "様専用"]
@@ -346,11 +392,12 @@ def test_marks_do_not_show_raw_scores_in_the_list():
 
     数値は「なぜ◎か」を開いたときだけ出す。
     """
-    # 一覧行 (.row 内) にスコア文字列を差し込んでいない
-    row = re.search(r"<button class=\"row\">(.*?)</button>", JS, re.S)
-    assert row is not None
-    assert "fmtScore" not in row.group(1)
-    assert "scorebar" in row.group(1)
+    # 一覧行 (.row 内) にスコア文字列を差し込んでいない。
+    # 行は button ではなく div[role=button] (button の入れ子を避けるため)。
+    row = re.search(r'<div class="row" role="button".*?whyBlock', JS, re.S)
+    assert row is not None, "行のテンプレートが見つからない"
+    assert "fmtScore" not in row.group(0)
+    assert "scorebar" in row.group(0)
 
 
 def test_upset_badge_is_gold_not_alert():

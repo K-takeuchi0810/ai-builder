@@ -118,24 +118,43 @@ function go(key, push = true) {
   $('#screenSub').textContent = TITLES[key][1];
   $('#miniHead').hidden = true;
   window.scrollTo({ top: 0 });
-  // 相対 URL なので path と ?demo=1 は保持される (ハッシュだけ差し替わる)
-  if (push) history.pushState({ scr: key }, '', `#${key}`);
+  // 選択レースをURLに載せる。リロード・共有・戻るで同じレースに戻れる。
+  // 相対 URL なので path と ?demo=1 は保持される (ハッシュだけ差し替わる)。
+  const hash = (key === 'predict' && state.selectedRaceId)
+    ? `#predict/${encodeURIComponent(state.selectedRaceId)}` : `#${key}`;
+  if (push) history.pushState({ scr: key, raceId: state.selectedRaceId }, '', hash);
   if (key === 'predict') renderPredictScreen();
   if (key === 'board') loadLeaderboard();
   if (key === 'races') loadRaces();
 }
+/* "#predict/2025070501010201" → {key:'predict', raceId:'2025...'} */
+function parseHash() {
+  const raw = (location.hash || '#races').slice(1);
+  const [key, rest] = raw.split('/');
+  return { key: TITLES[key] ? key : 'races',
+           raceId: rest ? decodeURIComponent(rest) : null };
+}
 window.addEventListener('popstate', (e) => {
-  const key = (e.state && e.state.scr) || 'races';
+  const p = parseHash();
+  const key = (e.state && e.state.scr) || p.key;
+  const raceId = (e.state && e.state.raceId) || p.raceId;
+  if (raceId && raceId !== state.selectedRaceId) {
+    state.selectedRaceId = raceId;
+    state.lastPredict = null;
+  }
   go(key, false);
 });
 
 /* --------------------------------------------------- 画面1: レース一覧 */
 function raceChip(r) {
   if (r.finished) return '<span class="chip">終了</span>';
+  // 「暫定印」= 馬体重の発表前という意味。項目のカバレッジ不足は別のことなので
+  // 同じ言葉を使わない (終了レースに「暫定印」が付いて見えたのはこの混同が原因)。
   if (!r.weight_announced) return '<span class="chip wait">馬体重の発表待ち</span>';
   if (!r.ready) return '<span class="chip muted">分析できる項目がありません</span>';
   if (r.gate_pass_rate != null && r.gate_pass_rate < 1) {
-    return '<span class="chip ok">予想できます</span><span class="chip muted">暫定印</span>';
+    return '<span class="chip ok">予想できます</span>'
+      + '<span class="chip muted">一部の項目が使えません</span>';
   }
   return '<span class="chip ok">予想できます</span>';
 }
@@ -176,14 +195,42 @@ async function loadRaces() {
   state.races.filter((r) => !r.finished).forEach((r) => push(r, false));
   state.races.filter((r) => r.finished).forEach((r) => push(r, true));
 
-  $('#raceList').innerHTML = groups.map((g) => `
-    <div class="card race-group${g.done ? ' done' : ''}">
+  // 会場チップ (タップで該当会場へ) — 3,200px のリストを素通りさせない
+  const venues = [];
+  groups.forEach((g, i) => {
+    if (!g.key || g.done) return;
+    venues.push({ id: `grp${i}`, label: g.key, n: g.races.length });
+  });
+  $('#raceList').innerHTML =
+    (venues.length > 1 ? `<div class="venue-chips">${venues.map((v) =>
+      `<button class="vchip" data-jump="${v.id}">${esc(v.label)} ${v.n}R</button>`
+    ).join('')}</div>` : '')
+    + groups.map((g, i) => `
+    <div class="race-group${g.done ? ' done' : ''}" id="grp${i}">
       ${g.key ? `<div class="track-head">${esc(g.key)}</div>` : ''}
-      ${g.races.map(raceRow).join('')}
+      <div class="card">${g.races.map(raceRow).join('')}</div>
     </div>`).join('');
   $$('#raceList .race-item').forEach((el) => {
     el.addEventListener('click', () => selectRace(el.dataset.race));
   });
+  $$('#raceList .vchip').forEach((el) => el.addEventListener('click', () => {
+    const t = document.getElementById(el.dataset.jump);
+    if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }));
+  scrollToNextRace();
+}
+
+/* 一覧を開いたら「いま見るべきレース」を視界に入れる (0スクロールで到達)。
+ * 発走時刻はサーバの値、現在時刻は端末の時計 — 表示の並びを決めるだけで、
+ * 予想や集計には一切使わない。全レース終了の日は先頭のまま動かさない。 */
+function scrollToNextRace() {
+  const now = new Date();
+  const hm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const next = state.races.find((r) => !r.finished && (r.start_time || '') >= hm)
+    || state.races.find((r) => !r.finished);
+  if (!next) return;
+  const el = document.querySelector(`#raceList .race-item[data-race="${cssEsc(next.race_id)}"]`);
+  if (el) el.scrollIntoView({ behavior: 'auto', block: 'center' });
 }
 function raceRow(r) {
   // 日本語ラベルはサーバ (labels.py) の値をそのまま出す。UI に対応表を持たない。
@@ -224,6 +271,9 @@ async function loadFeatures() {
   }
   const f = state.features;
   (f.glossary || []).forEach((g) => { state.glossary[g.key] = g; });
+  // 順位規則は集計結果に依存しない事実なので、選択肢と同じ経路で受け取り
+  // ここで入れる。board が空でも「—」のままにならない。
+  if (f.ranking_rule) $('#boardRule').textContent = f.ranking_rule;
 
   // 「まよったら」— 初心者が空白画面で止まらないための入口
   const sp = f.starter_preset;
@@ -569,25 +619,42 @@ function renderPredict(p, prev) {
     const w = Math.max(2, Math.round((Math.abs(m.score || 0) / maxAbs) * 100));
     const promoted = prev && prevMark[m.horse_num] && prevMark[m.horse_num] !== m.mark
       && rankOf(m.mark) < rankOf(prevMark[m.horse_num]);
+    // 行は **button にしない**。中に用語ボタン (data-term) を置くため、
+    // button の入れ子になり HTML パーサが内側 button 以降を行の外へ吐き出す。
+    // その結果 .why が .horse の子でなくなり `.horse.open .why` が一致せず、
+    // 「タップしても根拠が開かない」「人気・オッズが消える」状態になっていた。
+    // div[role=button] + keydown でキーボード操作性は維持する。
     return `<div class="horse${isHon ? ' hon' : ''}${promoted ? ' flash' : ''}" data-num="${esc(m.horse_num)}">
-      <button class="row">
+      <div class="row" role="button" tabindex="0" aria-expanded="false">
         <span class="mark${isHon ? ' hon' : ''}${m.mark ? '' : ' none'}">${esc(m.mark || '–')}</span>
-        <span class="waku w${wakuColor(m.horse_num, marks.length)}">${esc(String(Number(m.horse_num)))}</span>
+        ${wakuChip(m)}
         <div class="who">
           <div class="name">${esc(m.horse_name || '')}
             ${upset ? '<span class="badge-upset">人気とは別の根拠</span>' : ''}</div>
           <div class="sub">${popLabel(m)}${oddsLabel(m, p)}${coverChip(m)}</div>
         </div>
         <div class="scorebar"><div class="bar"><i style="width:${w}%"></i></div></div>
-      </button>
+      </div>
       ${whyBlock(m)}
     </div>`;
   }).join('');
 
-  $$('#markList .row').forEach((row) => row.addEventListener('click', (ev) => {
-    if (ev.target.closest('[data-term]')) return;
-    row.parentElement.classList.toggle('open');
-  }));
+  $$('#markList .row').forEach((row) => {
+    const toggle = () => {
+      const open = row.parentElement.classList.toggle('open');
+      row.setAttribute('aria-expanded', String(open));
+    };
+    row.addEventListener('click', (ev) => {
+      if (ev.target.closest('[data-term]')) return;
+      toggle();
+    });
+    row.addEventListener('keydown', (ev) => {
+      if (ev.key !== 'Enter' && ev.key !== ' ') return;
+      if (ev.target.closest('[data-term]')) return;
+      ev.preventDefault();        // Space でのスクロールを止める
+      toggle();
+    });
+  });
   bindTerms();
 }
 
@@ -624,10 +691,15 @@ function warnColumns(w) {
 }
 
 const rankOf = (mk) => ['◎', '○', '▲', '△', '×'].indexOf(mk);
-const wakuColor = (num, n) => {
-  const k = Number(num) || 1;
-  return Math.min(8, Math.max(1, n <= 8 ? k : Math.ceil(k / Math.ceil(n / 8))));
-};
+/* 枠色は **サーバが返す waku をそのまま使う**。馬番から計算してはいけない —
+ * JRA の枠割は頭数依存で、7頭立ては馬番=枠番になる (実測で ceil(馬番/2) は
+ * 6/7 件外れた)。waku が無い場合は色を付けない (誤った色より無色)。 */
+function wakuChip(m) {
+  const n = Number(m.horse_num);
+  const w = Number(m.waku);
+  const cls = (Number.isInteger(w) && w >= 1 && w <= 8) ? ` w${w}` : ' w-none';
+  return `<span class="waku${cls}">${esc(String(n))}</span>`;
+}
 const popLabel = (m) => (m.popularity == null ? ''
   : `<span>${term('popularity', `${Number(m.popularity)}番人気`)}</span>`);
 /* オッズには必ず取得時刻を添える。時刻はサーバの odds_fetched_at のみを使い、
@@ -749,7 +821,7 @@ async function loadLeaderboard() {
     return;
   }
   $('#boardSub').textContent = `◎的中数で並べています · ${d.n_races_finished}レース終了時点`;
-  $('#boardRule').textContent = d.ranking_rule || '';
+  if (d.ranking_rule) $('#boardRule').textContent = d.ranking_rule;
   const entries = d.entries || [];
   const mine = entries.filter((e) => !e.is_baseline);
   if (!mine.length) {
@@ -804,12 +876,14 @@ function init() {
     ['#demoStrip', '#demoBanner'].forEach((s) => { const e = $(s); if (e) e.remove(); });
   }
 
-  history.replaceState({ scr: 'races' }, '', location.hash || '#races');
+  // URL のレースを先に state に入れる (リロード・共有・戻るで同じレースに戻る)
+  const h = parseHash();
+  if (h.raceId) state.selectedRaceId = h.raceId;
+  history.replaceState({ scr: h.key, raceId: h.raceId }, '', location.hash || '#races');
   loadRaces();
   checkVersion();
   loadFeatures().then(restoreConfig).then(() => {
-    const key = (location.hash || '#races').slice(1);
-    if (TITLES[key] && key !== 'races') go(key, false);
+    if (h.key !== 'races') go(h.key, false);
   });
 }
 

@@ -219,6 +219,8 @@ def feature_catalog() -> dict:
             "step2": [],
         },
         "glossary": lbl.glossary(),
+        # 成績比較の並び順。board が空でも読めるよう選択肢と同じ経路で供給する
+        "ranking_rule": lbl.RANKING_RULE,
         "marks": svc.MARKS,
         "mark_legend": [{"mark": m, "term": lbl.GLOSSARY[k]["term"],
                          "desc": lbl.GLOSSARY[k]["desc"]}
@@ -240,7 +242,17 @@ def feature_catalog() -> dict:
 
 def handle_predict(payload: dict) -> tuple[dict, int]:
     race_id = payload.get("race_id")
-    user_cfg = payload.get("config") or {}
+    # config_id 指定にも対応する。**未知の id は 404**。
+    # 空の config に落として続行すると、選択列0 = 全馬スコア0 のまま
+    # 「◎」を返してしまう (入力順を順位として提示することになる)。
+    cfg_id = payload.get("config_id")
+    if cfg_id and not payload.get("config"):
+        got = cf.get_config(str(cfg_id))
+        if not got:
+            return {"error": "config_not_found", "config_id": cfg_id}, 404
+        user_cfg = got["config"]
+    else:
+        user_cfg = payload.get("config") or {}
     race = md.find_race(_STATE["daily"], race_id) if race_id else None
     if race is None:
         return {"error": "race_not_found", "race_id": race_id}, 404

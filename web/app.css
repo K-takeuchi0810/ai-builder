@@ -175,11 +175,18 @@ main{flex:1; padding:14px 14px 84px}
   background:var(--turf-100); border-radius:var(--r-md); padding:10px 12px}
 
 /* ---------- レース一覧 ---------- */
-/* 開催 (競馬場) の見出し。1日に複数開催があるのでレース番号だけでは一意にならない */
-/* .card が overflow:hidden なので sticky は使わない (効かないうえに描画が崩れる) */
-.track-head{background:var(--turf-100); color:var(--turf-700);
-  font-size:var(--fs-min); font-weight:700; letter-spacing:.1em; padding:7px 14px;
-  border-bottom:1px solid var(--line-soft)}
+/* 会場チップ: 3,200px の一覧を素通りさせず、タップで会場へ飛べるようにする */
+.venue-chips{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px}
+.vchip{font-size:var(--fs-min); font-weight:700; padding:11px 14px; min-height:var(--tap);
+  border-radius:999px; border:1.5px solid var(--turf-500); background:#fff;
+  color:var(--turf-700); font-family:inherit; cursor:pointer}
+/* 開催 (競馬場) の見出し。1日に複数開催があるのでレース番号だけでは一意にならない。
+ * sticky にするため .card の外に出した (.card は overflow:hidden で sticky が効かない)。
+ * top はアプリヘッダの高さ分だけ下げる。 */
+.track-head{position:sticky; top:96px; z-index:20;
+  background:var(--turf-100); color:var(--turf-700);
+  font-size:var(--fs-min); font-weight:700; letter-spacing:.1em; padding:8px 14px;
+  border-radius:var(--r-sm) var(--r-sm) 0 0; border-bottom:1px solid var(--line-soft)}
 .race-item{display:flex; align-items:center; gap:12px; padding:13px 14px; min-height:var(--tap);
   border-bottom:1px solid var(--line-soft); background:var(--card); width:100%; text-align:left;
   border-left:none; border-right:none; border-top:none; font-family:inherit; cursor:pointer}
@@ -263,6 +270,9 @@ main{flex:1; padding:14px 14px 84px}
 .horse:last-child{border-bottom:none}
 .horse .row{display:flex; align-items:center; gap:11px; padding:11px 14px; min-height:var(--tap);
   cursor:pointer; width:100%; text-align:left; background:none; border:none; font-family:inherit}
+.horse .row:focus-visible{outline:2px solid var(--turf-500); outline-offset:-2px}
+/* 枠番がデータに無い場合は色を付けない (誤った枠色を出すより無色) */
+.w-none{background:var(--line-soft); color:var(--ink-soft); border:1px dashed var(--line)}
 .mark{font-weight:800; font-size:1.55rem; width:36px; text-align:center; flex:none; line-height:1; color:var(--ink)}
 .mark.hon{color:var(--gold)}
 .mark.none{color:var(--line); font-size:1.1rem}
