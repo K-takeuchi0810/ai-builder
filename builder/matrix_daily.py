@@ -22,7 +22,8 @@ from pathlib import Path
 from . import config, matrix as mx, model
 from .keiba_bridge import _ensure_keiba_on_path, open_conn
 
-DAILY_VERSION = 1
+# v2: UI が必要とする start_time / 確定状態を各レースに持たせた (UI指示書 §1)。
+DAILY_VERSION = 2
 
 
 def _daily_dir() -> Path:
@@ -30,7 +31,8 @@ def _daily_dir() -> Path:
 
 
 def _daily_path(date: str, cols: list[dict]) -> Path:
-    return _daily_dir() / f"daily_{date}_{mx._col_hash(cols)}.json"
+    # version を名前に含め、形が変わったら旧キャッシュを自動的に使わない
+    return _daily_dir() / f"daily_v{DAILY_VERSION}_{date}_{mx._col_hash(cols)}.json"
 
 
 def build_daily(date: str, specs: list[dict], *, rebuild: bool = False,
@@ -105,10 +107,12 @@ def build_daily(date: str, specs: list[dict], *, rebuild: bool = False,
                 "date": before,
                 "race_num": str(race.get("race_num")),
                 "race_name": _display_name(race, seg),
+                "start_time": _hhmm(race.get("start_time")),   # UI の発走時刻表示用
                 "seg": seg,
                 "horses": hrows,
                 "tan": mx._tan_payouts(get_payout_row(conn, race)),
                 "trusted": not race_odds_untrusted(horses, race, max_age),
+                "odds_as_of": _odds_as_of(horses),           # UI はオッズに取得時刻を添える
                 "weight_announced": _weight_announced(horses),
             })
 
@@ -119,6 +123,12 @@ def build_daily(date: str, specs: list[dict], *, rebuild: bool = False,
     tmp.write_text(json.dumps(daily, ensure_ascii=False), encoding="utf-8")
     tmp.replace(path)
     return daily
+
+
+def _hhmm(raw) -> str | None:
+    """start_time ("1545") → "15:45"。欠損は None。"""
+    s = str(raw or "").strip()
+    return f"{s[:2]}:{s[2:4]}" if len(s) >= 4 and s[:4].isdigit() else None
 
 
 def _display_name(race: dict, seg: dict) -> str:
@@ -145,6 +155,18 @@ def _race_id(race: dict) -> str:
             f"{race.get('nichiji')}{race.get('race_num')}")
 
 
+def _odds_as_of(horses: list[dict]) -> str | None:
+    """市場オッズ snapshot の最新取得時刻 (ISO 文字列)。
+
+    UI はオッズに必ず取得時刻を添える (UI指示書 §4)。**クライアントの時計で代用しては
+    いけない** ため、DB の `odds_fetched_at` をそのまま返す。全馬 NULL の場合は
+    確定オッズ (or 未 mining) なので None を返し、UI は時刻を出さない。
+    ISO 8601 なので辞書順の max が時刻順の max と一致する。
+    """
+    stamps = [str(h.get("odds_fetched_at")) for h in horses if h.get("odds_fetched_at")]
+    return max(stamps) if stamps else None
+
+
 def _weight_announced(horses: list[dict]) -> bool:
     """馬体重が発表済みか (設計書 §3.3 の「分析待ち」判定用)。"""
     return any(str(h.get("horse_weight") or "").strip().isdigit() for h in horses)
@@ -164,6 +186,7 @@ def today_status(daily: dict, col_ids: list[str] | None = None) -> list[dict]:
 
     馬体重待ち・ゲート未通過列を各レースについて返す (§5.3 の当日事前検査を兼ねる)。
     """
+    from . import labels as lb
     from . import presets as ps
     cols = col_ids if col_ids is not None else [c["id"] for c in daily.get("columns", [])]
     prep = mx.prepare_races(daily) if daily.get("races") else []
@@ -174,13 +197,25 @@ def today_status(daily: dict, col_ids: list[str] | None = None) -> list[dict]:
     for i, r in enumerate(daily.get("races", [])):
         missing = missing_by_index.get(i, [])
         n_passed = n_cols - len(missing)
+        seg = r.get("seg") or {}
         out.append({
             "race_id": r["race_id"],
             "race_num": r.get("race_num"),
             "race_name": r.get("race_name"),
+            # UI の一覧表示用 (発走時刻・頭数・馬場条件) と「結果待ち」判定。
+            # 日本語ラベルはサーバで付ける (labels.py が唯一の語彙表。UI 側に
+            # 同じ対応表を複製すると片方だけ変わって静かにずれる)。
+            "start_time": r.get("start_time"),
+            "surface": seg.get("surface"),
+            "surface_label": lb.value_label("surface", seg.get("surface")),
+            "distance": seg.get("distance"),
+            "condition": seg.get("condition"),
+            "condition_label": lb.value_label("condition", seg.get("condition")),
+            "finished": any(h.get("order") == 1 for h in r["horses"]),
             "n_horses": len(r["horses"]),
             "weight_announced": r.get("weight_announced", False),
             "odds_trusted": r.get("trusted", False),
+            "odds_as_of": r.get("odds_as_of"),
             "n_columns": n_cols,
             "n_gate_passed": n_passed,
             "gate_pass_rate": round(n_passed / n_cols, 3) if n_cols else None,

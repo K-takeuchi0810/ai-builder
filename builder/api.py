@@ -81,18 +81,20 @@ def _json(handler: BaseHTTPRequestHandler, obj, status: int = 200) -> None:
 
 def feature_catalog() -> dict:
     """UI が出す選択肢 (設計書 §4)。STEP2 は 9項目 × 条件4 × 期間11。"""
-    step1 = [{"key": s["key"], "label": model.FEATURES[s["key"]].label,
+    from . import labels as lbl
+    step1 = [{"key": s["key"], "label": lbl.column_label(s["key"]),
               "category": model.FEATURES[s["key"]].category}
              for s in sp.maib_step1_specs()]
-    step2 = [{"metric": k, "label": model.FEATURES[k].label}
+    # STEP2 の集計対象名は「(可変集計)」を外した素の名前 (セルは別の軸で選ばせる)
+    step2 = [{"metric": k, "label": model.FEATURES[k].label.replace("(可変集計)", "")}
              for k in sp.MAIB_STEP2_METRICS if k in model.FEATURES]
     return {
         "step1": step1,
         "step2_metrics": step2,
-        "step2_matches": [{"value": m, "label": lbl} for m, lbl in
-                          zip(sp.MAIB_MATCHES,
-                              ["全レース", "距離が同じ", "競馬場が同じ", "芝ダートを分ける"])],
-        "step2_lookbacks": [{"value": lb, "label": ("全レース" if lb is None else f"直近{lb}レース")}
+        # 選択肢のラベルも labels.py を参照する (列ラベルと語彙をずらさない)
+        "step2_matches": [{"value": m, "label": lbl.match_label(m)}
+                          for m in sp.MAIB_MATCHES],
+        "step2_lookbacks": [{"value": lb, "label": lbl.lookback_label(lb)}
                             for lb in sp.MAIB_LOOKBACKS],
         "n_base_columns": len(sp.maib_step2_specs()),
         "notes": ["重みは事前学習済み (参加者は項目を選ぶだけ)",
