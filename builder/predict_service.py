@@ -53,7 +53,11 @@ def predict_race(race: dict, user_config: dict, preset: dict) -> dict:
             "message": "選択された全項目がカバレッジ不足でこのレースでは使えません",
             "hint": "項目を増やすか、直近走の少ない馬が多いレースを避けてください",
         })
-    gap = (ranked[0][1] - ranked[1][1]) if len(ranked) >= 2 else None
+    _annotate_low_sample(res, preset, warnings)
+    # 自信度は **尺度不変な差** で判定する。生の差は選んだ項目数と重みの大きさに
+    # 比例するので、425列で決めた閾値を数項目の設定に当てると常に「混戦」になる。
+    gap = ps.normalized_gap([s for _n, s in ranked])
+    raw_gap = (ranked[0][1] - ranked[1][1]) if len(ranked) >= 2 else None
     thresholds = preset.get("confidence_thresholds") or {}
 
     by_num = {h["num"]: h for h in race["horses"]}
@@ -79,13 +83,62 @@ def predict_race(race: dict, user_config: dict, preset: dict) -> dict:
         "date": race.get("date"),
         "marks": marks,
         "columns": res["columns"],
-        "confidence": {"score_gap": None if gap is None else round(gap, 4),
+        "confidence": {"normalized_gap": None if gap is None else round(gap, 4),
+                       "score_gap": None if raw_gap is None else round(raw_gap, 4),
                        "label": ps.confidence_label(gap, thresholds)},
         "weight_announced": race.get("weight_announced"),
         "config_hash": cf.config_hash(user_config),
         "warnings": warnings,
         "n_columns_used": used,
+        # 予想画面を一覧レスポンスに依存させないためのヘッダ情報
+        "race_num": race.get("race_num"),
+        "start_time": race.get("start_time"),
+        "odds_as_of": race.get("odds_as_of"),
+        "odds_trusted": race.get("trusted"),
+        "n_columns_selected": len(columns),
     }
+
+
+def _annotate_low_sample(res: dict, preset: dict, warnings: list) -> None:
+    """学習サンプルが薄い項目に印を付け、**使われている場合だけ**警告する。
+
+    コーナー通過順位は生 JV-Data の保存範囲が 2025年以降しかなく、ゲートを通った
+    学習レースが中央値 53 件しかない (賞金系は 143 件)。これらの重みは 15,000 件で
+    学習した項目と同じ確度ではない。黙って同じ見た目で出すと参加者が確度を
+    誤解するため、寄与の各行に印を付け、警告に項目名と学習レース数を明示する。
+
+    **学習窓を後ろに伸ばして件数を稼ぐことはしない** (直近データで学習して直近で
+    評価すれば成績が良く見えるだけで、実際の予測力ではない)。件数が薄いという
+    事実をそのまま開示する。
+    """
+    low = {c["column"]: c["races_passed_gate"]
+           for c in (preset.get("low_sample_columns") or [])}
+    if not low:
+        return
+    for c in res["columns"]:
+        if c["id"] in low:
+            c["low_sample"] = True
+            c["train_races"] = low[c["id"]]
+    for contribs in res["contributions"].values():
+        for c in contribs:
+            if c["id"] in low:
+                c["low_sample"] = True
+                c["train_races"] = low[c["id"]]
+
+    thin = [c for c in res["columns"] if c.get("low_sample") and c["decision"] == "used"]
+    if not thin:
+        return
+    thin.sort(key=lambda c: c["train_races"])
+    warnings.append({
+        "code": "low_sample_columns",
+        "message": f"選んだ項目のうち {len(thin)} 件は、重みを決めた過去レースが少ないため"
+                   f"確度が低めです (最少 {thin[0]['train_races']}レース)",
+        "hint": "コーナー通過順位・獲得本賞金は過去データの保存範囲が短く、"
+                "他の項目より根拠が薄くなります。印はそのまま出しています。",
+        "columns": [{"label": c["label"], "train_races": c["train_races"]}
+                    for c in thin[:8]],
+        "n_columns": len(thin),
+    })
 
 
 def _blank():

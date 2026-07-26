@@ -218,3 +218,70 @@ def test_save_and_load_presets(tmp_path):
     p = presets.save_presets(res, tmp_path / "w.json")
     assert presets.load_presets(p)["weights"] == res["weights"]
     assert presets.load_presets(tmp_path / "none.json") == {}
+
+
+# ---------------------------------------------------------------------------
+# 列別 (単独) 学習 — 部分集合でも尺度が揃う重みを作る経路
+# ---------------------------------------------------------------------------
+def test_per_column_fit_matches_joint_fit_on_a_single_column():
+    """1列しかない構成では、列別学習と同時学習は同じ解に収束すること。
+
+    列別学習は 1 次元 Newton、同時学習は勾配上昇 + バックトラッキングで実装が
+    別なので、同一問題で一致することを固定して実装ミスを検出する。
+    """
+    prep = matrix.prepare_races(_matrix(n_races=200))
+    uni = presets.fit_per_column(prep, ["form"], l2=1.0, iters=50)
+    joint = presets.fit_conditional_logit(prep, ["form"], l2=1.0, iters=300)
+    # hib=False の向き付けは race_z 側で済んでいるので「良い=高い z」。重みは正。
+    assert uni["form"] > 0
+    assert math.isclose(uni["form"], joint["form"], rel_tol=0.02), (uni, joint)
+
+
+def test_per_column_fit_is_independent_of_other_columns():
+    """列別学習は他列の有無で重みが変わらないこと (これが部分集合で揃う理由)。
+
+    同時学習では列を足すと既存列の重みが動く (共変量調整) ため、参加者が選ぶ
+    部分集合ごとに尺度が変わってしまう。列別学習はそれが起きない。
+    """
+    prep = matrix.prepare_races(_matrix(n_races=200))
+    alone = presets.fit_per_column(prep, ["form"])["form"]
+    with_other = presets.fit_per_column(prep, ["form", "prize"])["form"]
+    assert alone == with_other
+
+    # 対照: 同時学習は他列を足すと動く (= 部分集合で尺度がずれる)
+    j_alone = presets.fit_conditional_logit(prep, ["form"])["form"]
+    j_both = presets.fit_conditional_logit(prep, ["form", "prize"])["form"]
+    assert j_alone != j_both
+
+
+def test_per_column_fit_gives_zero_to_uninformative_columns():
+    """ゲートを通らない/分散が無い列は重み0 (勾配も曲率も消える)。"""
+    prep = matrix.prepare_races(_matrix(n_races=60, prize_horses=2))
+    w = presets.fit_per_column(prep, ["form", "prize"])
+    assert w["prize"] == 0.0          # カバレッジ不足でゲート未通過
+    assert w["form"] != 0.0
+
+
+def test_per_column_fit_never_worse_than_uniform_per_column():
+    """各列単独で見たとき、列別重みは一様分布 (重み0) 以上であること。
+
+    列別学習の存在意義は「単独選択でまともに効く」ことなので、そこを固定する。
+    """
+    prep = matrix.prepare_races(_matrix(n_races=200))
+    w = presets.fit_per_column(prep, ["form", "prize"])
+    for cid in ("form", "prize"):
+        ll_fit = presets.log_likelihood(prep, [cid], w)
+        ll_uni = presets.log_likelihood(prep, [cid], {cid: 0.0})
+        assert ll_fit >= ll_uni - 1e-9, (cid, ll_fit, ll_uni)
+
+
+def test_pack_preserves_race_structure():
+    """_pack のレース境界と勝ち馬位置が prepare_races と一致すること。"""
+    prep = matrix.prepare_races(_matrix(n_races=20))
+    z, starts, wins = presets._pack(prep, ["form", "prize"])
+    assert len(starts) == len(wins) + 1
+    assert starts[-1] == z.shape[0] == sum(len(r["z"]) for r in prep)
+    for k, r in enumerate(prep):
+        nums = list(r["z"].keys())
+        assert starts[k + 1] - starts[k] == len(nums)
+        assert r["order"][nums[wins[k]]] == 1        # 勝ち馬を指している

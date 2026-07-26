@@ -1,0 +1,72 @@
+{
+  "years": [
+    2025,
+    2026
+  ],
+  "date_from": "20250701",
+  "n_races": 3702,
+  "weights_file": "out\\cache\\preset_weights_percol.json",
+  "method": "per_column_univariate",
+  "popularity_weight": 1.353408,
+  "cases": {
+    "人気だけ": {
+      "n_columns": 1,
+      "n_columns_with_weight": 1,
+      "fav_agreement": 0.9587,
+      "hit_rate_win": 0.3123,
+      "hit_rate_show": 0.6283
+    },
+    "人気 + 集計3種": {
+      "n_columns": 4,
+      "n_columns_with_weight": 4,
+      "fav_agreement": 0.7423,
+      "hit_rate_win": 0.2904,
+      "hit_rate_show": 0.6156
+    },
+    "人気 + 集計3種 + 騎手/近走": {
+      "n_columns": 6,
+      "n_columns_with_weight": 6,
+      "fav_agreement": 0.6551,
+      "hit_rate_win": 0.2717,
+      "hit_rate_show": 0.6018
+    },
+    "人気なし・集計3種": {
+      "n_columns": 3,
+      "n_columns_with_weight": 3,
+      "fav_agreement": 0.3957,
+      "hit_rate_win": 0.2029,
+      "hit_rate_show": 0.4905
+    },
+    "人気なし・タイム指数のみ": {
+      "n_columns": 1,
+      "n_columns_with_weight": 1,
+      "fav_agreement": 0.1613,
+      "hit_rate_win": 0.121,
+      "hit_rate_show": 0.3171
+    },
+    "人気なし・コーナー系のみ": {
+      "n_columns": 2,
+      "n_columns_with_weight": 2,
+      "fav_agreement": 0.329,
+      "hit_rate_win": 0.1896,
+      "hit_rate_show": 0.4643
+    }
+  },
+  "pairwise_top_pick_differs": {
+    "人気だけ vs 人気 + 集計3種": 0.2658,
+    "人気だけ vs 人気 + 集計3種 + 騎手/近走": 0.3612,
+    "人気だけ vs 人気なし・集計3種": 0.6175,
+    "人気だけ vs 人気なし・タイム指数のみ": 0.8414,
+    "人気だけ vs 人気なし・コーナー系のみ": 0.6767,
+    "人気 + 集計3種 vs 人気 + 集計3種 + 騎手/近走": 0.285,
+    "人気 + 集計3種 vs 人気なし・集計3種": 0.4298,
+    "人気 + 集計3種 vs 人気なし・タイム指数のみ": 0.8179,
+    "人気 + 集計3種 vs 人気なし・コーナー系のみ": 0.6194,
+    "人気 + 集計3種 + 騎手/近走 vs 人気なし・集計3種": 0.5105,
+    "人気 + 集計3種 + 騎手/近走 vs 人気なし・タイム指数のみ": 0.8382,
+    "人気 + 集計3種 + 騎手/近走 vs 人気なし・コーナー系のみ": 0.6191,
+    "人気なし・集計3種 vs 人気なし・タイム指数のみ": 0.7202,
+    "人気なし・集計3種 vs 人気なし・コーナー系のみ": 0.5348,
+    "人気なし・タイム指数のみ vs 人気なし・コーナー系のみ": 0.8069
+  }
+}

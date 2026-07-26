@@ -18,10 +18,32 @@ import json
 import time
 from pathlib import Path
 
-from builder import config, matrix, presets, responsiveness
+from builder import config, matrix, memprobe, presets, responsiveness
 from builder.specs import maib_all_specs
 
 EVID = Path(__file__).resolve().parent / "docs" / "evidence"
+
+
+def _load_years_guarded(years: list[int], specs: list[dict], max_rss_gb: float) -> dict:
+    """年別キャッシュを1年ずつ読み込み、**メモリを実測しながら**結合する。
+
+    425列 × 6年 は JSON で 4.6 GB あり dict 展開で数倍になる。全部読んでから
+    OOM で落ちると数十分が無駄になるので、1年ごとに working set を測り、
+    安全弁を超えたら「何年まで入ったか」を明示して即座に止める。
+    """
+    mats = []
+    for y in years:
+        t = time.time()
+        mats.append(matrix.build_matrix(f"{y}0101", f"{y}1231", specs))
+        rss = memprobe.rss_gb()
+        n = sum(len(mm["races"]) for mm in mats)
+        print(f"[load] {y} 累計races={n} {memprobe.fmt()} {time.time()-t:.0f}s", flush=True)
+        if rss is not None and rss > max_rss_gb:
+            raise MemoryError(
+                f"メモリ安全弁: {y} 読み込み後に {rss:.1f}GB > 上限 {max_rss_gb:.1f}GB。"
+                f"読み込めたのは {years[0]}〜{y} ({n}レース)。"
+                f"--max-rss-gb を上げるか、対象年を分けてください。")
+    return matrix.merge_matrices(mats)
 
 
 def main() -> int:
@@ -33,28 +55,37 @@ def main() -> int:
                     help="応答性検査で評価するレース数")
     ap.add_argument("--save", action="store_true", help="本番のプリセット重みとして保存")
     ap.add_argument("--tag", default=None)
+    ap.add_argument("--max-rss-gb", type=float, default=None,
+                    help="メモリ安全弁 (既定: 空き物理メモリの 70%%)")
     args = ap.parse_args()
+
+    avail = memprobe.available_gb()
+    max_rss = args.max_rss_gb or (round(avail * 0.7, 1) if avail else 16.0)
+    print(f"[env] 空き物理メモリ={avail:.1f}GB 安全弁={max_rss:.1f}GB" if avail
+          else f"[env] 安全弁={max_rss:.1f}GB", flush=True)
 
     specs = maib_all_specs()
     t = time.time()
-    m = matrix.load_years(args.years, specs)
+    m = _load_years_guarded(args.years, specs, max_rss)
     col_ids = [c["id"] for c in m["columns"]]
-    print(f"[load] races={len(m['races'])} columns={len(col_ids)} {time.time()-t:.0f}s",
-          flush=True)
+    print(f"[load] races={len(m['races'])} columns={len(col_ids)} "
+          f"{memprobe.fmt()} {time.time()-t:.0f}s", flush=True)
 
     # 一様分布 (全重み0) の基準値 — これを下回ったら採用不可
     prep_all = matrix.prepare_races(m)
     tr = [r for r in prep_all
           if config.PRESET_TRAIN_FROM <= r["date"] <= config.PRESET_TRAIN_TO]
     ll_uniform = presets.log_likelihood(tr, col_ids, {c: 0.0 for c in col_ids})
-    print(f"[baseline] 一様分布の平均対数尤度 = {ll_uniform:.4f}", flush=True)
+    print(f"[baseline] 一様分布の平均対数尤度 = {ll_uniform:.4f} "
+          f"(学習レース={len(tr)}) {memprobe.fmt()}", flush=True)
 
     # (a) 本番学習
     t = time.time()
     res = presets.fit_presets(m, iters=args.iters, lr=args.lr)
     ll = res["mean_log_likelihood_train"]
     print(f"[a/fit] {time.time()-t:.0f}s  平均対数尤度={ll:.4f} "
-          f"({'改善' if ll > ll_uniform else '悪化'} {ll - ll_uniform:+.4f})", flush=True)
+          f"({'改善' if ll > ll_uniform else '悪化'} {ll - ll_uniform:+.4f}) "
+          f"{memprobe.fmt()}", flush=True)
     print(f"        学習レース数={res['n_races_trained']} 期間={res['train_period']}")
     print(f"        列構成指紋={res['columns_fingerprint']} ({res['n_columns']}列)")
 
@@ -137,6 +168,7 @@ def main() -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps({
         "years": args.years, "n_races": len(m["races"]), "n_columns": len(col_ids),
+        "peak_memory_gb": memprobe.peak_gb(),
         "ll_uniform": ll_uniform, "fit": {k: v for k, v in res.items() if k != "weights"},
         "responsiveness": {k: v for k, v in resp.items() if k != "cells"},
         "collinearity_collapse_rate": collapse_rate,

@@ -40,7 +40,9 @@ PRESET = {
     "weights": {"popularity": 1.0,
                 "agg_avg_finish|lb=3|m=": 2.0,
                 "agg_avg_finish|lb=5|m=distance": 2.0},
-    "confidence_thresholds": {"solid": 1.0, "strong": 0.3, "n": 100},
+    # scale キーが無いと confidence_label は解釈を拒否する (古い絶対閾値との混同防止)
+    "confidence_thresholds": {"solid": 1.0, "strong": 0.3, "n": 100,
+                              "scale": "normalized_gap_v1"},
 }
 
 
@@ -112,7 +114,7 @@ def test_predict_assigns_marks_and_contributions():
 
 
 def test_predict_confidence_labels():
-    thresholds = {"solid": 1.0, "strong": 0.3}
+    thresholds = {"solid": 1.0, "strong": 0.3, "scale": svc.ps.CONFIDENCE_SCALE}
     assert svc.ps.confidence_label(2.0, thresholds) == "鉄板級"
     assert svc.ps.confidence_label(0.5, thresholds) == "有力"
     assert svc.ps.confidence_label(0.1, thresholds) == "混戦"
@@ -120,6 +122,44 @@ def test_predict_confidence_labels():
     assert svc.ps.confidence_label(1.0, {}) == "—"
     got = svc.predict_race(_race(), USER_CFG, PRESET)
     assert got["confidence"]["label"] in ("鉄板級", "有力", "混戦")
+
+
+def test_confidence_label_refuses_old_absolute_thresholds():
+    """生のスコア差で作られた古い閾値は解釈せず「—」にすること。
+
+    尺度の違う値を突き合わせるとラベルが「混戦」に張り付き、参加者に嘘の
+    自信度を見せる (実測: 人気を選ばない設定で 100% 混戦)。黙って使わない。
+    """
+    old = {"solid": 0.4963, "strong": 0.2767, "n": 15549}       # scale キーが無い
+    assert svc.ps.confidence_label(2.0, old) == "—"
+    assert svc.ps.confidence_label(0.1, old) == "—"
+
+
+def test_confidence_gap_is_scale_invariant():
+    """全重みを定数倍しても自信度の判定値が変わらないこと。
+
+    これが成り立つから、425列で決めた閾値を数項目の設定にも当てられる。
+    """
+    race = _race()
+    cfg = {"step1": ["popularity"],
+           "step2": [{"metric": "agg_avg_finish", "match": [], "lookback": 3}]}
+    a = svc.predict_race(race, cfg, PRESET)["confidence"]["normalized_gap"]
+    scaled = dict(PRESET, weights={k: v * 100 for k, v in PRESET["weights"].items()})
+    b = svc.predict_race(race, cfg, scaled)["confidence"]["normalized_gap"]
+    assert a == pytest.approx(b, rel=1e-6)
+    # 生の差は 100 倍になる (= 生の差では閾値を共有できない)
+    raw_a = svc.predict_race(race, cfg, PRESET)["confidence"]["score_gap"]
+    raw_b = svc.predict_race(race, cfg, scaled)["confidence"]["score_gap"]
+    assert raw_b == pytest.approx(raw_a * 100, rel=1e-3)   # 応答は4桁丸め
+
+
+def test_normalized_gap_edge_cases():
+    assert svc.ps.normalized_gap([]) is None
+    assert svc.ps.normalized_gap([1.0]) is None
+    assert svc.ps.normalized_gap([2.0, 2.0, 2.0]) == 0.0       # 全馬同点
+    # 順序に依存しない (内部でソートする)
+    assert svc.ps.normalized_gap([1.0, 5.0, 2.0]) == \
+        svc.ps.normalized_gap([5.0, 2.0, 1.0])
 
 
 def test_predict_warns_when_presets_missing():
@@ -291,3 +331,66 @@ def test_handle_backtest_requires_data():
     api._STATE["backtest_matrix"] = {"columns": [], "races": [_race("A", date="20250801")]}
     body, status = api.handle_backtest({"config": USER_CFG, "period": {"from": "20250701"}})
     assert status == 200 and body["your_ai"]["races"] == 1
+
+
+# ---------------------------------------------------------------------------
+# 学習サンプルが薄い項目の開示 (コーナー・賞金は生データの保存範囲が短い)
+# ---------------------------------------------------------------------------
+_THIN_PRESET = dict(PRESET, low_sample_columns=[
+    {"column": "agg_avg_finish|lb=5|m=distance", "races_passed_gate": 173, "threshold": 500},
+    {"column": "not_selected_column", "races_passed_gate": 12, "threshold": 500},
+])
+
+
+def test_predict_warns_when_a_selected_column_has_thin_training_data():
+    """薄い学習サンプルの項目を選んだら、項目名と学習レース数を明示すること。
+
+    重み 173 レース学習の項目と 15,000 レース学習の項目を同じ見た目で出すと、
+    参加者が確度を誤解する (実資金の判断に使われる)。
+    """
+    cfg = {"step1": ["popularity"],
+           "step2": [{"metric": "agg_avg_finish", "match": ["distance"], "lookback": 5}]}
+    got = svc.predict_race(_race(), cfg, _THIN_PRESET)
+    warn = next(w for w in got["warnings"] if w["code"] == "low_sample_columns")
+    assert "173" in warn["message"]
+    assert warn["n_columns"] == 1
+    assert warn["columns"][0]["train_races"] == 173
+    # 選んでいない列は警告に混ぜない
+    assert all("not_selected" not in c["label"] for c in warn["columns"])
+    # 印は出し続ける (ブロックしない)
+    assert got["marks"] and got["marks"][0]["mark"] == "◎"
+
+
+def test_predict_does_not_warn_when_no_selected_column_is_thin():
+    cfg = {"step1": ["popularity"], "step2": []}
+    got = svc.predict_race(_race(), cfg, _THIN_PRESET)
+    assert not any(w["code"] == "low_sample_columns" for w in got["warnings"])
+
+
+def test_predict_flags_thin_columns_in_contributions():
+    """寄与の各行にも印を付ける (「なぜ◎か」を開いた参加者がそこで判断する)。"""
+    cfg = {"step1": ["popularity"],
+           "step2": [{"metric": "agg_avg_finish", "match": ["distance"], "lookback": 5}]}
+    got = svc.predict_race(_race(), cfg, _THIN_PRESET)
+    contribs = {c["id"]: c for c in got["marks"][0]["contributions"]}
+    thin = contribs["agg_avg_finish|lb=5|m=distance"]
+    assert thin["low_sample"] is True and thin["train_races"] == 173
+    assert "low_sample" not in contribs["popularity"]      # 厚い列には付けない
+
+
+def test_predict_low_sample_warning_absent_when_preset_has_no_report():
+    """low_sample_columns を持たない古いプリセットでも落ちないこと。"""
+    cfg = {"step1": ["popularity"], "step2": []}
+    got = svc.predict_race(_race(), cfg, PRESET)
+    assert not any(w["code"] == "low_sample_columns" for w in got["warnings"])
+
+
+def test_predict_carries_header_fields_for_the_ui():
+    """予想画面が一覧レスポンスに依存しないよう、ヘッダ情報を同梱すること。"""
+    race = dict(_race(), start_time="15:45", race_num="11",
+                odds_as_of="2026-08-01T15:31:07", trusted=False)
+    got = svc.predict_race(race, {"step1": ["popularity"], "step2": []}, PRESET)
+    assert got["start_time"] == "15:45" and got["race_num"] == "11"
+    assert got["odds_as_of"] == "2026-08-01T15:31:07"
+    assert got["odds_trusted"] is False
+    assert got["n_columns_selected"] == 1

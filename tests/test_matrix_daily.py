@@ -25,7 +25,8 @@ def _fake_race(race_num="01", weight="480"):
     return {"race_year": "2026", "race_month_day": "0801", "track_code": "04",
             "kaiji": "03", "nichiji": "05", "race_num": race_num, "distance": 1800,
             "track_type_code": "11", "turf_condition": "1", "dirt_condition": "0",
-            "weather_code": "1", "race_name": f"テスト{race_num}R"}
+            "weather_code": "1", "race_name": f"テスト{race_num}R",
+            "start_time": "1545"}
 
 
 def _fake_horses(n=8, weight="480", with_order=False):
@@ -172,6 +173,67 @@ def test_today_status_not_ready_when_nothing_passes(tmp_path, monkeypatch):
     assert status[0]["n_gate_passed"] == 0
     assert status[0]["gate_pass_rate"] == 0.0
     assert status[0]["ready"] is False
+
+
+def test_start_time_is_formatted_for_display(tmp_path, monkeypatch):
+    """発走時刻は "1545" → "15:45"。欠損は None (UI に "--:--" を出させる)。"""
+    assert md._hhmm("1545") == "15:45"
+    assert md._hhmm(1545) == "15:45"
+    assert md._hhmm("") is None and md._hhmm(None) is None
+    assert md._hhmm("15") is None            # 桁が足りない
+    assert md._hhmm("abcd") is None          # 数字でない
+
+    monkeypatch.setattr(config, "CORNER_INDEX_PATH", tmp_path / "corner.json")
+    _patch_db(monkeypatch, [_fake_race()], _fake_horses(8))
+    daily = md.build_daily("20260801", SPECS)
+    assert daily["races"][0]["start_time"] == "15:45"
+    assert md.today_status(daily)[0]["start_time"] == "15:45"
+
+
+def test_odds_as_of_comes_from_db_not_wall_clock(tmp_path, monkeypatch):
+    """オッズ取得時刻は DB の odds_fetched_at のみ。全馬 NULL なら None を返す。
+
+    UI がクライアントの時計で「○○時点」を捏造しないための土台 (UI指示書 §4)。
+    """
+    assert md._odds_as_of([]) is None
+    assert md._odds_as_of([{"odds_fetched_at": None}]) is None
+    # ISO 文字列なので辞書順の max が時刻順の max と一致する
+    assert md._odds_as_of([
+        {"odds_fetched_at": "2026-08-01T14:02:00"},
+        {"odds_fetched_at": "2026-08-01T15:31:07"},
+        {"odds_fetched_at": None},
+    ]) == "2026-08-01T15:31:07"
+
+    monkeypatch.setattr(config, "CORNER_INDEX_PATH", tmp_path / "corner.json")
+    horses = _fake_horses(4)
+    for h in horses:
+        h["odds_fetched_at"] = "2026-08-01T15:31:07"
+    _patch_db(monkeypatch, [_fake_race()], horses)
+    daily = md.build_daily("20260801", SPECS)
+    assert daily["races"][0]["odds_as_of"] == "2026-08-01T15:31:07"
+    assert md.today_status(daily)[0]["odds_as_of"] == "2026-08-01T15:31:07"
+
+
+def test_today_status_carries_display_fields(tmp_path, monkeypatch):
+    """一覧表示に必要な条件と「結果待ち」判定を返すこと。"""
+    monkeypatch.setattr(config, "CORNER_INDEX_PATH", tmp_path / "corner.json")
+    _patch_db(monkeypatch, [_fake_race()], _fake_horses(8))
+    s = md.today_status(md.build_daily("20260801", SPECS))[0]
+    assert s["surface"] == "turf" and s["distance"] == 1800
+    assert s["condition"] is not None
+    assert s["finished"] is False              # 当日は confirmed_order=0
+
+    # 確定後は finished=True (1着馬がいる)
+    _patch_db(monkeypatch, [_fake_race()], _fake_horses(8, with_order=True))
+    s2 = md.today_status(md.build_daily("20260802", SPECS))[0]
+    assert s2["finished"] is True
+
+
+def test_daily_version_is_in_cache_filename(tmp_path, monkeypatch):
+    """形が変わったら旧キャッシュを掴まないこと (version をファイル名に含める)。"""
+    monkeypatch.setattr(config, "CORNER_INDEX_PATH", tmp_path / "corner.json")
+    p = md._daily_path("20260801", matrix._columns(SPECS))
+    assert f"daily_v{md.DAILY_VERSION}_20260801_" in p.name
 
 
 def test_output_shape_is_compatible_with_matrix_helpers(tmp_path, monkeypatch):
