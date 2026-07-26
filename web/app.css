@@ -88,6 +88,11 @@ main{flex:1; padding:14px 14px 84px}
   border-top:1px solid rgba(168,129,28,.25); padding-top:7px}
 
 /* ---------- レース一覧 ---------- */
+/* 開催 (競馬場) の見出し。1日に複数開催があるのでレース番号だけでは一意にならない */
+/* .card が overflow:hidden なので sticky は使わない (効かないうえに描画が崩れる) */
+.track-head{background:var(--turf-100); color:var(--turf-700);
+  font-size:var(--fs-min); font-weight:700; letter-spacing:.1em; padding:7px 14px;
+  border-bottom:1px solid var(--line-soft)}
 .race-item{display:flex; align-items:center; gap:12px; padding:13px 14px; min-height:var(--tap);
   border-bottom:1px solid var(--line-soft); background:var(--card); width:100%; text-align:left;
   border-left:none; border-right:none; border-top:none; font-family:inherit; cursor:pointer}

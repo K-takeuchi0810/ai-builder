@@ -132,23 +132,35 @@ async function loadRaces() {
     $('#raceList').innerHTML = `<div class="empty"><div class="t">きょうのレースはありません</div></div>`;
     return;
   }
-  $('#raceList').innerHTML = state.races.map((r) => {
-    // 日本語ラベルはサーバ (labels.py) の値をそのまま出す。UI に対応表を持たない。
-    const meta = [`${r.n_horses}頭`, r.condition_label].filter(Boolean).join(' · ');
-    const sel = r.race_id === state.selectedRaceId ? ' on' : '';
-    return `<button class="race-item${sel}" data-race="${esc(r.race_id)}">
+  // 1日に複数開催があるので競馬場ごとにまとめる。混ぜると 01R が3つ並び、
+  // 発走時刻も昇順にならない (実データ: 函館16:05 の次に 福島10:10)。
+  const groups = [];
+  state.races.forEach((r) => {
+    const key = r.track_label || '';
+    const last = groups[groups.length - 1];
+    if (last && last.key === key) last.races.push(r);
+    else groups.push({ key, races: [r] });
+  });
+  $('#raceList').innerHTML = groups.map((g) => `
+    ${g.key ? `<div class="track-head">${esc(g.key)}</div>` : ''}
+    ${g.races.map(raceRow).join('')}`).join('');
+  $$('#raceList .race-item').forEach((el) => {
+    el.addEventListener('click', () => selectRace(el.dataset.race));
+  });
+}
+function raceRow(r) {
+  // 日本語ラベルはサーバ (labels.py) の値をそのまま出す。UI に対応表を持たない。
+  const meta = [`${r.n_horses}頭`, r.condition_label].filter(Boolean).join(' · ');
+  const sel = r.race_id === state.selectedRaceId ? ' on' : '';
+  return `<button class="race-item${sel}" data-race="${esc(r.race_id)}">
       <div class="race-time"><div class="t num">${esc(r.start_time || '--:--')}</div>
-        <div class="r">${esc(r.race_num)}R</div></div>
+        <div class="r">${esc(Number(r.race_num))}R</div></div>
       <div class="race-name">
         <div class="n">${esc(r.race_name || '')}</div>
         <div class="meta"><span>${esc(meta)}</span>${raceChip(r)}</div>
       </div>
       <div class="go">›</div>
     </button>`;
-  }).join('');
-  $$('#raceList .race-item').forEach((el) => {
-    el.addEventListener('click', () => selectRace(el.dataset.race));
-  });
 }
 function formatDate(d) {
   if (!d || d.length !== 8) return '—';

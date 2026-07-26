@@ -206,6 +206,10 @@ def today_status(daily: dict, col_ids: list[str] | None = None) -> list[dict]:
             # 日本語ラベルはサーバで付ける (labels.py が唯一の語彙表。UI 側に
             # 同じ対応表を複製すると片方だけ変わって静かにずれる)。
             "start_time": r.get("start_time"),
+            # 1日に複数開催があるのでレース番号だけでは一意にならない
+            # (実データ: 函館01R / 福島01R / 小倉01R が並ぶ)。UI は競馬場でまとめる。
+            "track": seg.get("track"),
+            "track_label": lb.value_label("track", seg.get("track")),
             "surface": seg.get("surface"),
             "surface_label": lb.value_label("surface", seg.get("surface")),
             "distance": seg.get("distance"),

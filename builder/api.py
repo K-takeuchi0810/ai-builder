@@ -209,11 +209,16 @@ def main() -> int:
     ap.add_argument("--backtest-to", default=None, help="同 終了日")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8780)
+    ap.add_argument("--weights", default=None,
+                    help="プリセット重みファイル (既定: out/cache/preset_weights.json。"
+                         "同時学習と列別学習を同じUIで見比べるために指定できる)")
     args = ap.parse_args()
 
     _STATE["date"] = args.date
     _STATE["specs"] = sp.maib_all_specs()
-    _STATE["preset"] = ps.load_presets()
+    _STATE["preset"] = ps.load_presets(args.weights)
+    logger.info("プリセット重み: %s (%s)", args.weights or cfgmod.PRESET_WEIGHTS_PATH,
+                _STATE["preset"].get("method", "joint"))
     # 旧モデル (別の列構成で学習した重み) を掴む事故を起動時に検出する
     col_ids = [c["id"] for c in mxmod._columns(_STATE["specs"])]
     problem = ps.check_preset_matches_spec(_STATE["preset"], col_ids)
