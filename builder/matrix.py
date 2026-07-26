@@ -38,13 +38,18 @@ def _col_id(spec: dict) -> str:
 
 
 def _columns(specs: list[dict]) -> list[dict]:
+    from . import labels as lb
     cols = []
     for s in specs:
         feat = model.FEATURES.get(s.get("key"))
         if feat is None:
             continue
+        # label には **セル (一致条件・さかのぼる範囲) まで** 入れる。同じ集計対象の
+        # 別セルを複数選んだとき、寄与の行が同名になって区別できなくなるのを防ぐ。
+        # _col_hash は id のみを見るのでラベル変更で行列キャッシュは無効化されない。
         cols.append({"id": _col_id(s), "key": feat.key, "kind": feat.kind,
-                     "hib": feat.higher_is_better, "label": feat.label,
+                     "hib": feat.higher_is_better,
+                     "label": lb.column_label(feat.key, s.get("match"), s.get("lookback")),
                      "lookback": s.get("lookback"), "match": s.get("match") or []})
     return cols
 

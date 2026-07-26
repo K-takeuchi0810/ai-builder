@@ -360,7 +360,9 @@ _FEATURE_LIST: list[Feature] = [
     _F("agg_gain_last_to_finish", "最終コーナーからの着順上昇(可変集計)", "可変集計",
        "aggregate", True, _gain_last_to_finish),
     # 賞金 (生 SE から復元。索引が無い期間は None で誠実に劣化)
-    _F("agg_prize", "獲得賞金(可変集計)", "可変集計", "aggregate", True, _prize),
+    # 「本賞金」= 付加賞・褒賞金を含まない (生 SE の 366 桁目)。UI に「賞金総額」と
+    # 出すと実際より多い額を指すことになるので、名前で範囲を明示する。
+    _F("agg_prize", "獲得本賞金(可変集計)", "可変集計", "aggregate", True, _prize),
 ]
 
 FEATURES: dict[str, Feature] = {f.key: f for f in _FEATURE_LIST}
