@@ -187,7 +187,8 @@ main{flex:1; padding:14px 14px 84px}
 .scorebar .bar{height:6px; background:var(--line-soft); border-radius:3px; overflow:hidden}
 .scorebar .bar i{display:block; height:100%; background:var(--turf-500); border-radius:3px}
 .horse.hon .scorebar .bar i{background:var(--gold-bright)}
-/* §7: 出し抜きは「見どころ」= gold (赤ではない) */
+/* ◎が1番人気でないことの目印。alert(赤) は操作を要するエラー専用なので gold を使う。
+ * 煽り表現は付けない (設計書 v0.3 §1 DON'T)。文言は「1番人気ではない」。 */
 .badge-upset{font-size:var(--fs-min); font-weight:700; color:var(--gold); background:var(--gold-soft);
   padding:2px 8px; border-radius:999px}
 .horse.flash{background:var(--gold-soft)}
