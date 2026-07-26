@@ -641,3 +641,53 @@ def test_predict_returns_result_for_finished_races():
     # 未確定なら空
     pending = svc.predict_race(_race(with_order=False), USER_CFG, PRESET)
     assert pending["finished"] is False and pending["result"] == []
+
+
+# ---------------------------------------------------------------------------
+# 検証モード (--preview): 過去の開催日で印の画面を確認する
+# ---------------------------------------------------------------------------
+def test_preview_shows_finished_races_as_upcoming():
+    """確定済みレースを発走前として見せること。
+
+    平日や過去日では全レースが終了扱いになり、印の画面をまったく確認できない
+    (開催日の発走前という短い時間帯しか触れない)。
+    """
+    got = api._as_upcoming({"finished": True, "result": [{"order": 1}], "x": 1})
+    assert got["finished"] is False
+    assert got["result"] == []
+    assert got["x"] == 1                       # 他のキーは触らない
+
+
+def test_preview_is_off_by_default_and_disclosed_when_on(monkeypatch):
+    """既定は無効。有効時は必ず画面に出す文言を返すこと (結果を知って見るため)。"""
+    monkeypatch.setitem(api._STATE, "preview", False)
+    assert api.version_info()["preview"] is False
+    monkeypatch.setitem(api._STATE, "preview", True)
+    v = api.version_info()
+    assert v["preview"] is True
+    assert "検証モード" in v["preview_message"]
+
+
+def test_preview_flag_reaches_predict_and_the_race_list(monkeypatch):
+    """predict と一覧の両方で終了扱いを外すこと (片方だけだと矛盾する)。"""
+    monkeypatch.setitem(api._STATE, "preview", True)
+    monkeypatch.setitem(api._STATE, "preset", PRESET)
+    monkeypatch.setitem(api._STATE, "daily", {"races": [_race("R1")]})
+    got, status = api.handle_predict({"race_id": "R1", "config": USER_CFG})
+    assert status == 200
+    assert got["finished"] is False and got["result"] == []
+    # 素の predict は確定を隠さない (検証モードは API 層だけの見せ方)
+    raw = svc.predict_race(_race("R1"), USER_CFG, PRESET)
+    assert raw["finished"] is True
+
+
+def test_built_dates_lists_current_version_caches(tmp_path, monkeypatch):
+    """レース0件のときに案内する「構築済みの日付」を拾えること。"""
+    from builder import config as c, matrix_daily as mdmod
+    d = tmp_path / "daily"
+    d.mkdir()
+    (d / f"daily_v{mdmod.DAILY_VERSION}_20260726_abc.json").write_text("{}", encoding="utf-8")
+    (d / f"daily_v{mdmod.DAILY_VERSION}_20250705_abc.json").write_text("{}", encoding="utf-8")
+    (d / "daily_20240101_old.json").write_text("{}", encoding="utf-8")   # 旧版は無視
+    monkeypatch.setattr(c, "CORNER_INDEX_PATH", tmp_path / "corner.json")
+    assert api._built_dates() == ["20250705", "20260726"]

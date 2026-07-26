@@ -42,7 +42,22 @@ from . import specs as sp
 
 logger = logging.getLogger("builder.api")
 
-_STATE: dict = {"date": None, "daily": {}, "preset": {}, "specs": []}
+_STATE: dict = {"date": None, "daily": {}, "preset": {}, "specs": [], "preview": False}
+
+
+def _as_upcoming(obj: dict) -> dict:
+    """検証モード: 確定済みのレースを「発走前」として見せる。
+
+    過去日を開くと全レースが終了扱いになり、印の画面をまったく確認できない
+    (開催日の発走前という短い時間帯しか触れない)。印は PIT を守って
+    「そのレース以前の過去走」だけから作られているので、発走前に出したはずの
+    印そのものではある — ただし結果を知っている状態で見るので、
+    **常時バナーで検証モードだと明示する** (`version_info()["preview"]`)。
+    """
+    out = dict(obj)
+    out["finished"] = False
+    out["result"] = []
+    return out
 
 # UI の静的ファイル (素の HTML/CSS/JS)。外部依存ゼロ・1プロセス起動のため
 # フレームワークやビルドツールは使わず、ここから直接配信する (UI指示書 §0)。
@@ -75,6 +90,17 @@ _BOOT_WEB = _web_fingerprint()
 _BOOT_TIME = time.strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _built_dates() -> list[str]:
+    """当日行列が構築済みの日付 (昇順)。レース0件のときの案内に使う。"""
+    import re
+    d = Path(cfgmod.CORNER_INDEX_PATH).parent / "daily"
+    if not d.exists():
+        return []
+    ver = f"daily_v{md.DAILY_VERSION}_"
+    return sorted({m.group(1) for p in d.glob(f"{ver}*.json")
+                   if (m := re.search(r"_(\d{8})_", p.name))})
+
+
 def version_info() -> dict:
     """起動時の指紋と現在のディスクを比べ、**再起動が必要か**を返す。
 
@@ -104,6 +130,10 @@ def version_info() -> dict:
         "stale": stale,
         "started_at": _BOOT_TIME,
         "message": msg,
+        "date": _STATE.get("date"),
+        "preview": bool(_STATE.get("preview")),
+        "preview_message": ("検証モード: 確定済みのレースを発走前として表示しています"
+                            "(結果は既に出ています)"),
     }
 
 
@@ -215,6 +245,8 @@ def handle_predict(payload: dict) -> tuple[dict, int]:
     if race is None:
         return {"error": "race_not_found", "race_id": race_id}, 404
     got = svc.predict_race(race, user_cfg, _STATE["preset"])
+    if _STATE.get("preview"):
+        got = _as_upcoming(got)
     # 起動時に検出したプリセットの問題は **どの種類でも** 必ず応答に載せる。
     # コードを1つだけ許可すると、新しい種類 (指紋なし等) が黙って素通りする。
     problem = _STATE.get("preset_problem")
@@ -268,7 +300,11 @@ class Handler(BaseHTTPRequestHandler):
                      else md.load_daily(date, _STATE["specs"]))
             if not daily:
                 return _json(self, {"error": "daily_matrix_not_built", "date": date}, 409)
-            return _json(self, {"date": date, "races": md.today_status(daily)})
+            races = md.today_status(daily)
+            if _STATE.get("preview"):
+                races = [_as_upcoming(r) for r in races]
+            return _json(self, {"date": date, "races": races,
+                                "preview": bool(_STATE.get("preview"))})
 
         if path == "/api/features":
             return _json(self, feature_catalog())
@@ -316,6 +352,9 @@ def main() -> int:
     ap.add_argument("--build", action="store_true", help="当日行列を無ければ構築する")
     ap.add_argument("--require-confirmed", action="store_true",
                     help="確定済みレースのみ (過去日で試すとき)")
+    ap.add_argument("--preview", action="store_true",
+                    help="確定済みレースを発走前として表示する (過去日で印の画面を"
+                         "確認するための検証モード。画面に常時バナーが出る)")
     # 既定で表示期間 (学習未使用) を入れる。指定しないと「これまでの成績」カードが
     # 出ないのに理由が分からない、という迷い方をするため。
     ap.add_argument("--backtest-from", default=cfgmod.DISPLAY_BACKTEST_FROM,
@@ -335,6 +374,7 @@ def main() -> int:
     # (過去走の絞り込みは対象レースの開催日を基準に model._past_runs が行う)。
     date = args.date or time.strftime("%Y%m%d")
     _STATE["date"] = date
+    _STATE["preview"] = args.preview
     _STATE["specs"] = sp.maib_all_specs()
     _STATE["preset"] = ps.load_presets(args.weights)
     logger.info("プリセット重み: %s (%s)", args.weights or cfgmod.PRESET_WEIGHTS_PATH,
@@ -353,10 +393,18 @@ def main() -> int:
         _STATE["daily"] = md.build_daily(date, _STATE["specs"],
                                          require_confirmed=args.require_confirmed)
     n_races = len(_STATE["daily"].get("races", []))
-    logger.info("当日レース数: %d (date=%s)", n_races, date)
+    logger.info("当日レース数: %d (date=%s)%s", n_races, date,
+                "  ★検証モード" if args.preview else "")
     if not n_races:
-        logger.warning("当日行列がありません。先に build_daily.bat を実行してください")
-        logger.warning("  build_daily.bat --date %s", date)
+        # 平日は JRA 開催が無いので「レース0件」が正常。行列未構築と区別して案内する。
+        built = _built_dates()
+        logger.warning("date=%s に対象レースがありません", date)
+        if built:
+            logger.warning("構築済みの日付: %s", ", ".join(built))
+            logger.warning("過去の開催日で画面を確認するには:")
+            logger.warning("  serve.bat --date %s --preview", built[-1])
+        else:
+            logger.warning("先に build_daily.bat を実行してください")
 
     if args.backtest_from and not args.no_backtest:
         from . import matrix as mx

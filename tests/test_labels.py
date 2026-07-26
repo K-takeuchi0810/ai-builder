@@ -181,8 +181,15 @@ def test_mark_legend_order_matches_the_marks():
     assert "本命" in legend[0]["term"]
 
 
-def test_low_sample_is_marked_before_selection():
-    """受け入れ条件: 低サンプル項目が選択前にマークされている。"""
+def test_low_sample_is_marked_before_selection(monkeypatch):
+    """受け入れ条件: 低サンプル項目が選択前にマークされている。
+
+    feature_catalog は `api._STATE["preset"]` を見る (--weights を尊重するため)。
+    他のテストが合成プリセットを入れたまま残すと結果が変わるので、
+    このテストは **本番の重みを明示的に置いて** から検証する。
+    """
+    from builder import presets as ps
+    monkeypatch.setitem(api._STATE, "preset", ps.load_presets())
     cat = api.feature_catalog()
     thin = [m for m in cat["step2_metrics"] if m.get("low_sample")]
     names = [m["label"] for m in thin]
@@ -192,8 +199,10 @@ def test_low_sample_is_marked_before_selection():
         assert isinstance(m["min_train_races"], int) and m["min_train_races"] >= 0
 
 
-def test_starter_preset_is_offered():
+def test_starter_preset_is_offered(monkeypatch):
     """初心者の空白画面問題への最小の答えが用意されていること。"""
+    from builder import presets as ps
+    monkeypatch.setitem(api._STATE, "preset", ps.load_presets())
     sp_preset = api.feature_catalog()["starter_preset"]
     assert sp_preset["step1"] and len(sp_preset["step1"]) == 3
     assert "popularity" not in sp_preset["step1"]     # 判断A

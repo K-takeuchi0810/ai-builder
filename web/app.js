@@ -817,7 +817,14 @@ function init() {
 async function checkVersion() {
   let v;
   try { v = await getJSON('/api/version'); } catch (e) { return; }
-  if (!v || !v.stale) return;
+  if (!v) return;
+  // 検証モードは結果を知った状態で印を見ることになるので、常時知らせる
+  const pb = $('#previewBanner');
+  if (pb) {
+    if (v.preview) { pb.textContent = v.preview_message; pb.hidden = false; }
+    else pb.remove();
+  }
+  if (!v.stale) return;
   const el = $('#racesWarn');
   if (el) el.innerHTML = `<div class="warn-card"><div class="m">${esc(v.message)}</div></div>`;
 }

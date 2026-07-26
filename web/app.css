@@ -53,6 +53,11 @@ header.app{
   background:var(--gold-soft); color:var(--gold); font-size:var(--fs-min);
   font-weight:700; padding:6px 10px; border-bottom:1px solid var(--gold-bright)}
 
+/* 検証モード (--preview) の常時バナー。結果を知った状態で印を見ていることを隠さない */
+.preview-banner{position:sticky; top:0; z-index:29; text-align:center;
+  background:var(--alert-soft); color:var(--alert); font-size:var(--fs-min);
+  font-weight:700; padding:6px 10px; border-bottom:1px solid var(--alert)}
+
 main{flex:1; padding:14px 14px 84px}
 .screen{display:none}
 .screen.active{display:block}
