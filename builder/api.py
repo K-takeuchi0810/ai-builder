@@ -25,6 +25,7 @@ from urllib.parse import parse_qs, urlparse
 
 from . import config as cfgmod
 from . import configs as cf
+from . import matrix as mxmod
 from . import matrix_daily as md
 from . import model
 from . import predict_service as svc
@@ -73,7 +74,11 @@ def handle_predict(payload: dict) -> tuple[dict, int]:
     race = md.find_race(_STATE["daily"], race_id) if race_id else None
     if race is None:
         return {"error": "race_not_found", "race_id": race_id}, 404
-    return svc.predict_race(race, user_cfg, _STATE["preset"]), 200
+    got = svc.predict_race(race, user_cfg, _STATE["preset"])
+    problem = _STATE.get("preset_problem")
+    if problem and problem["code"] == "preset_column_mismatch":
+        got.setdefault("warnings", []).append(problem)
+    return got, 200
 
 
 def handle_backtest(payload: dict) -> tuple[dict, int]:
@@ -156,9 +161,13 @@ def main() -> int:
     _STATE["date"] = args.date
     _STATE["specs"] = sp.maib_all_specs()
     _STATE["preset"] = ps.load_presets()
-    if not _STATE["preset"]:
-        logger.warning("プリセット重みが未学習です (印は無意味になります): %s",
-                       cfgmod.PRESET_WEIGHTS_PATH)
+    # 旧モデル (別の列構成で学習した重み) を掴む事故を起動時に検出する
+    col_ids = [c["id"] for c in mxmod._columns(_STATE["specs"])]
+    problem = ps.check_preset_matches_spec(_STATE["preset"], col_ids)
+    _STATE["preset_problem"] = problem
+    if problem:
+        logger.warning("プリセット重みの問題: %s (%s)", problem["code"], problem["message"])
+        logger.warning("  → %s", problem["hint"])
 
     _STATE["daily"] = md.load_daily(args.date, _STATE["specs"])
     if not _STATE["daily"] and args.build:

@@ -44,6 +44,33 @@ def _slice_races(prep_races: list[dict], lo: str, hi: str) -> list[dict]:
     return [r for r in prep_races if lo <= r["date"] <= hi]
 
 
+def columns_fingerprint(col_ids: list[str]) -> str:
+    """列構成の指紋。学習時とサービング時の列構成一致を検証するために使う。"""
+    import hashlib
+    payload = "|".join(sorted(col_ids))
+    return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:16]
+
+
+def check_preset_matches_spec(preset: dict, col_ids: list[str]) -> dict | None:
+    """プリセット重みが現在の列構成のものか検証する。不一致なら警告 dict を返す。
+
+    デモ当日に旧モデル (別の列構成で学習した重み) を掴む事故を構造的に防ぐ。
+    """
+    if not preset:
+        return {"code": "no_preset_weights",
+                "message": "プリセット重みが未学習です (印は無意味です)",
+                "hint": "この列構成で presets.fit_presets を実行してください"}
+    want = columns_fingerprint(col_ids)
+    got = preset.get("columns_fingerprint")
+    if got and got != want:
+        return {"code": "preset_column_mismatch",
+                "message": "プリセット重みの列構成が現在の設定と一致しません (旧モデルの可能性)",
+                "hint": f"期待={want} 実際={got}。現在の spec で再学習してください",
+                "expected_fingerprint": want, "actual_fingerprint": got,
+                "preset_n_columns": preset.get("n_columns")}
+    return None
+
+
 def column_sample_report(prep_races: list[dict], col_ids: list[str]) -> dict[str, int]:
     """列ごとの **ゲート通過レース数**。カレンダー充填率の代わりの検査指標。
 
@@ -229,6 +256,9 @@ def fit_presets(matrix: dict, *, train_from: str | None = None, train_to: str | 
         "confidence_thresholds": confidence_thresholds(prep, col_ids, weights),
         # 学習に効いた欠損ポリシー (サービングと同一実装であることを記録)
         "gate": {"min_horses": nrm.MIN_HORSES, "min_fraction": nrm.MIN_FRACTION},
+        # 列構成の指紋。サービング時に spec と一致するか検証し、旧モデル誤用を構造的に防ぐ
+        "n_columns": len(col_ids),
+        "columns_fingerprint": columns_fingerprint(col_ids),
     }
 
 

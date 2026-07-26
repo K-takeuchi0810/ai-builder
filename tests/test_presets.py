@@ -192,6 +192,25 @@ def test_train_period_is_respected_and_recorded():
     assert res["gate"]["min_horses"] == nrm.MIN_HORSES
 
 
+def test_columns_fingerprint_detects_old_model():
+    """デモ当日に旧モデル (別の列構成) を掴む事故を構造的に防ぐ。"""
+    m = _matrix(n_races=20)
+    res = presets.fit_presets(m, train_from="20210101", train_to="20251231", iters=3,
+                              min_races_per_column=1)
+    cols = ["form", "prize"]
+    assert res["n_columns"] == 2
+    assert res["columns_fingerprint"] == presets.columns_fingerprint(cols)
+    # 同じ列構成なら問題なし
+    assert presets.check_preset_matches_spec(res, cols) is None
+    assert presets.check_preset_matches_spec(res, list(reversed(cols))) is None  # 順序無関係
+    # 列構成が違えば不一致として検出
+    bad = presets.check_preset_matches_spec(res, ["form", "prize", "extra"])
+    assert bad["code"] == "preset_column_mismatch"
+    assert bad["preset_n_columns"] == 2
+    # 未学習も検出
+    assert presets.check_preset_matches_spec({}, cols)["code"] == "no_preset_weights"
+
+
 def test_save_and_load_presets(tmp_path):
     m = _matrix(n_races=20)
     res = presets.fit_presets(m, train_from="20210101", train_to="20251231", iters=3,
