@@ -34,8 +34,25 @@ def predict_race(race: dict, user_config: dict, preset: dict) -> dict:
     if not rows:
         return {"race_id": race.get("race_id"), "marks": [], "error": "no_horses"}
 
+    # プリセット重みが選択列をカバーしていないと全重み0 = 印が無意味になる。
+    # 黙って順位を出すと参加者に嘘を見せるので、必ず警告として返す。
+    warnings = []
+    if columns and not any(weights.get(c["id"]) for c in columns):
+        warnings.append({
+            "code": "no_preset_weights",
+            "message": "選択された項目にプリセット重みがありません (印は無意味です)",
+            "hint": "この列構成でプリセット重みを学習してください",
+        })
+
     res = model.score_columns_detailed(rows, columns, weights)
     ranked = res["ranked"]
+    used = sum(1 for c in res["columns"] if c["decision"] == "used")
+    if columns and used == 0 and not warnings:
+        warnings.append({
+            "code": "all_columns_gated_out",
+            "message": "選択された全項目がカバレッジ不足でこのレースでは使えません",
+            "hint": "項目を増やすか、直近走の少ない馬が多いレースを避けてください",
+        })
     gap = (ranked[0][1] - ranked[1][1]) if len(ranked) >= 2 else None
     thresholds = preset.get("confidence_thresholds") or {}
 
@@ -66,6 +83,8 @@ def predict_race(race: dict, user_config: dict, preset: dict) -> dict:
                        "label": ps.confidence_label(gap, thresholds)},
         "weight_announced": race.get("weight_announced"),
         "config_hash": cf.config_hash(user_config),
+        "warnings": warnings,
+        "n_columns_used": used,
     }
 
 

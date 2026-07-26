@@ -122,6 +122,29 @@ def test_predict_confidence_labels():
     assert got["confidence"]["label"] in ("鉄板級", "有力", "混戦")
 
 
+def test_predict_warns_when_presets_missing():
+    """プリセット重みが選択列をカバーしないと印は無意味 → 黙らず警告する。"""
+    got = svc.predict_race(_race(), USER_CFG, {"weights": {}})
+    codes = {w["code"] for w in got["warnings"]}
+    assert "no_preset_weights" in codes
+    assert got["n_columns_used"] == 0
+    # 重みが揃っていれば警告なし
+    ok = svc.predict_race(_race(), USER_CFG, PRESET)
+    assert ok["warnings"] == [] and ok["n_columns_used"] == 3
+
+
+def test_predict_warns_when_all_columns_gated_out():
+    """全列がカバレッジ不足で使えない場合も警告する。"""
+    race = _race(n=12)
+    for i, h in enumerate(race["horses"]):        # 2頭だけ値を残す = ゲート落ち
+        if i >= 2:
+            h["x"] = {k: None for k in h["x"]}
+    got = svc.predict_race(race, USER_CFG, PRESET)
+    codes = {w["code"] for w in got["warnings"]}
+    assert "all_columns_gated_out" in codes
+    assert got["n_columns_used"] == 0
+
+
 def test_predict_handles_empty_race():
     got = svc.predict_race({"race_id": "X", "horses": []}, USER_CFG, PRESET)
     assert got["error"] == "no_horses"
