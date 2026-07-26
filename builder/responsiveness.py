@@ -84,6 +84,17 @@ def check_all_cells(matrix: dict, preset: dict, *,
     if limit_races:
         prep = prep[:limit_races]
 
+    # 評価レースが無いと「全列が応答しない」と誤報告してしまう (dead_rate=1.0)。
+    # 検査不能であることを明示し、判定に使えないと分かる形で返す。
+    if not prep:
+        return {"n_races_evaluated": 0, "min_differs_rate": min_differs_rate,
+                "n_cells": len(columns), "n_responsive": None, "n_dead": None,
+                "dead_rate": None, "dead_reasons": {},
+                "error": "no_races_in_window",
+                "message": (f"{date_from or '(指定なし)'}〜{date_to} に評価対象レースが"
+                            "ありません。応答性は判定できません"),
+                "cells": []}
+
     cells = []
     for c in columns:
         w = float(weights.get(c["id"], 0.0))

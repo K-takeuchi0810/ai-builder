@@ -94,6 +94,22 @@ def test_period_filter_and_race_limit():
     assert rep2["n_races_evaluated"] == 3
 
 
+def test_empty_window_reports_uncheckable_not_all_dead():
+    """回帰テスト: 評価レース0件を「全列が応答しない」と誤報告しないこと。
+
+    2021単年の行列に対し表示期間(2025-07-01以降)で検査したところ、評価レース0件なのに
+    dead_rate=1.0 と出て「項目別小分け学習を検討」の誤判定を招いた。
+    """
+    m = _matrix(n_races=10)                      # 全レース 20250801
+    rep = rp.check_all_cells(m, PRESET_ALL, date_from="20260101")   # 該当なし
+    assert rep["n_races_evaluated"] == 0
+    assert rep["error"] == "no_races_in_window"
+    assert rep["dead_rate"] is None              # 判定に使えないと分かる形
+    assert rep["n_responsive"] is None and rep["n_dead"] is None
+    assert rep["cells"] == []
+    assert "判定できません" in rep["message"]
+
+
 def test_unknown_column_is_reported():
     prep_like = []
     got = rp.cell_response(prep_like, COLS, "nope", 1.0)

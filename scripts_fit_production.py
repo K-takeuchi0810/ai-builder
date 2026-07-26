@@ -75,15 +75,24 @@ def main() -> int:
         v.sort()
         print(f"            {k:<7} 列数={len(v)} 中央値={v[len(v)//2]} 最小={v[0]} 最大={v[-1]}")
 
-    # (c) 応答性検査
+    # (c) 応答性検査。表示期間にレースが無い行列 (例: 2021単年) では窓を全期間に落とす。
+    # 窓が空のまま実行すると「全列が応答しない」と誤報告されるため。
+    window = config.DISPLAY_BACKTEST_FROM
+    if not any(r["date"] >= window for r in prep_all):
+        window = None
+        print(f"[c/responsiveness] 表示期間({config.DISPLAY_BACKTEST_FROM}以降)に"
+              f"レースが無いので全期間で検査します", flush=True)
     t = time.time()
     resp = responsiveness.check_all_cells(m, res, limit_races=args.limit_races,
-                                          date_from=config.DISPLAY_BACKTEST_FROM)
-    print(f"[c/responsiveness] {time.time()-t:.0f}s  評価レース={resp['n_races_evaluated']}",
-          flush=True)
-    print(f"            応答した列={resp['n_responsive']}/{resp['n_cells']} "
-          f"(dead_rate={resp['dead_rate']})")
-    print(f"            内訳={resp['dead_reasons']}")
+                                          date_from=window)
+    print(f"[c/responsiveness] {time.time()-t:.0f}s  評価レース={resp['n_races_evaluated']}"
+          f" 窓={window or '全期間'}", flush=True)
+    if resp.get("error"):
+        print(f"            ⚠ 検査不能: {resp['message']}")
+    else:
+        print(f"            応答した列={resp['n_responsive']}/{resp['n_cells']} "
+              f"(dead_rate={resp['dead_rate']})")
+        print(f"            内訳={resp['dead_reasons']}")
 
     # (d) 自信度閾値
     th = res["confidence_thresholds"]
@@ -93,7 +102,9 @@ def main() -> int:
     verdict = []
     if ll <= ll_uniform:
         verdict.append("対数尤度が一様分布以下 → 採用不可")
-    if resp["dead_rate"] and resp["dead_rate"] > 0.5:
+    if resp.get("error"):
+        verdict.append(f"応答性が検査不能 ({resp['error']}) → 採用判断を保留")
+    elif resp["dead_rate"] and resp["dead_rate"] > 0.5:
         verdict.append(f"応答しない列が過半 ({resp['dead_rate']:.0%}) → 項目別小分け学習を検討")
     if th["solid"] is None:
         verdict.append("自信度閾値が算出できていない")
