@@ -99,12 +99,13 @@ def build_daily(date: str, specs: list[dict], *, rebuild: bool = False,
                     "n_past_runs": len(past),                   # カバレッジ表示用
                     "x": x,
                 })
+            seg = mx._seg(race)
             races_out.append({
                 "race_id": _race_id(race),
                 "date": before,
                 "race_num": str(race.get("race_num")),
-                "race_name": (race.get("race_name") or "").strip(),
-                "seg": mx._seg(race),
+                "race_name": _display_name(race, seg),
+                "seg": seg,
                 "horses": hrows,
                 "tan": mx._tan_payouts(get_payout_row(conn, race)),
                 "trusted": not race_odds_untrusted(horses, race, max_age),
@@ -118,6 +119,24 @@ def build_daily(date: str, specs: list[dict], *, rebuild: bool = False,
     tmp.write_text(json.dumps(daily, ensure_ascii=False), encoding="utf-8")
     tmp.replace(path)
     return daily
+
+
+def _display_name(race: dict, seg: dict) -> str:
+    """表示用のレース名。通常レースは race_name が空なので条件から組み立てる。
+
+    実データ確認: 平場は race_name / race_short10 / race_short6 すべて空
+    (重賞のみ命名される)。UI に空文字を出さないためのフォールバック。
+    """
+    from . import labels as lb
+    name = (race.get("race_name") or race.get("race_short10")
+            or race.get("race_short6") or "").strip()
+    if name:
+        return name
+    track = lb.value_label("track", seg.get("track"))
+    surface = lb.value_label("surface", seg.get("surface"))
+    dist = seg.get("distance")
+    parts = [p for p in (track, f"{surface}{dist}m" if dist else surface) if p]
+    return " ".join(parts) or f"{race.get('race_num')}R"
 
 
 def _race_id(race: dict) -> str:
@@ -151,8 +170,10 @@ def today_status(daily: dict, col_ids: list[str] | None = None) -> list[dict]:
     missing_by_index = {g["index"]: g["missing_columns"] for g in ps.gate_check(prep, cols)}
 
     out = []
+    n_cols = len(cols)
     for i, r in enumerate(daily.get("races", [])):
         missing = missing_by_index.get(i, [])
+        n_passed = n_cols - len(missing)
         out.append({
             "race_id": r["race_id"],
             "race_num": r.get("race_num"),
@@ -160,8 +181,14 @@ def today_status(daily: dict, col_ids: list[str] | None = None) -> list[dict]:
             "n_horses": len(r["horses"]),
             "weight_announced": r.get("weight_announced", False),
             "odds_trusted": r.get("trusted", False),
+            "n_columns": n_cols,
+            "n_gate_passed": n_passed,
+            "gate_pass_rate": round(n_passed / n_cols, 3) if n_cols else None,
             "gate_missing_columns": missing,
             "n_gate_missing": len(missing),
-            "ready": bool(r["horses"]) and not missing,
+            # **予想が可能か** を表す。全 425 列の通過は要求しない
+            # (実測: 直近レースでも中央値5列は欠ける。5列欠けただけで使えないのは誤り)。
+            # 参加者が選んだ列が使えるかは /api/predict が per-config で警告する。
+            "ready": bool(r["horses"]) and n_passed > 0,
         })
     return out

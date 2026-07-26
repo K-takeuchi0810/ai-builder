@@ -135,9 +135,18 @@ def backtest(matrix: dict, user_config: dict, preset: dict, *,
                                key=lambda h: (h.get("pop") is None, h.get("pop") or 99))
             _tally(base, [h["num"] for h in fav_order], order)
 
+    warnings = []
+    if acc["races"] == 0:
+        # 0 レースで的中率 None を返すと「成績が悪い」と誤読されるので必ず警告する
+        warnings.append({
+            "code": "no_races_in_period",
+            "message": f"{date_from}〜{date_to} に対象レースがありません",
+            "hint": "期間を広げるか、その期間の行列を構築してください",
+        })
     return {"period": [date_from, date_to],
             "note": "過去の的中率は将来の成績を保証しません",
             "config_hash": cf.config_hash(user_config),
+            "warnings": warnings,
             "your_ai": _summarize(acc), "baseline_favorite": _summarize(base)}
 
 

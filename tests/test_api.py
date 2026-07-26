@@ -181,6 +181,18 @@ def test_backtest_default_period_excludes_training_window():
     assert got["your_ai"]["races"] == 1                  # 2024 は除外される
 
 
+def test_backtest_warns_when_no_races_in_period():
+    """0レースで的中率 None を返すと「成績が悪い」と誤読されるので警告する。"""
+    m = {"columns": [], "races": [_race("A", date="20240101")]}
+    got = svc.backtest(m, USER_CFG, PRESET, date_from="20250701")
+    assert got["your_ai"]["races"] == 0
+    assert {w["code"] for w in got["warnings"]} == {"no_races_in_period"}
+    # レースがあれば警告なし
+    ok = svc.backtest({"columns": [], "races": [_race("B", date="20250801")]},
+                      USER_CFG, PRESET, date_from="20250701")
+    assert ok["warnings"] == []
+
+
 def test_backtest_skips_unfinished_races():
     m = {"columns": [], "races": [_race("A", date="20250801", with_order=False)]}
     got = svc.backtest(m, USER_CFG, PRESET, date_from="20250701")

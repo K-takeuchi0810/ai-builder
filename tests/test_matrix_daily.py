@@ -77,6 +77,26 @@ def test_build_daily_uses_entry_list_without_results(tmp_path, monkeypatch):
     assert r["weight_announced"] is True           # horse_weight が数字
 
 
+def test_race_name_falls_back_to_conditions(tmp_path, monkeypatch):
+    """平場は race_name が空 (重賞のみ命名) なので条件から表示名を作ること。"""
+    monkeypatch.setattr(config, "CORNER_INDEX_PATH", tmp_path / "corner.json")
+    race = _fake_race()
+    race["race_name"] = ""                      # 実データの平場と同じ状態
+    _patch_db(monkeypatch, [race], _fake_horses(8))
+    daily = md.build_daily("20260801", SPECS)
+    name = daily["races"][0]["race_name"]
+    assert name and name.strip()                # 空文字を UI に出さない
+    assert "1800m" in name                      # 距離が入る
+    assert "芝" in name                          # 芝ダートが入る
+
+    # 重賞など名前があるレースはそのまま使う
+    named = _fake_race()
+    named["race_name"] = "テスト記念"
+    _patch_db(monkeypatch, [named], _fake_horses(8))
+    daily2 = md.build_daily("20260802", SPECS)
+    assert daily2["races"][0]["race_name"] == "テスト記念"
+
+
 def test_weight_not_announced_is_detected(tmp_path, monkeypatch):
     """馬体重未発表なら weight_announced=False (設計書 §3.3 の「分析待ち」判定)。"""
     monkeypatch.setattr(config, "CORNER_INDEX_PATH", tmp_path / "corner.json")
@@ -124,17 +144,34 @@ def test_find_race_and_today_status(tmp_path, monkeypatch):
     assert s["weight_announced"] is True
     # popularity は全馬充填なのでゲート通過、agg_avg_finish は過去走0件で欠損 → 未通過
     assert "agg_avg_finish|lb=5|m=" in s["gate_missing_columns"]
-    assert s["ready"] is False and s["n_gate_missing"] >= 1
+    assert s["n_gate_missing"] == 1 and s["n_gate_passed"] == 1
+    assert s["gate_pass_rate"] == 0.5
+    # 一部の列が欠けても「予想は可能」なので ready は True
+    # (実測: 直近レースでも 425列中 中央値5列は欠ける。全列通過を要求するのは誤り)
+    assert s["ready"] is True
 
 
 def test_today_status_ready_when_all_columns_pass(tmp_path, monkeypatch):
-    """全列がゲートを通れば ready=True (当日事前検査が緑)。"""
+    """全列がゲートを通れば未通過0・通過率1.0。"""
     monkeypatch.setattr(config, "CORNER_INDEX_PATH", tmp_path / "corner.json")
     _patch_db(monkeypatch, [_fake_race()], _fake_horses(8))
     daily = md.build_daily("20260801", [{"key": "popularity"}])
     status = md.today_status(daily)
     assert status[0]["gate_missing_columns"] == []
+    assert status[0]["gate_pass_rate"] == 1.0
     assert status[0]["ready"] is True
+
+
+def test_today_status_not_ready_when_nothing_passes(tmp_path, monkeypatch):
+    """1列も通らないレースは ready=False (予想が成立しない)。"""
+    monkeypatch.setattr(config, "CORNER_INDEX_PATH", tmp_path / "corner.json")
+    # 過去走ゼロ → 集計列のみの構成では 1 列も通らない
+    _patch_db(monkeypatch, [_fake_race()], _fake_horses(8))
+    daily = md.build_daily("20260801", [{"key": "agg_avg_finish", "lookback": 5, "match": []}])
+    status = md.today_status(daily)
+    assert status[0]["n_gate_passed"] == 0
+    assert status[0]["gate_pass_rate"] == 0.0
+    assert status[0]["ready"] is False
 
 
 def test_output_shape_is_compatible_with_matrix_helpers(tmp_path, monkeypatch):
