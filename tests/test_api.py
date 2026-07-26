@@ -513,3 +513,131 @@ def test_empty_selection_is_warned_and_blocks_marks():
     # 1つでも選べていれば出さない
     ok = svc.predict_race(_race(), {"step1": ["burden_weight"], "step2": []}, PRESET)
     assert "no_columns_selected" not in {w["code"] for w in ok["warnings"]}
+
+
+# ---------------------------------------------------------------------------
+# P0: 配信ずれの検出 (完了報告した修正が実機に出ない事故の切り分け)
+# ---------------------------------------------------------------------------
+def test_version_reports_fresh_on_an_unchanged_tree():
+    v = api.version_info()
+    assert v["stale"] is False
+    assert v["boot_fingerprint"] == v["disk_fingerprint"]
+    assert "最新" in v["message"]
+    assert v["started_at"]
+
+
+def test_version_detects_stale_server_code(monkeypatch):
+    """builder/*.py が変わったら「再起動が必要」と言うこと。"""
+    monkeypatch.setattr(api, "_py_fingerprint", lambda: "deadbeef0000")
+    v = api.version_info()
+    assert v["stale"] is True
+    assert "再起動" in v["message"]
+    assert v["disk_fingerprint"] == "deadbeef0000"
+
+
+def test_version_does_not_demand_restart_for_web_only_changes(monkeypatch):
+    """web/ の変更で再起動を要求しないこと。
+
+    web/ はリクエストごとに読み直すのでリロードで反映される。ここを混ぜると
+    画面を直すたびに嘘の指示 (再起動してください) を出すことになる。
+    """
+    monkeypatch.setattr(api, "_web_fingerprint", lambda: "0123456789ab")
+    v = api.version_info()
+    assert v["stale"] is False
+    assert v["web_changed"] is True
+    assert "リロード" in v["message"]
+
+
+def test_version_fingerprint_changes_with_content(tmp_path):
+    """指紋が内容に反応すること (ファイル名だけ見ていない)。"""
+    a = tmp_path / "x.py"
+    a.write_text("one", encoding="utf-8")
+    first = api._fingerprint([a])
+    a.write_text("two", encoding="utf-8")
+    assert api._fingerprint([a]) != first
+
+
+def test_predict_includes_the_decisive_sentence():
+    """P2-4: 決め手の一文はサーバが生成する (UI に表示ロジックを複製しない)。"""
+    race = _race()
+    for h in race["horses"]:
+        h["x"]["burden_weight"] = float(h["num"])
+    got = svc.predict_race(race, USER_CFG, PRESET)
+    top = got["marks"][0]
+    assert top["decisive"], "決め手の一文が無い"
+    # 項目名が入っている (テンプレだけで中身が無い文にしない)
+    assert "「" in top["decisive"]
+    # 向きに応じた文になっている (どちらかは必ず含む)
+    assert ("決め手です" in top["decisive"]) or ("評価を下げ" in top["decisive"])
+
+
+def test_decisive_sentence_mentions_a_close_second():
+    """2位寄与が僅差なら「も後押ししています」を足すこと。"""
+    close = [{"id": "a", "label": "項目A", "contribution": 1.0, "available": True},
+             {"id": "b", "label": "項目B", "contribution": 0.9, "available": True}]
+    s = svc._decisive_sentence(close, "◎")
+    assert "項目A" in s and "項目B" in s and "後押し" in s
+    # 差が大きければ2位は出さない
+    far = [{"id": "a", "label": "項目A", "contribution": 1.0, "available": True},
+           {"id": "b", "label": "項目B", "contribution": 0.1, "available": True}]
+    s2 = svc._decisive_sentence(far, "◎")
+    assert "項目A" in s2 and "項目B" not in s2
+
+
+def test_decisive_sentence_keeps_both_clauses_consistent():
+    """2文目の向きが1文目と揃っていること。
+
+    「評価を下げています。〜も後押ししています」のような、意味の通らない
+    つなぎ方をしないこと (実際に生成されていた)。
+    """
+    # 下げ + 下げ → 「も評価を下げています」
+    dd = [{"id": "a", "label": "A", "contribution": -1.0, "available": True},
+          {"id": "b", "label": "B", "contribution": -0.9, "available": True}]
+    s = svc._decisive_sentence(dd, "×")
+    assert "も評価を下げています" in s and "後押し" not in s
+    # 下げ + 上げ → 「ただし〜は評価を上げています」
+    du = [{"id": "a", "label": "A", "contribution": -1.0, "available": True},
+          {"id": "b", "label": "B", "contribution": 0.9, "available": True}]
+    s2 = svc._decisive_sentence(du, "×")
+    assert "ただし" in s2 and "評価を上げています" in s2 and "後押し" not in s2
+    # 上げ + 下げ → 「ただし〜は評価を下げています」
+    ud = [{"id": "a", "label": "A", "contribution": 1.0, "available": True},
+          {"id": "b", "label": "B", "contribution": -0.9, "available": True}]
+    s3 = svc._decisive_sentence(ud, "◎")
+    assert "決め手です" in s3 and "ただし" in s3 and "評価を下げています" in s3
+
+
+def test_decisive_sentence_is_honest_about_negative_drivers():
+    """最大寄与が押し下げなら「決め手」と書かない (嘘をつかない)。"""
+    neg = [{"id": "a", "label": "項目A", "contribution": -1.0, "available": True}]
+    s = svc._decisive_sentence(neg, "×")
+    assert "評価を下げ" in s and "決め手" not in s
+    # 使える寄与が無ければ文を作らない
+    assert svc._decisive_sentence([], "◎") is None
+    assert svc._decisive_sentence(
+        [{"id": "a", "label": "A", "contribution": 0.0, "available": False}], "◎") is None
+
+
+def test_contributions_carry_item_level_coverage():
+    """P3: 寄与の各行に項目単位のカバレッジ (値があった頭数) を付す。"""
+    race = _race(n=10)
+    for i, h in enumerate(race["horses"]):
+        h["x"]["burden_weight"] = None if i >= 4 else float(h["num"])
+    got = svc.predict_race(race, USER_CFG, PRESET)
+    by_id = {c["id"]: c for c in got["marks"][0]["contributions"]}
+    full = by_id["agg_avg_finish|lb=3|m="]
+    assert full["n_with_value"] == 10 and full["n_runners"] == 10
+    # 馬単位の参照走数とは別の軸として両方返る
+    assert got["marks"][0]["n_past_runs"] is not None
+    assert got["marks"][0]["coverage"]["n_used"] >= 1
+
+
+def test_predict_returns_result_for_finished_races():
+    """P3: 発走済みなら着順を返す (印の代わりに結果を出すため)。"""
+    got = svc.predict_race(_race(with_order=True), USER_CFG, PRESET)
+    assert got["finished"] is True
+    assert [r["order"] for r in got["result"]] == [1, 2, 3]
+    assert got["result"][0]["horse_name"]
+    # 未確定なら空
+    pending = svc.predict_race(_race(with_order=False), USER_CFG, PRESET)
+    assert pending["finished"] is False and pending["result"] == []

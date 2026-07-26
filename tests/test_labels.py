@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -108,3 +109,92 @@ def test_label_change_does_not_invalidate_matrix_cache():
     h1 = matrix._col_hash(cols)
     renamed = [dict(c, label="まったく違う名前") for c in cols]
     assert matrix._col_hash(renamed) == h1
+
+
+# ---------------------------------------------------------------------------
+# 初心者対応: 自然語ラベル・グループ・用語辞書 (labels.py が唯一の正本)
+# ---------------------------------------------------------------------------
+def test_step1_labels_have_no_developer_notation():
+    """受け入れ条件 (機械検査): STEP1 のラベルに「×」記法・開発者語彙が無い。"""
+    for s in sp.maib_participant_step1_specs():
+        label = lb.step1_label(s["key"])
+        # 「父×芝ダート」のような記法と、英字キー・アンダースコアの混入を禁止
+        assert "×" not in label, (s["key"], label)
+        assert "_" not in label, (s["key"], label)
+        assert not re.search(r"[A-Za-z]{3,}", label), (s["key"], label)
+        # キーがそのまま出ていない (訳し忘れの検出)
+        assert label != s["key"], s["key"]
+    # 「30d」「4角」のような略記も残っていないこと
+    labels = [lb.step1_label(s["key"]) for s in sp.maib_participant_step1_specs()]
+    for bad in ("30d", "90d", "4角", "top3"):
+        assert not any(bad in x for x in labels), bad
+
+
+def test_every_step1_key_has_a_natural_label_and_group():
+    """28項目すべてに自然語ラベルとグループが定義されていること。"""
+    groups = {g[0] for g in lb.STEP1_GROUPS}
+    for s in sp.maib_step1_specs():
+        key = s["key"]
+        assert key in lb._STEP1, f"{key} の対訳が未定義"
+        assert lb.step1_group(key) in groups, (key, lb.step1_group(key))
+
+
+def test_step1_groups_are_unique_and_described():
+    keys = [g[0] for g in lb.STEP1_GROUPS]
+    assert len(keys) == len(set(keys))
+    for _k, label, desc in lb.STEP1_GROUPS:
+        assert label and desc
+
+
+def test_glossary_entries_are_beginner_readable():
+    """用語辞書に禁止語彙が混ざらないこと・説明が空でないこと。"""
+    for e in lb.glossary():
+        assert e["term"] and e["desc"], e
+        for banned in ("儲か", "買い目", "回収率", "ROI", "必勝", "稼げ"):
+            assert banned not in e["desc"], (e["key"], banned)
+        assert len(e["desc"]) >= 10, e["key"]        # 一言で済ませていない
+
+
+def test_glossary_covers_the_terms_the_ui_references():
+    """UI が参照する用語キーがすべて辞書にあること (リンク切れ防止)。"""
+    need = {"mark", "honmei", "taikou", "tanana", "renka", "chuui", "mujirushi",
+            "win_odds", "popularity", "confidence", "coverage", "backtest",
+            "low_sample"}
+    assert need <= set(lb.GLOSSARY)
+
+
+def test_step1_glossary_links_resolve():
+    """項目に紐づけた用語キーが辞書に存在すること。"""
+    for s in sp.maib_step1_specs():
+        k = lb.glossary_key(s["key"])
+        if k is not None:
+            assert k in lb.GLOSSARY, (s["key"], k)
+
+
+def test_mark_legend_order_matches_the_marks():
+    """凡例が ◎○▲△× + 無印 の順で、印の並びと一致すること。"""
+    from builder import predict_service as svc
+    cat = api.feature_catalog()
+    legend = cat["mark_legend"]
+    assert [m["mark"] for m in legend[:5]] == svc.MARKS
+    assert legend[5]["mark"] == ""                   # 無印
+    assert "本命" in legend[0]["term"]
+
+
+def test_low_sample_is_marked_before_selection():
+    """受け入れ条件: 低サンプル項目が選択前にマークされている。"""
+    cat = api.feature_catalog()
+    thin = [m for m in cat["step2_metrics"] if m.get("low_sample")]
+    names = [m["label"] for m in thin]
+    assert any("コーナー" in n for n in names), names
+    assert any("賞金" in n for n in names), names
+    for m in thin:
+        assert isinstance(m["min_train_races"], int) and m["min_train_races"] >= 0
+
+
+def test_starter_preset_is_offered():
+    """初心者の空白画面問題への最小の答えが用意されていること。"""
+    sp_preset = api.feature_catalog()["starter_preset"]
+    assert sp_preset["step1"] and len(sp_preset["step1"]) == 3
+    assert "popularity" not in sp_preset["step1"]     # 判断A
+    assert sp_preset["label"] and sp_preset["desc"]

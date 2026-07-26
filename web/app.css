@@ -43,6 +43,16 @@ header.app{
 .screen-title h1{font-size:.95rem; font-weight:700; letter-spacing:.04em}
 .screen-title .sub{font-size:var(--fs-min); color:#9DB8A8}
 
+/* 発走時刻を常に視界に置く縮小ヘッダ */
+.mini-head{margin-top:8px; padding:7px 10px; border-radius:var(--r-sm);
+  background:rgba(255,255,255,.12); color:#EAF2EC; font-size:var(--fs-min);
+  font-weight:700; letter-spacing:.04em; font-variant-numeric:tabular-nums}
+
+/* デモ演出中の常時バッジ (?demo=1 のみ。通常URLでは DOM から除去) */
+.demo-banner{position:sticky; top:0; z-index:29; text-align:center;
+  background:var(--gold-soft); color:var(--gold); font-size:var(--fs-min);
+  font-weight:700; padding:6px 10px; border-bottom:1px solid var(--gold-bright)}
+
 main{flex:1; padding:14px 14px 84px}
 .screen{display:none}
 .screen.active{display:block}
@@ -86,6 +96,78 @@ main{flex:1; padding:14px 14px 84px}
 .warn-card .h{margin-top:6px; font-size:var(--fs-min); color:var(--ink-soft); line-height:1.7}
 .warn-cols{margin-top:8px; font-size:var(--fs-min); color:var(--ink-soft); line-height:1.8;
   border-top:1px solid rgba(168,129,28,.25); padding-top:7px}
+
+/* 用語のワンタップ説明。点線下線でタップできることを見せる。
+ * 説明文は labels.py が正本 (UI に複製しない)。 */
+.term{font:inherit; color:var(--turf-700); background:none; border:none; cursor:pointer;
+  border-bottom:1px dotted var(--turf-500); padding:0 1px; margin:0 1px; line-height:inherit}
+.chip-thin{display:inline-flex; align-items:center; font-size:var(--fs-min);
+  font-weight:700; color:var(--gold); background:var(--gold-soft); border:none;
+  padding:2px 7px; border-radius:999px; margin-left:6px; cursor:pointer}
+
+/* ボトムシート (用語・印の説明) */
+.sheet-wrap{position:fixed; inset:0; background:rgba(15,35,25,.5); display:none;
+  align-items:flex-end; justify-content:center; z-index:80}
+.sheet-wrap.show{display:flex}
+.sheet{background:var(--card); width:100%; max-width:430px;
+  border-radius:var(--r-lg) var(--r-lg) 0 0; padding:16px 18px 24px;
+  max-height:76vh; overflow-y:auto}
+.sheet-head{display:flex; align-items:center; gap:10px}
+.sheet-head h3{font-size:1rem; font-weight:700; flex:1}
+.sheet-close{background:none; border:none; font-size:1rem; color:var(--ink-soft);
+  min-width:var(--tap); min-height:var(--tap); cursor:pointer; font-family:inherit}
+.sheet-body{margin-top:6px; font-size:.85rem; line-height:1.85; color:var(--ink-soft)}
+.sheet-row{display:flex; gap:10px; padding:9px 0; border-bottom:1px solid var(--line-soft)}
+.sheet-row b{flex:none; min-width:5.4em; color:var(--ink)}
+.sheet-foot{margin-top:12px; padding-top:10px; border-top:1px solid var(--line-soft);
+  color:var(--ink-faint)}
+
+/* STEP1 のグループ分節 */
+.g-block{margin-bottom:16px}
+.g-head{font-size:.9rem; font-weight:700; color:var(--turf-900)}
+.g-desc{font-size:var(--fs-min); color:var(--ink-faint); margin-top:2px; line-height:1.6}
+
+/* 「まよったら」プリセット */
+.starter{background:var(--gold-soft); border-radius:var(--r-lg); padding:14px; margin-top:14px}
+.starter .s-title{font-weight:700; font-size:.92rem; color:var(--gold)}
+.starter .s-desc{font-size:var(--fs-min); color:var(--ink-soft); margin-top:4px; line-height:1.7}
+.starter .s-btn{margin-top:10px; width:100%; min-height:var(--tap); padding:11px;
+  font-family:inherit; font-size:.88rem; font-weight:700; color:#fff;
+  background:var(--gold); border:none; border-radius:var(--r-md); cursor:pointer}
+
+/* 印の凡例 (印リスト直上の1行) */
+.legend-row{display:flex; align-items:center; gap:10px; width:100%; min-height:var(--tap);
+  padding:9px 14px; margin-bottom:8px; background:var(--turf-100); border:none;
+  border-radius:var(--r-md); font-family:inherit; cursor:pointer; text-align:left}
+.legend-row .l-marks{flex:1; font-size:.82rem; font-weight:700; color:var(--turf-900)}
+.legend-row .l-more{font-size:var(--fs-min); color:var(--turf-700);
+  border-bottom:1px dotted var(--turf-500)}
+
+/* 終了したレース */
+.race-group{margin-bottom:12px}
+.race-group.done{opacity:.85}
+.finished{padding:18px 16px}
+.finished .f-title{font-weight:700; font-size:.95rem}
+.finished .f-body{margin-top:12px}
+.finished .f-note{margin-top:10px; font-size:var(--fs-min); color:var(--ink-faint);
+  line-height:1.7}
+.res-row{display:flex; gap:12px; padding:7px 0; border-bottom:1px solid var(--line-soft)}
+.res-row .o{font-weight:700; color:var(--gold); flex:none; width:3em}
+.res-row .n{font-size:.9rem}
+
+/* 順位規則カード (board が空でも常時表示) */
+.rule-card{margin-top:12px; padding:14px 16px}
+.rule-title{font-size:var(--fs-min); font-weight:700; letter-spacing:.12em;
+  color:var(--ink-faint)}
+.rule-body{margin-top:7px; font-size:.82rem; line-height:1.8}
+.rule-note{margin-top:9px; font-size:var(--fs-min); color:var(--ink-soft); line-height:1.8}
+
+/* 寄与の内訳の見出し (上げた / 下げた / 使えなかった) */
+.c-head{margin:12px 0 6px; font-size:var(--fs-min); font-weight:700;
+  letter-spacing:.08em; color:var(--ink-faint)}
+/* 決め手の一文 — 初心者にはこれが本文 */
+.decisive{margin:2px 0 4px; font-size:.85rem; line-height:1.75; font-weight:500;
+  background:var(--turf-100); border-radius:var(--r-md); padding:10px 12px}
 
 /* ---------- レース一覧 ---------- */
 /* 開催 (競馬場) の見出し。1日に複数開催があるのでレース番号だけでは一意にならない */
@@ -165,6 +247,7 @@ main{flex:1; padding:14px 14px 84px}
 .badge-conf{font-size:var(--fs-min); font-weight:700; padding:8px 14px; min-height:var(--tap);
   display:inline-flex; align-items:center; border-radius:999px; background:var(--gold-soft);
   color:var(--gold); border:none; font-family:inherit; cursor:pointer}
+.badge-conf .ci{margin-left:5px; opacity:.8}
 .race-head .ai{margin-left:auto; font-size:var(--fs-min); color:#BFD2C6}
 .race-head .ai b{color:#fff}
 .head-chip{font-size:var(--fs-min); padding:3px 9px; border-radius:999px;

@@ -77,6 +77,7 @@ def predict_race(race: dict, user_config: dict, preset: dict) -> dict:
             "hint": "項目を増やすか、直近走の少ない馬が多いレースを避けてください",
         })
     _annotate_low_sample(res, preset, warnings)
+    _warn_skipped_columns(columns, weights, res, warnings)
     # 自信度は **尺度不変な差** で判定する。生の差は選んだ項目数と重みの大きさに
     # 比例するので、425列で決めた閾値を数項目の設定に当てると常に「混戦」になる。
     gap = ps.normalized_gap([s for _n, s in ranked])
@@ -88,9 +89,12 @@ def predict_race(race: dict, user_config: dict, preset: dict) -> dict:
     for i, (num, score) in enumerate(ranked):
         h = by_num.get(num, {})
         cov = res["coverage"].get(num, {})
+        contribs = res["contributions"].get(num, [])
         marks.append({
             "rank": i + 1,
             "mark": MARKS[i] if i < len(MARKS) else "",
+            # 初心者にはこの一文が本文。サーバで生成して表示ロジックを複製させない
+            "decisive": _decisive_sentence(contribs, MARKS[i] if i < len(MARKS) else ""),
             "horse_num": num,
             "horse_name": h.get("name"),
             "score": round(score, 4),
@@ -98,7 +102,7 @@ def predict_race(race: dict, user_config: dict, preset: dict) -> dict:
             "odds": h.get("odds"),
             "n_past_runs": h.get("n_past_runs"),
             "coverage": cov,
-            "contributions": res["contributions"].get(num, []),
+            "contributions": contribs,
         })
     return {
         "race_id": race.get("race_id"),
@@ -119,7 +123,106 @@ def predict_race(race: dict, user_config: dict, preset: dict) -> dict:
         "odds_as_of": race.get("odds_as_of"),
         "odds_trusted": race.get("trusted"),
         "n_columns_selected": len(columns),
+        # 発走済みなら着順を返す。印は発走前のレースにだけ意味があるので、
+        # UI は終了レースでは印の代わりに結果を出す。
+        "finished": any(h.get("order") == 1 for h in race["horses"]),
+        "result": _result_top3(race),
     }
+
+
+def _result_top3(race: dict) -> list[dict]:
+    """確定していれば上位3頭 (着順・馬番・馬名)。未確定なら空。"""
+    got = [h for h in race.get("horses", [])
+           if isinstance(h.get("order"), int) and 1 <= h["order"] <= 3]
+    got.sort(key=lambda h: h["order"])
+    return [{"order": h["order"], "horse_num": h["num"], "horse_name": h.get("name")}
+            for h in got]
+
+
+def _decisive_sentence(contribs: list, mark: str) -> str | None:
+    """最大寄与の項目から「決め手」の一文を組み立てる (サーバ側で生成)。
+
+    初心者にとっては寄与のバーより **この一文が本文**。表示ロジックを UI 側に
+    複製しないため、テンプレ生成もここで行う。
+
+    2位が1位の 80% 以上なら「〜も後押ししています」を足す。
+    押し下げ側 (負の寄与) が最大の場合は「効いた」と書くと嘘になるので、
+    「評価を下げた」と書く。
+    """
+    used = [c for c in contribs if c.get("available")]
+    if not used:
+        return None
+    ranked = sorted(used, key=lambda c: abs(c.get("contribution") or 0.0), reverse=True)
+    top = ranked[0]
+    v = top.get("contribution") or 0.0
+    if v == 0.0:
+        return None
+    label = top.get("label") or ""
+    up = v > 0
+    head = (f"「{label}」が出走馬の中で高いことが決め手です。" if up
+            else f"「{label}」が出走馬の中で低く、評価を下げています。")
+
+    tail = ""
+    if len(ranked) >= 2:
+        second = ranked[1]
+        sv = second.get("contribution") or 0.0
+        if sv != 0.0 and abs(sv) / abs(v) >= 0.8:
+            # 2文目は1文目と向きが揃っているかで書き分ける。揃っていないのに
+            # 「も」でつなぐと「下げています。〜も後押ししています」という
+            # 意味の通らない文になる。
+            same = (sv > 0) == up
+            if same:
+                verb = "も後押ししています" if up else "も評価を下げています"
+            else:
+                verb = ("一方で評価を下げている項目もあります" if up
+                        else "一方で評価を上げています")
+            lbl2 = second.get("label") or ""
+            tail = (f"「{lbl2}」{verb}。" if same
+                    else (f"ただし「{lbl2}」は評価を下げています。" if up
+                          else f"ただし「{lbl2}」は評価を上げています。"))
+    return head + tail
+
+
+_SKIP_REASON = {
+    "skipped_low_coverage": "このレースでは値のある馬が少なく、使えませんでした",
+    "skipped_no_variance": "全馬が同じ値で、差がつきませんでした",
+    "no_weight": "この項目には学習済みの重みがありません",
+}
+
+
+def _warn_skipped_columns(columns: list, weights: dict, res: dict,
+                          warnings: list) -> None:
+    """**選んだのにこのレースで使えなかった項目**を名前と理由つきで開示する。
+
+    ヘッダの「分析に使えた項目 1/3」だけでは、どの項目が落ちたのか分からない。
+    寄与分解にも現れない (使われていないので寄与が無い) ため、黙っていると
+    参加者は「選んだのに反映されていない」ことに気づけないまま印を見る。
+
+    印そのものは残った項目で有効なので、開示のみの警告として扱う。
+    """
+    if not columns:
+        return
+    seen = {c["id"]: c for c in res["columns"]}
+    skipped = []
+    for c in columns:
+        got = seen.get(c["id"])
+        if got is None:
+            # 重み0の項目は採点に入らないので res["columns"] に現れない
+            if not weights.get(c["id"]):
+                skipped.append((c.get("label", c["id"]), "no_weight"))
+            continue
+        if got["decision"] != "used":
+            skipped.append((got.get("label", c["id"]), got["decision"]))
+    if not skipped:
+        return
+    warnings.append({
+        "code": "columns_skipped_in_race",
+        "message": f"選んだ項目のうち {len(skipped)} 件は、このレースでは使えませんでした",
+        "hint": "残りの項目で印を付けています。使えた項目が少ないほど確かさは下がります。",
+        "columns": [{"label": lab, "reason": _SKIP_REASON.get(d, d)}
+                    for lab, d in skipped[:8]],
+        "n_columns": len(skipped),
+    })
 
 
 def _annotate_low_sample(res: dict, preset: dict, warnings: list) -> None:

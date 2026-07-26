@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import mimetypes
@@ -46,6 +47,64 @@ _STATE: dict = {"date": None, "daily": {}, "preset": {}, "specs": []}
 # UI の静的ファイル (素の HTML/CSS/JS)。外部依存ゼロ・1プロセス起動のため
 # フレームワークやビルドツールは使わず、ここから直接配信する (UI指示書 §0)。
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+_SRC_DIR = Path(__file__).resolve().parent
+
+
+def _fingerprint(paths) -> str:
+    h = hashlib.sha1()
+    for p in sorted(paths):
+        if p.is_file():
+            h.update(p.name.encode())
+            h.update(p.read_bytes())
+    return h.hexdigest()[:12]
+
+
+def _py_fingerprint() -> str:
+    """サーバ側コード (builder/*.py) の指紋。**プロセス起動時に固定される**。"""
+    return _fingerprint(_SRC_DIR.glob("*.py"))
+
+
+def _web_fingerprint() -> str:
+    """web/ の指紋。リクエストごとにディスクから読むのでリロードで即反映される。"""
+    return _fingerprint(WEB_DIR.glob("*"))
+
+
+# 起動時の指紋。以降ディスクが変わってもこの値は変わらない。
+_BOOT_PY = _py_fingerprint()
+_BOOT_WEB = _web_fingerprint()
+_BOOT_TIME = time.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def version_info() -> dict:
+    """起動時の指紋と現在のディスクを比べ、**再起動が必要か**を返す。
+
+    「完了報告済みの修正が実機に出ていない」ときに、原因が
+    (a) 古いプロセスが動いている (b) 実装されていない のどちらか分からず
+    切り分けに時間を取られたため、機械的に判別できるようにする。
+
+    再起動が必要なのは **builder/*.py が変わったときだけ**。web/ は
+    リクエストごとに読み直すのでリロードで反映される — ここを混ぜて警告すると
+    web を直すたびに「再起動してください」と嘘の指示を出すことになる。
+    """
+    py, web = _py_fingerprint(), _web_fingerprint()
+    stale = py != _BOOT_PY
+    web_changed = web != _BOOT_WEB
+    if stale:
+        msg = ("サーバ側のコードが起動時より新しくなっています。"
+               "反映するには再起動してください (Ctrl+C → serve.bat)")
+    elif web_changed:
+        msg = "画面ファイルが更新されています (リロードで反映されます)"
+    else:
+        msg = "最新のコードで動作しています"
+    return {
+        "boot_fingerprint": _BOOT_PY,
+        "disk_fingerprint": py,
+        "web_fingerprint": web,
+        "web_changed": web_changed,
+        "stale": stale,
+        "started_at": _BOOT_TIME,
+        "message": msg,
+    }
 
 
 def _serve_static(handler: BaseHTTPRequestHandler, rel: str) -> None:
@@ -87,15 +146,55 @@ def _json(handler: BaseHTTPRequestHandler, obj, status: int = 200) -> None:
 def feature_catalog() -> dict:
     """UI が出す選択肢 (設計書 §4)。STEP2 は 9項目 × 条件4 × 期間11。"""
     from . import labels as lbl
+    from . import presets as psmod
+    # 学習サンプルが薄い項目を **選ぶ前に** 知らせる (事前マーク)。
+    # 予想画面の事後警告と合わせて二段で開示する。
+    preset = _STATE.get("preset") or psmod.load_presets()
+    thin = {c["column"]: c["races_passed_gate"]
+            for c in (preset.get("low_sample_columns") or [])}
+
+    def _thin_for(key: str) -> dict:
+        """その集計対象のセル群がどれくらい薄いか (最小の学習レース数)。"""
+        ns = [n for cid, n in thin.items() if cid.split("|")[0] == key]
+        return {"low_sample": True, "min_train_races": min(ns)} if ns else {}
+
     # 判断A: 「人気(市場)」は選択肢に出さない (設計書 v0.3 §2)
-    step1 = [{"key": s["key"], "label": lbl.column_label(s["key"]),
-              "category": model.FEATURES[s["key"]].category}
+    step1 = [{"key": s["key"], "label": lbl.step1_label(s["key"]),
+              "group": lbl.step1_group(s["key"]),
+              "term": lbl.glossary_key(s["key"]),
+              "category": model.FEATURES[s["key"]].category,
+              **_thin_for(s["key"])}
              for s in sp.maib_participant_step1_specs()]
     # STEP2 の集計対象名は「(可変集計)」を外した素の名前 (セルは別の軸で選ばせる)
-    step2 = [{"metric": k, "label": model.FEATURES[k].label.replace("(可変集計)", "")}
+    _STEP2_TERM = {"agg_time_index": "time_index", "agg_prize": "prize",
+                   "agg_margin": "margin", "agg_corner_first": "corner",
+                   "agg_corner_last": "last_corner",
+                   "agg_gain_first_to_last": "corner",
+                   "agg_gain_first_to_finish": "corner",
+                   "agg_gain_last_to_finish": "corner"}
+    step2 = [{"metric": k, "label": model.FEATURES[k].label.replace("(可変集計)", ""),
+              "term": _STEP2_TERM.get(k), **_thin_for(k)}
              for k in sp.MAIB_STEP2_METRICS if k in model.FEATURES]
     return {
         "step1": step1,
+        "step1_groups": [{"key": g, "label": lab, "desc": d}
+                         for g, lab, d in lbl.STEP1_GROUPS],
+        # 初心者の空白画面問題への最小の答え: 迷ったら押せる一式
+        "starter_preset": {
+            "label": "まよったら",
+            "desc": "実績・騎手・調子の3項目から始めます。あとから変えられます。",
+            "step1": [k for k in ("fit_course", "jockey_recent_30d_top3_rate",
+                                  "recent_trend_delta")
+                      if k in model.FEATURES],
+            "step2": [],
+        },
+        "glossary": lbl.glossary(),
+        "marks": svc.MARKS,
+        "mark_legend": [{"mark": m, "term": lbl.GLOSSARY[k]["term"],
+                         "desc": lbl.GLOSSARY[k]["desc"]}
+                        for m, k in zip(svc.MARKS + [""],
+                                        ["honmei", "taikou", "tanana", "renka",
+                                         "chuui", "mujirushi"])],
         "step2_metrics": step2,
         # 選択肢のラベルも labels.py を参照する (列ラベルと語彙をずらさない)
         "step2_matches": [{"value": m, "label": lbl.match_label(m)}
@@ -173,6 +272,9 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/features":
             return _json(self, feature_catalog())
+
+        if path == "/api/version":
+            return _json(self, version_info())
 
         if path == "/api/leaderboard":
             return _json(self, *handle_leaderboard())

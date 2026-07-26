@@ -173,7 +173,16 @@ def test_popularity_is_absent_from_the_ui():
     人気を前提にした文言や独自ロジックが残っていないことを固定する。
     """
     js = CODE["app.js"]
-    assert "'popularity'" not in js and '"popularity"' not in js
+    # 選択肢としての popularity をUIが持たないこと。
+    # レスポンスのフィールド参照 (m.popularity で「N番人気」を表示) と
+    # 用語辞書キーとしての参照 (term('popularity', ...)) は要件なので許可する。
+    # **文字列リテラル** としての出現がすべて term() 呼び出しであることを確認する。
+    for m in re.finditer(r"""['"]popularity['"]""", js):
+        before = js[max(0, m.start() - 6):m.start()]
+        assert "term(" in before, f"term() 以外の文字列参照: ...{before}{m.group(0)}"
+    assert 'data-key="popularity"' not in js
+    # 設定に人気を差し込む経路が無いこと (選択肢はサーバが返す)
+    assert "step1: ['popularity'" not in js and 'step1: ["popularity"' not in js
     # 1番人気との比較表示は残る (ベースラインは市場人気専用なので正当)
     assert "1番人気" in js or "1番人気" in CODE["index.html"]
 
@@ -203,7 +212,8 @@ def test_marks_are_suppressed_by_default_on_unknown_warnings():
     assert m is not None, "HARMLESS の列挙が無い"
     harmless = re.findall(r"'([a-z_]+)'", m.group(1))
     # 印を出して良いのは「開示のみ」の警告だけ
-    assert set(harmless) == {"low_sample_columns", "excluded_columns_dropped"}, harmless
+    assert set(harmless) == {"low_sample_columns", "excluded_columns_dropped",
+                             "columns_skipped_in_race"}, harmless
     # 判定は「HARMLESS 以外があれば止める」向きであること
     assert "!HARMLESS.includes" in js
     # 個別コードの直接列挙で塞いでいないこと (漏れの原因)
@@ -228,6 +238,74 @@ def test_server_side_warning_codes_are_all_classified():
                      "preset_column_mismatch", "preset_fingerprint_missing"):
         assert blocking in codes, f"{blocking} がサーバ側に無い"
         assert blocking not in harmless, f"{blocking} を許可してはいけない"
+
+
+def test_no_negative_percentage_in_the_ui():
+    """受け入れ条件: 負のパーセントが画面に出ない。
+
+    押し下げ側は「評価を下げた内訳」見出しの下に正の % で出す。
+    マイナス記号つきの % を組み立てるコードが無いことを固定する。
+    """
+    js = CODE["app.js"]
+    assert "−${" not in js and "-${share" not in js
+    # 割合は絶対値から作る (符号は見出しで示す)
+    assert re.search(r"const a = Math\.abs\(", js), "寄与の絶対値を取っていない"
+    assert re.search(r"const share = [^\n;]*\ba / total", js), "割合が絶対値由来でない"
+    # 表示は %% のみで、符号を前置していない
+    assert "${share}%" in js and "+${share}" not in js
+    # 見出しで向きを示している
+    assert "評価を上げた内訳" in js and "評価を下げた内訳" in js
+
+
+def test_beginner_affordances_are_present():
+    """初心者対応: 印の凡例・用語シート・決め手の一文・事前マーク。"""
+    js, html = CODE["app.js"], CODE["index.html"]
+    assert "openMarkSheet" in js                     # 印の凡例シート
+    assert "openTermSheet" in js and "data-term" in js
+    assert "m.decisive" in js                        # 決め手の一文 (サーバ生成)
+    assert "chip-thin" in js                         # 低サンプルの事前マーク
+    assert "starter_preset" in js                    # 「まよったら」
+    assert 'id="sheet"' in html                      # ボトムシート本体
+    assert 'id="markLegend"' in html
+
+
+def test_explanations_are_not_hardcoded_in_the_ui():
+    """DON'T: 説明文を UI にハードコードしない (labels.py 経由)。
+
+    用語の説明本文は glossary から来る。UI 側に desc 文字列を持たない。
+    """
+    js = CODE["app.js"]
+    assert "state.glossary[" in js and "g.desc" in js
+    # 用語の説明らしい長文を UI が持っていないこと
+    for phrase in ("払戻倍率", "3着以内に入ること", "コースの湿り具合", "背負う重さ"):
+        assert phrase not in js, f"説明文が UI にハードコードされている: {phrase}"
+
+
+def test_ranking_rule_is_always_visible():
+    """受け入れ条件: board が空でも順位規則が読める。
+
+    以前は空のとき早期 return して #boardRule を一度も設定しなかった。
+    規則カードを静的に置き、空状態でも DOM に存在させる。
+    """
+    html = CODE["index.html"]
+    assert 'id="boardRule"' in html
+    assert "rule-card" in html
+    # 初心者向けの一文も静的に置く
+    assert "本命(◎)にした馬が1着" in html
+    # 空状態の出し分けが実装されている
+    js = CODE["app.js"]
+    for kind in ("waiting", "nomyai", "notready"):
+        assert kind in js, kind
+
+
+def test_start_time_stays_visible():
+    """受け入れ条件: スクロール位置によらず発走時刻が視界にある。"""
+    js, html = CODE["app.js"], CODE["index.html"]
+    assert 'id="miniHead"' in html
+    assert "setMiniHead" in js and "発走" in js
+    assert "window.addEventListener('scroll', updateMiniHead" in js
+    # スクロールイベントが来なくても描画時に評価する (戻る操作で既にスクロール済みの場合)
+    assert re.search(r"updateMiniHead\(\);\s*//", js), "描画時に呼んでいない"
 
 
 def test_no_personal_names_or_titles():

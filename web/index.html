@@ -17,14 +17,19 @@
     <h1 id="screenTitle">きょうのレース</h1>
     <span class="sub" id="screenSub">予想できるレースから選べます</span>
   </div>
+  <!-- 発走時刻を常に視界に置くための縮小ヘッダ (予想画面をスクロールしたとき) -->
+  <div class="mini-head" id="miniHead" hidden></div>
 </header>
+
+<!-- ?demo=1 のときだけ表示。通常URLでは JS が DOM から除去する -->
+<div class="demo-banner" id="demoBanner" hidden>デモ演出中(実際の印ではありません)</div>
 
 <main>
 
   <!-- ============ 画面1: きょうのレース ============ -->
   <section class="screen active" id="scr-races">
     <div id="racesWarn"></div>
-    <div class="card" id="raceList"></div>
+    <div id="raceList"></div>
     <p class="note" style="margin-top:10px">「馬体重の発表待ち」のレースは、発表(発走の約50分前)後に自動で予想できるようになります。</p>
   </section>
 
@@ -35,8 +40,10 @@
       選んだ項目がそのまま予想の根拠になります。<b>所要2〜3分。</b>
     </div>
 
+    <div id="starterBox"></div>
+
     <div class="section-label">STEP 1 — 重視する項目</div>
-    <div class="param-chips" id="step1chips"></div>
+    <div id="step1groups"></div>
 
     <div class="section-label">STEP 2 — 過去レースの成績(条件 × さかのぼる範囲)</div>
     <div class="card step2" id="step2list"></div>
@@ -45,7 +52,7 @@
       <div class="section-label" style="margin-top:0">マイAIの名前</div>
       <input type="text" id="aiName" value="参加者AI 1" aria-label="マイAIの名前">
     </div>
-    <button class="cta" id="saveBtn" disabled>このマイAIで予想する</button>
+    <button class="cta" id="saveBtn" disabled>マイAIを保存して成績をみる</button>
     <p class="cta-reason" id="saveReason">項目を1つ以上選んでください</p>
 
     <div class="bt-result hidden" id="btResult"></div>
@@ -54,13 +61,11 @@
 
   <!-- ============ 画面3: 予想 ============ -->
   <section class="screen" id="scr-predict">
-    <!-- マイAI未作成 -->
     <div class="empty hidden" id="predEmpty">
       <div class="t">まだマイAIがありません</div>
       <div class="d">重視したい項目を選ぶと、あなた専用の予想AIができます。<br>所要2〜3分です。</div>
       <button class="cta" data-go="build">マイAIをつくる</button>
     </div>
-    <!-- レース未選択 -->
     <div class="empty hidden" id="predNoRace">
       <div class="t">レースが選ばれていません</div>
       <div class="d">きょうのレースから選べます。</div>
@@ -70,11 +75,12 @@
     <div id="predBody" class="hidden">
       <div class="race-head" id="raceHead"></div>
       <div id="predWarn" class="warns" style="margin-top:12px"></div>
+      <div id="markLegend"></div>
       <div class="card marks" id="markList"></div>
       <div class="demo-strip hidden" id="demoStrip">
         <button class="demo-btn" id="demoBtn">▶ 馬体重発表をシミュレート(デモ演出)</button>
       </div>
-      <p class="note disclaimer">印は参加者が選んだ項目にもとづく分析です。過去の成績は将来の結果を保証しません。</p>
+      <p class="note disclaimer">印は選んだ項目にもとづく分析です。過去の成績は将来の結果を保証しません。</p>
     </div>
   </section>
 
@@ -85,26 +91,32 @@
       <div class="s" id="boardSub">◎的中数で並べています</div>
     </div>
     <div id="boardWarn"></div>
-    <div class="card board" id="boardList"></div>
-    <p class="note" style="margin-top:10px">
-      「人気を出し抜いた的中」= 1番人気ではない馬を◎にして的中したレース。
-      基準の「1番人気AI」との差として見てください。
-    </p>
-    <p class="note" id="boardRule" style="margin-top:6px"></p>
-    <p class="note" style="margin-top:6px">
-      市場人気は基準の「1番人気AI」専用です。マイAIは選んだ項目だけで印を決めます。
-    </p>
+    <div id="boardList"></div>
+    <!-- 順位規則は board が空のときも必ず読めるようにする -->
+    <div class="card rule-card">
+      <div class="rule-title">並び順の決め方</div>
+      <p class="rule-body" id="boardRule">—</p>
+      <p class="rule-note">
+        「◎的中」= 本命(◎)にした馬が1着になったこと。<br>
+        「人気を出し抜いた的中」= 1番人気ではない馬を◎にして的中したこと。
+        基準の「1番人気AI」との差として見てください。
+      </p>
+      <p class="rule-note">市場人気は基準の「1番人気AI」専用です。マイAIは選んだ項目だけで印を決めます。</p>
+    </div>
   </section>
 
 </main>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<div class="legend" id="legend" role="dialog" aria-modal="true" aria-labelledby="legendTitle">
-  <div class="box">
-    <h3 id="legendTitle">自信度の見かた</h3>
-    <p>鉄板級 / 有力 / 混戦 — 1位と2位の差で決まります。差が大きいほど「鉄板級」、小さいほど「混戦」です。</p>
-    <button id="legendClose">閉じる</button>
+<!-- 用語・印の説明を出すボトムシート -->
+<div class="sheet-wrap" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+  <div class="sheet">
+    <div class="sheet-head">
+      <h3 id="sheetTitle">—</h3>
+      <button class="sheet-close" id="sheetClose" aria-label="閉じる">✕</button>
+    </div>
+    <div class="sheet-body" id="sheetBody"></div>
   </div>
 </div>
 
