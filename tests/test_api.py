@@ -489,3 +489,27 @@ def test_backtest_and_leaderboard_cannot_use_popularity():
     # 人気だけの設定は「選べる列ゼロ」になる
     only_pop = {"step1": ["popularity"], "step2": []}
     assert cf.selected_columns(only_pop) == []
+
+
+def test_empty_selection_is_warned_and_blocks_marks():
+    """選べる列が0になる設定は必ず警告すること。
+
+    判断A の除外後に「人気(市場)」だけの旧設定は選択が空になる。列が空だと
+    全馬のスコアが 0 で印は無意味なので、開示系の警告 (印を出して良い) だけを
+    返して黙って並べてはいけない。
+    """
+    got = svc.predict_race(_race(), {"step1": ["popularity"], "step2": []}, PRESET)
+    codes = {w["code"] for w in got["warnings"]}
+    assert "no_columns_selected" in codes
+    assert got["n_columns_selected"] == 0
+    assert got["n_columns_used"] == 0
+    # 除外の開示も併せて出る
+    assert "excluded_columns_dropped" in codes
+
+    # 何も選んでいない設定でも同じ
+    empty = svc.predict_race(_race(), {"step1": [], "step2": []}, PRESET)
+    assert "no_columns_selected" in {w["code"] for w in empty["warnings"]}
+
+    # 1つでも選べていれば出さない
+    ok = svc.predict_race(_race(), {"step1": ["burden_weight"], "step2": []}, PRESET)
+    assert "no_columns_selected" not in {w["code"] for w in ok["warnings"]}

@@ -48,6 +48,16 @@ def predict_race(race: dict, user_config: dict, preset: dict) -> dict:
                         if k in model.FEATURES],
         })
 
+    # 選べる列が1つも無い場合。判断A で「人気(市場)」だけを選んでいた旧設定が
+    # ここに落ちる (除外後に選択が空になる)。列が空だと全馬のスコアが 0 になり
+    # 印は並び順そのままの無意味な値になるので、**必ず** 警告して止める。
+    if not columns:
+        warnings.append({
+            "code": "no_columns_selected",
+            "message": "予想に使える項目が選ばれていません (印は出せません)",
+            "hint": "「マイAIをつくる」から項目を1つ以上選んでください。",
+        })
+
     # プリセット重みが選択列をカバーしていないと全重み0 = 印が無意味になる。
     # 黙って順位を出すと参加者に嘘を見せるので、必ず警告として返す。
     if columns and not any(weights.get(c["id"]) for c in columns):
