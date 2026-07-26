@@ -8,8 +8,12 @@
     GET  /api/configs/{id}                  設定の取得
     GET  /api/configs/{id}/history          成績推移用のバージョン履歴
 
-起動:
-    python -m builder.api --date 20260801 --port 8780
+起動 (通常は serve.bat から。システムの python では numpy が無く動かない):
+    serve.bat
+    serve.bat --date 20260801 --port 8780
+
+**ブラウザで開くのは `http://127.0.0.1:8780/` (UI)。**
+`/api/...` は JSON を返すエンドポイントで、画面ではない。
 
 当日データは matrix_daily のキャッシュを使う (無ければ起動時に構築)。
 プリセット重みは presets の保存済みファイルを読む (無ければ全重み0で動くが印は無意味)。
@@ -263,7 +267,14 @@ def main() -> int:
         logger.info("バックテスト用行列なし → 「これまでの成績」カードは表示されません")
 
     server = ThreadingHTTPServer((args.host, args.port), Handler)
-    logger.info("MAIBuilder API: http://%s:%d/api/races/today", args.host, args.port)
+    # **UI の URL を出す。** ここに /api/... を出していたため、ログの URL を開くと
+    # 生の JSON が表示されて「画面が開けない」という迷い方をした。
+    logger.info("=" * 58)
+    logger.info("  ブラウザで開いてください →  http://%s:%d/", args.host, args.port)
+    logger.info("  終了は Ctrl+C")
+    logger.info("=" * 58)
+    logger.info("(API を直接見る場合: http://%s:%d/api/races/today — JSON が返ります)",
+                args.host, args.port)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
