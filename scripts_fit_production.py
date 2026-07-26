@@ -87,12 +87,26 @@ def main() -> int:
                                           date_from=window)
     print(f"[c/responsiveness] {time.time()-t:.0f}s  評価レース={resp['n_races_evaluated']}"
           f" 窓={window or '全期間'}", flush=True)
+    collapse_rate = None
     if resp.get("error"):
         print(f"            ⚠ 検査不能: {resp['message']}")
     else:
         print(f"            応答した列={resp['n_responsive']}/{resp['n_cells']} "
               f"(dead_rate={resp['dead_rate']})")
         print(f"            内訳={resp['dead_reasons']}")
+        # ★ dead の内訳を分けて解釈する。
+        #   zero_weight = そもそもデータが無い列 (ゲート通過0) → データ可用性の問題
+        #   coefficient_collapsed = データはあるのに係数が潰れた → 共線性の問題
+        # これを混ぜると「小分け学習に切替」の判断を誤る。
+        n_with_weight = sum(1 for c in resp["cells"] if c["weight"] != 0.0)
+        collapsed = resp["dead_reasons"].get("coefficient_collapsed", 0)
+        collapse_rate = (collapsed / n_with_weight) if n_with_weight else None
+        print(f"            重みが付いた列={n_with_weight} / うち係数が潰れた列={collapsed}"
+              f" (共線性による潰れ率={collapse_rate:.1%})"
+              if collapse_rate is not None else
+              f"            重みが付いた列={n_with_weight}")
+        print(f"            重み0の列={resp['dead_reasons'].get('zero_weight', 0)}"
+              f" (= ゲート通過0のデータ不足列。共線性ではない)")
 
     # (d) 自信度閾値
     th = res["confidence_thresholds"]
@@ -104,8 +118,15 @@ def main() -> int:
         verdict.append("対数尤度が一様分布以下 → 採用不可")
     if resp.get("error"):
         verdict.append(f"応答性が検査不能 ({resp['error']}) → 採用判断を保留")
-    elif resp["dead_rate"] and resp["dead_rate"] > 0.5:
-        verdict.append(f"応答しない列が過半 ({resp['dead_rate']:.0%}) → 項目別小分け学習を検討")
+    elif collapse_rate is not None and collapse_rate > 0.3:
+        # 共線性の判定は「データがある列のうち係数が潰れた割合」で行う。
+        # データ不足による重み0を混ぜると過大評価になる。
+        verdict.append(f"データがある列の {collapse_rate:.0%} が係数潰れ "
+                       f"→ 共線性。項目別小分け学習を検討")
+    if zero and len(zero) > len(col_ids) * 0.3:
+        verdict.append(f"ゲート通過0の列が {len(zero)}/{len(col_ids)} "
+                       f"→ データ不足 (共線性ではない)。対象期間にコーナー・賞金データが"
+                       f"含まれているか確認")
     if th["solid"] is None:
         verdict.append("自信度閾値が算出できていない")
     print()
@@ -118,6 +139,7 @@ def main() -> int:
         "years": args.years, "n_races": len(m["races"]), "n_columns": len(col_ids),
         "ll_uniform": ll_uniform, "fit": {k: v for k, v in res.items() if k != "weights"},
         "responsiveness": {k: v for k, v in resp.items() if k != "cells"},
+        "collinearity_collapse_rate": collapse_rate,
         "dead_cells_sample": [c for c in resp["cells"] if not c["responsive"]][:40],
         "verdict": verdict or ["ok"],
     }, ensure_ascii=False, indent=2), encoding="utf-8")

@@ -1,0 +1,2285 @@
+{
+  "years": [
+    2021
+  ],
+  "n_races": 3456,
+  "n_columns": 425,
+  "ll_uniform": -2.6035514604274104,
+  "fit": {
+    "train_period": [
+      "20210101",
+      "20250630"
+    ],
+    "display_backtest_from": "20250701",
+    "n_races_trained": 3456,
+    "column_races_passed_gate": {
+      "popularity": 3456,
+      "burden_weight": 3296,
+      "burden_delta": 2692,
+      "horse_weight_change": 3157,
+      "days_since_last": 3148,
+      "draw_position": 3456,
+      "jockey_win_rate": 3454,
+      "jockey_recent_30d_top3_rate": 3431,
+      "jockey_track_top3_rate": 3348,
+      "trainer_win_rate": 3456,
+      "trainer_recent_30d_top3_rate": 3456,
+      "sire_surface_top3_rate": 3452,
+      "sire_distance_top3_rate": 3452,
+      "sire_going_top3_rate": 3357,
+      "dam_sire_surface_top3_rate": 3450,
+      "fit_course": 1480,
+      "fit_course_distance": 1007,
+      "fit_distance": 2450,
+      "fit_going": 2055,
+      "fit_surface": 2268,
+      "horse_track_top3_rate": 1871,
+      "horse_recent_90d_top3_rate": 2877,
+      "recent_avg_finish": 3148,
+      "recent_trend_delta": 2824,
+      "last_finish": 3146,
+      "avg_final_3f": 2369,
+      "best_final_3f_rank": 2368,
+      "recent_4corner_avg_position": 0,
+      "recent_4corner_position_change": 0,
+      "agg_avg_finish|lb=None|m=": 3148,
+      "agg_avg_finish|lb=1|m=": 3146,
+      "agg_avg_finish|lb=2|m=": 3148,
+      "agg_avg_finish|lb=3|m=": 3148,
+      "agg_avg_finish|lb=4|m=": 3148,
+      "agg_avg_finish|lb=5|m=": 3148,
+      "agg_avg_finish|lb=6|m=": 3148,
+      "agg_avg_finish|lb=7|m=": 3148,
+      "agg_avg_finish|lb=8|m=": 3148,
+      "agg_avg_finish|lb=9|m=": 3148,
+      "agg_avg_finish|lb=10|m=": 3148,
+      "agg_avg_finish|lb=None|m=distance": 2190,
+      "agg_avg_finish|lb=1|m=distance": 2188,
+      "agg_avg_finish|lb=2|m=distance": 2190,
+      "agg_avg_finish|lb=3|m=distance": 2190,
+      "agg_avg_finish|lb=4|m=distance": 2190,
+      "agg_avg_finish|lb=5|m=distance": 2190,
+      "agg_avg_finish|lb=6|m=distance": 2190,
+      "agg_avg_finish|lb=7|m=distance": 2190,
+      "agg_avg_finish|lb=8|m=distance": 2190,
+      "agg_avg_finish|lb=9|m=distance": 2190,
+      "agg_avg_finish|lb=10|m=distance": 2190,
+      "agg_avg_finish|lb=None|m=track": 1960,
+      "agg_avg_finish|lb=1|m=track": 1959,
+      "agg_avg_finish|lb=2|m=track": 1960,
+      "agg_avg_finish|lb=3|m=track": 1960,
+      "agg_avg_finish|lb=4|m=track": 1960,
+      "agg_avg_finish|lb=5|m=track": 1960,
+      "agg_avg_finish|lb=6|m=track": 1960,
+      "agg_avg_finish|lb=7|m=track": 1960,
+      "agg_avg_finish|lb=8|m=track": 1960,
+      "agg_avg_finish|lb=9|m=track": 1960,
+      "agg_avg_finish|lb=10|m=track": 1960,
+      "agg_avg_finish|lb=None|m=surface": 3058,
+      "agg_avg_finish|lb=1|m=surface": 3055,
+      "agg_avg_finish|lb=2|m=surface": 3058,
+      "agg_avg_finish|lb=3|m=surface": 3058,
+      "agg_avg_finish|lb=4|m=surface": 3058,
+      "agg_avg_finish|lb=5|m=surface": 3058,
+      "agg_avg_finish|lb=6|m=surface": 3058,
+      "agg_avg_finish|lb=7|m=surface": 3058,
+      "agg_avg_finish|lb=8|m=surface": 3058,
+      "agg_avg_finish|lb=9|m=surface": 3058,
+      "agg_avg_finish|lb=10|m=surface": 3058,
+      "agg_margin|lb=None|m=": 3122,
+      "agg_margin|lb=1|m=": 3114,
+      "agg_margin|lb=2|m=": 3121,
+      "agg_margin|lb=3|m=": 3122,
+      "agg_margin|lb=4|m=": 3122,
+      "agg_margin|lb=5|m=": 3122,
+      "agg_margin|lb=6|m=": 3122,
+      "agg_margin|lb=7|m=": 3122,
+      "agg_margin|lb=8|m=": 3122,
+      "agg_margin|lb=9|m=": 3122,
+      "agg_margin|lb=10|m=": 3122,
+      "agg_margin|lb=None|m=distance": 2129,
+      "agg_margin|lb=1|m=distance": 2109,
+      "agg_margin|lb=2|m=distance": 2127,
+      "agg_margin|lb=3|m=distance": 2128,
+      "agg_margin|lb=4|m=distance": 2129,
+      "agg_margin|lb=5|m=distance": 2129,
+      "agg_margin|lb=6|m=distance": 2129,
+      "agg_margin|lb=7|m=distance": 2129,
+      "agg_margin|lb=8|m=distance": 2129,
+      "agg_margin|lb=9|m=distance": 2129,
+      "agg_margin|lb=10|m=distance": 2129,
+      "agg_margin|lb=None|m=track": 1890,
+      "agg_margin|lb=1|m=track": 1863,
+      "agg_margin|lb=2|m=track": 1889,
+      "agg_margin|lb=3|m=track": 1890,
+      "agg_margin|lb=4|m=track": 1890,
+      "agg_margin|lb=5|m=track": 1890,
+      "agg_margin|lb=6|m=track": 1890,
+      "agg_margin|lb=7|m=track": 1890,
+      "agg_margin|lb=8|m=track": 1890,
+      "agg_margin|lb=9|m=track": 1890,
+      "agg_margin|lb=10|m=track": 1890,
+      "agg_margin|lb=None|m=surface": 3020,
+      "agg_margin|lb=1|m=surface": 3003,
+      "agg_margin|lb=2|m=surface": 3019,
+      "agg_margin|lb=3|m=surface": 3020,
+      "agg_margin|lb=4|m=surface": 3020,
+      "agg_margin|lb=5|m=surface": 3020,
+      "agg_margin|lb=6|m=surface": 3020,
+      "agg_margin|lb=7|m=surface": 3020,
+      "agg_margin|lb=8|m=surface": 3020,
+      "agg_margin|lb=9|m=surface": 3020,
+      "agg_margin|lb=10|m=surface": 3020,
+      "agg_time_index|lb=None|m=": 3099,
+      "agg_time_index|lb=1|m=": 3032,
+      "agg_time_index|lb=2|m=": 3080,
+      "agg_time_index|lb=3|m=": 3093,
+      "agg_time_index|lb=4|m=": 3097,
+      "agg_time_index|lb=5|m=": 3098,
+      "agg_time_index|lb=6|m=": 3099,
+      "agg_time_index|lb=7|m=": 3099,
+      "agg_time_index|lb=8|m=": 3099,
+      "agg_time_index|lb=9|m=": 3099,
+      "agg_time_index|lb=10|m=": 3099,
+      "agg_time_index|lb=None|m=distance": 2129,
+      "agg_time_index|lb=1|m=distance": 2111,
+      "agg_time_index|lb=2|m=distance": 2127,
+      "agg_time_index|lb=3|m=distance": 2128,
+      "agg_time_index|lb=4|m=distance": 2129,
+      "agg_time_index|lb=5|m=distance": 2129,
+      "agg_time_index|lb=6|m=distance": 2129,
+      "agg_time_index|lb=7|m=distance": 2129,
+      "agg_time_index|lb=8|m=distance": 2129,
+      "agg_time_index|lb=9|m=distance": 2129,
+      "agg_time_index|lb=10|m=distance": 2129,
+      "agg_time_index|lb=None|m=track": 1761,
+      "agg_time_index|lb=1|m=track": 1716,
+      "agg_time_index|lb=2|m=track": 1753,
+      "agg_time_index|lb=3|m=track": 1759,
+      "agg_time_index|lb=4|m=track": 1761,
+      "agg_time_index|lb=5|m=track": 1761,
+      "agg_time_index|lb=6|m=track": 1761,
+      "agg_time_index|lb=7|m=track": 1761,
+      "agg_time_index|lb=8|m=track": 1761,
+      "agg_time_index|lb=9|m=track": 1761,
+      "agg_time_index|lb=10|m=track": 1761,
+      "agg_time_index|lb=None|m=surface": 3007,
+      "agg_time_index|lb=1|m=surface": 2979,
+      "agg_time_index|lb=2|m=surface": 3005,
+      "agg_time_index|lb=3|m=surface": 3007,
+      "agg_time_index|lb=4|m=surface": 3007,
+      "agg_time_index|lb=5|m=surface": 3007,
+      "agg_time_index|lb=6|m=surface": 3007,
+      "agg_time_index|lb=7|m=surface": 3007,
+      "agg_time_index|lb=8|m=surface": 3007,
+      "agg_time_index|lb=9|m=surface": 3007,
+      "agg_time_index|lb=10|m=surface": 3007,
+      "agg_prize|lb=None|m=": 0,
+      "agg_prize|lb=1|m=": 0,
+      "agg_prize|lb=2|m=": 0,
+      "agg_prize|lb=3|m=": 0,
+      "agg_prize|lb=4|m=": 0,
+      "agg_prize|lb=5|m=": 0,
+      "agg_prize|lb=6|m=": 0,
+      "agg_prize|lb=7|m=": 0,
+      "agg_prize|lb=8|m=": 0,
+      "agg_prize|lb=9|m=": 0,
+      "agg_prize|lb=10|m=": 0,
+      "agg_prize|lb=None|m=distance": 0,
+      "agg_prize|lb=1|m=distance": 0,
+      "agg_prize|lb=2|m=distance": 0,
+      "agg_prize|lb=3|m=distance": 0,
+      "agg_prize|lb=4|m=distance": 0,
+      "agg_prize|lb=5|m=distance": 0,
+      "agg_prize|lb=6|m=distance": 0,
+      "agg_prize|lb=7|m=distance": 0,
+      "agg_prize|lb=8|m=distance": 0,
+      "agg_prize|lb=9|m=distance": 0,
+      "agg_prize|lb=10|m=distance": 0,
+      "agg_prize|lb=None|m=track": 0,
+      "agg_prize|lb=1|m=track": 0,
+      "agg_prize|lb=2|m=track": 0,
+      "agg_prize|lb=3|m=track": 0,
+      "agg_prize|lb=4|m=track": 0,
+      "agg_prize|lb=5|m=track": 0,
+      "agg_prize|lb=6|m=track": 0,
+      "agg_prize|lb=7|m=track": 0,
+      "agg_prize|lb=8|m=track": 0,
+      "agg_prize|lb=9|m=track": 0,
+      "agg_prize|lb=10|m=track": 0,
+      "agg_prize|lb=None|m=surface": 0,
+      "agg_prize|lb=1|m=surface": 0,
+      "agg_prize|lb=2|m=surface": 0,
+      "agg_prize|lb=3|m=surface": 0,
+      "agg_prize|lb=4|m=surface": 0,
+      "agg_prize|lb=5|m=surface": 0,
+      "agg_prize|lb=6|m=surface": 0,
+      "agg_prize|lb=7|m=surface": 0,
+      "agg_prize|lb=8|m=surface": 0,
+      "agg_prize|lb=9|m=surface": 0,
+      "agg_prize|lb=10|m=surface": 0,
+      "agg_corner_first|lb=None|m=": 0,
+      "agg_corner_first|lb=1|m=": 0,
+      "agg_corner_first|lb=2|m=": 0,
+      "agg_corner_first|lb=3|m=": 0,
+      "agg_corner_first|lb=4|m=": 0,
+      "agg_corner_first|lb=5|m=": 0,
+      "agg_corner_first|lb=6|m=": 0,
+      "agg_corner_first|lb=7|m=": 0,
+      "agg_corner_first|lb=8|m=": 0,
+      "agg_corner_first|lb=9|m=": 0,
+      "agg_corner_first|lb=10|m=": 0,
+      "agg_corner_first|lb=None|m=distance": 0,
+      "agg_corner_first|lb=1|m=distance": 0,
+      "agg_corner_first|lb=2|m=distance": 0,
+      "agg_corner_first|lb=3|m=distance": 0,
+      "agg_corner_first|lb=4|m=distance": 0,
+      "agg_corner_first|lb=5|m=distance": 0,
+      "agg_corner_first|lb=6|m=distance": 0,
+      "agg_corner_first|lb=7|m=distance": 0,
+      "agg_corner_first|lb=8|m=distance": 0,
+      "agg_corner_first|lb=9|m=distance": 0,
+      "agg_corner_first|lb=10|m=distance": 0,
+      "agg_corner_first|lb=None|m=track": 0,
+      "agg_corner_first|lb=1|m=track": 0,
+      "agg_corner_first|lb=2|m=track": 0,
+      "agg_corner_first|lb=3|m=track": 0,
+      "agg_corner_first|lb=4|m=track": 0,
+      "agg_corner_first|lb=5|m=track": 0,
+      "agg_corner_first|lb=6|m=track": 0,
+      "agg_corner_first|lb=7|m=track": 0,
+      "agg_corner_first|lb=8|m=track": 0,
+      "agg_corner_first|lb=9|m=track": 0,
+      "agg_corner_first|lb=10|m=track": 0,
+      "agg_corner_first|lb=None|m=surface": 0,
+      "agg_corner_first|lb=1|m=surface": 0,
+      "agg_corner_first|lb=2|m=surface": 0,
+      "agg_corner_first|lb=3|m=surface": 0,
+      "agg_corner_first|lb=4|m=surface": 0,
+      "agg_corner_first|lb=5|m=surface": 0,
+      "agg_corner_first|lb=6|m=surface": 0,
+      "agg_corner_first|lb=7|m=surface": 0,
+      "agg_corner_first|lb=8|m=surface": 0,
+      "agg_corner_first|lb=9|m=surface": 0,
+      "agg_corner_first|lb=10|m=surface": 0,
+      "agg_corner_last|lb=None|m=": 0,
+      "agg_corner_last|lb=1|m=": 0,
+      "agg_corner_last|lb=2|m=": 0,
+      "agg_corner_last|lb=3|m=": 0,
+      "agg_corner_last|lb=4|m=": 0,
+      "agg_corner_last|lb=5|m=": 0,
+      "agg_corner_last|lb=6|m=": 0,
+      "agg_corner_last|lb=7|m=": 0,
+      "agg_corner_last|lb=8|m=": 0,
+      "agg_corner_last|lb=9|m=": 0,
+      "agg_corner_last|lb=10|m=": 0,
+      "agg_corner_last|lb=None|m=distance": 0,
+      "agg_corner_last|lb=1|m=distance": 0,
+      "agg_corner_last|lb=2|m=distance": 0,
+      "agg_corner_last|lb=3|m=distance": 0,
+      "agg_corner_last|lb=4|m=distance": 0,
+      "agg_corner_last|lb=5|m=distance": 0,
+      "agg_corner_last|lb=6|m=distance": 0,
+      "agg_corner_last|lb=7|m=distance": 0,
+      "agg_corner_last|lb=8|m=distance": 0,
+      "agg_corner_last|lb=9|m=distance": 0,
+      "agg_corner_last|lb=10|m=distance": 0,
+      "agg_corner_last|lb=None|m=track": 0,
+      "agg_corner_last|lb=1|m=track": 0,
+      "agg_corner_last|lb=2|m=track": 0,
+      "agg_corner_last|lb=3|m=track": 0,
+      "agg_corner_last|lb=4|m=track": 0,
+      "agg_corner_last|lb=5|m=track": 0,
+      "agg_corner_last|lb=6|m=track": 0,
+      "agg_corner_last|lb=7|m=track": 0,
+      "agg_corner_last|lb=8|m=track": 0,
+      "agg_corner_last|lb=9|m=track": 0,
+      "agg_corner_last|lb=10|m=track": 0,
+      "agg_corner_last|lb=None|m=surface": 0,
+      "agg_corner_last|lb=1|m=surface": 0,
+      "agg_corner_last|lb=2|m=surface": 0,
+      "agg_corner_last|lb=3|m=surface": 0,
+      "agg_corner_last|lb=4|m=surface": 0,
+      "agg_corner_last|lb=5|m=surface": 0,
+      "agg_corner_last|lb=6|m=surface": 0,
+      "agg_corner_last|lb=7|m=surface": 0,
+      "agg_corner_last|lb=8|m=surface": 0,
+      "agg_corner_last|lb=9|m=surface": 0,
+      "agg_corner_last|lb=10|m=surface": 0,
+      "agg_gain_first_to_last|lb=None|m=": 0,
+      "agg_gain_first_to_last|lb=1|m=": 0,
+      "agg_gain_first_to_last|lb=2|m=": 0,
+      "agg_gain_first_to_last|lb=3|m=": 0,
+      "agg_gain_first_to_last|lb=4|m=": 0,
+      "agg_gain_first_to_last|lb=5|m=": 0,
+      "agg_gain_first_to_last|lb=6|m=": 0,
+      "agg_gain_first_to_last|lb=7|m=": 0,
+      "agg_gain_first_to_last|lb=8|m=": 0,
+      "agg_gain_first_to_last|lb=9|m=": 0,
+      "agg_gain_first_to_last|lb=10|m=": 0,
+      "agg_gain_first_to_last|lb=None|m=distance": 0,
+      "agg_gain_first_to_last|lb=1|m=distance": 0,
+      "agg_gain_first_to_last|lb=2|m=distance": 0,
+      "agg_gain_first_to_last|lb=3|m=distance": 0,
+      "agg_gain_first_to_last|lb=4|m=distance": 0,
+      "agg_gain_first_to_last|lb=5|m=distance": 0,
+      "agg_gain_first_to_last|lb=6|m=distance": 0,
+      "agg_gain_first_to_last|lb=7|m=distance": 0,
+      "agg_gain_first_to_last|lb=8|m=distance": 0,
+      "agg_gain_first_to_last|lb=9|m=distance": 0,
+      "agg_gain_first_to_last|lb=10|m=distance": 0,
+      "agg_gain_first_to_last|lb=None|m=track": 0,
+      "agg_gain_first_to_last|lb=1|m=track": 0,
+      "agg_gain_first_to_last|lb=2|m=track": 0,
+      "agg_gain_first_to_last|lb=3|m=track": 0,
+      "agg_gain_first_to_last|lb=4|m=track": 0,
+      "agg_gain_first_to_last|lb=5|m=track": 0,
+      "agg_gain_first_to_last|lb=6|m=track": 0,
+      "agg_gain_first_to_last|lb=7|m=track": 0,
+      "agg_gain_first_to_last|lb=8|m=track": 0,
+      "agg_gain_first_to_last|lb=9|m=track": 0,
+      "agg_gain_first_to_last|lb=10|m=track": 0,
+      "agg_gain_first_to_last|lb=None|m=surface": 0,
+      "agg_gain_first_to_last|lb=1|m=surface": 0,
+      "agg_gain_first_to_last|lb=2|m=surface": 0,
+      "agg_gain_first_to_last|lb=3|m=surface": 0,
+      "agg_gain_first_to_last|lb=4|m=surface": 0,
+      "agg_gain_first_to_last|lb=5|m=surface": 0,
+      "agg_gain_first_to_last|lb=6|m=surface": 0,
+      "agg_gain_first_to_last|lb=7|m=surface": 0,
+      "agg_gain_first_to_last|lb=8|m=surface": 0,
+      "agg_gain_first_to_last|lb=9|m=surface": 0,
+      "agg_gain_first_to_last|lb=10|m=surface": 0,
+      "agg_gain_first_to_finish|lb=None|m=": 0,
+      "agg_gain_first_to_finish|lb=1|m=": 0,
+      "agg_gain_first_to_finish|lb=2|m=": 0,
+      "agg_gain_first_to_finish|lb=3|m=": 0,
+      "agg_gain_first_to_finish|lb=4|m=": 0,
+      "agg_gain_first_to_finish|lb=5|m=": 0,
+      "agg_gain_first_to_finish|lb=6|m=": 0,
+      "agg_gain_first_to_finish|lb=7|m=": 0,
+      "agg_gain_first_to_finish|lb=8|m=": 0,
+      "agg_gain_first_to_finish|lb=9|m=": 0,
+      "agg_gain_first_to_finish|lb=10|m=": 0,
+      "agg_gain_first_to_finish|lb=None|m=distance": 0,
+      "agg_gain_first_to_finish|lb=1|m=distance": 0,
+      "agg_gain_first_to_finish|lb=2|m=distance": 0,
+      "agg_gain_first_to_finish|lb=3|m=distance": 0,
+      "agg_gain_first_to_finish|lb=4|m=distance": 0,
+      "agg_gain_first_to_finish|lb=5|m=distance": 0,
+      "agg_gain_first_to_finish|lb=6|m=distance": 0,
+      "agg_gain_first_to_finish|lb=7|m=distance": 0,
+      "agg_gain_first_to_finish|lb=8|m=distance": 0,
+      "agg_gain_first_to_finish|lb=9|m=distance": 0,
+      "agg_gain_first_to_finish|lb=10|m=distance": 0,
+      "agg_gain_first_to_finish|lb=None|m=track": 0,
+      "agg_gain_first_to_finish|lb=1|m=track": 0,
+      "agg_gain_first_to_finish|lb=2|m=track": 0,
+      "agg_gain_first_to_finish|lb=3|m=track": 0,
+      "agg_gain_first_to_finish|lb=4|m=track": 0,
+      "agg_gain_first_to_finish|lb=5|m=track": 0,
+      "agg_gain_first_to_finish|lb=6|m=track": 0,
+      "agg_gain_first_to_finish|lb=7|m=track": 0,
+      "agg_gain_first_to_finish|lb=8|m=track": 0,
+      "agg_gain_first_to_finish|lb=9|m=track": 0,
+      "agg_gain_first_to_finish|lb=10|m=track": 0,
+      "agg_gain_first_to_finish|lb=None|m=surface": 0,
+      "agg_gain_first_to_finish|lb=1|m=surface": 0,
+      "agg_gain_first_to_finish|lb=2|m=surface": 0,
+      "agg_gain_first_to_finish|lb=3|m=surface": 0,
+      "agg_gain_first_to_finish|lb=4|m=surface": 0,
+      "agg_gain_first_to_finish|lb=5|m=surface": 0,
+      "agg_gain_first_to_finish|lb=6|m=surface": 0,
+      "agg_gain_first_to_finish|lb=7|m=surface": 0,
+      "agg_gain_first_to_finish|lb=8|m=surface": 0,
+      "agg_gain_first_to_finish|lb=9|m=surface": 0,
+      "agg_gain_first_to_finish|lb=10|m=surface": 0,
+      "agg_gain_last_to_finish|lb=None|m=": 0,
+      "agg_gain_last_to_finish|lb=1|m=": 0,
+      "agg_gain_last_to_finish|lb=2|m=": 0,
+      "agg_gain_last_to_finish|lb=3|m=": 0,
+      "agg_gain_last_to_finish|lb=4|m=": 0,
+      "agg_gain_last_to_finish|lb=5|m=": 0,
+      "agg_gain_last_to_finish|lb=6|m=": 0,
+      "agg_gain_last_to_finish|lb=7|m=": 0,
+      "agg_gain_last_to_finish|lb=8|m=": 0,
+      "agg_gain_last_to_finish|lb=9|m=": 0,
+      "agg_gain_last_to_finish|lb=10|m=": 0,
+      "agg_gain_last_to_finish|lb=None|m=distance": 0,
+      "agg_gain_last_to_finish|lb=1|m=distance": 0,
+      "agg_gain_last_to_finish|lb=2|m=distance": 0,
+      "agg_gain_last_to_finish|lb=3|m=distance": 0,
+      "agg_gain_last_to_finish|lb=4|m=distance": 0,
+      "agg_gain_last_to_finish|lb=5|m=distance": 0,
+      "agg_gain_last_to_finish|lb=6|m=distance": 0,
+      "agg_gain_last_to_finish|lb=7|m=distance": 0,
+      "agg_gain_last_to_finish|lb=8|m=distance": 0,
+      "agg_gain_last_to_finish|lb=9|m=distance": 0,
+      "agg_gain_last_to_finish|lb=10|m=distance": 0,
+      "agg_gain_last_to_finish|lb=None|m=track": 0,
+      "agg_gain_last_to_finish|lb=1|m=track": 0,
+      "agg_gain_last_to_finish|lb=2|m=track": 0,
+      "agg_gain_last_to_finish|lb=3|m=track": 0,
+      "agg_gain_last_to_finish|lb=4|m=track": 0,
+      "agg_gain_last_to_finish|lb=5|m=track": 0,
+      "agg_gain_last_to_finish|lb=6|m=track": 0,
+      "agg_gain_last_to_finish|lb=7|m=track": 0,
+      "agg_gain_last_to_finish|lb=8|m=track": 0,
+      "agg_gain_last_to_finish|lb=9|m=track": 0,
+      "agg_gain_last_to_finish|lb=10|m=track": 0,
+      "agg_gain_last_to_finish|lb=None|m=surface": 0,
+      "agg_gain_last_to_finish|lb=1|m=surface": 0,
+      "agg_gain_last_to_finish|lb=2|m=surface": 0,
+      "agg_gain_last_to_finish|lb=3|m=surface": 0,
+      "agg_gain_last_to_finish|lb=4|m=surface": 0,
+      "agg_gain_last_to_finish|lb=5|m=surface": 0,
+      "agg_gain_last_to_finish|lb=6|m=surface": 0,
+      "agg_gain_last_to_finish|lb=7|m=surface": 0,
+      "agg_gain_last_to_finish|lb=8|m=surface": 0,
+      "agg_gain_last_to_finish|lb=9|m=surface": 0,
+      "agg_gain_last_to_finish|lb=10|m=surface": 0
+    },
+    "low_sample_columns": [
+      {
+        "column": "recent_4corner_avg_position",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "recent_4corner_position_change",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=None|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=1|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=2|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=3|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=4|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=5|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=6|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=7|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=8|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=9|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=10|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=None|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=1|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=2|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=3|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=4|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=5|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=6|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=7|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=8|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=9|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=10|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=None|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=1|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=2|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=3|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=4|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=5|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=6|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=7|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=8|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=9|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=10|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=None|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=1|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=2|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=3|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=4|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=5|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=6|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=7|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=8|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=9|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_prize|lb=10|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=None|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=1|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=2|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=3|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=4|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=5|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=6|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=7|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=8|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=9|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=10|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=None|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=1|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=2|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=3|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=4|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=5|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=6|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=7|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=8|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=9|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=10|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=None|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=1|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=2|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=3|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=4|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=5|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=6|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=7|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=8|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=9|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=10|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=None|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=1|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=2|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=3|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=4|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=5|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=6|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=7|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=8|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=9|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_first|lb=10|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=None|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=1|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=2|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=3|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=4|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=5|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=6|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=7|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=8|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=9|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=10|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=None|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=1|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=2|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=3|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=4|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=5|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=6|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=7|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=8|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=9|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=10|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=None|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=1|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=2|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=3|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=4|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=5|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=6|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=7|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=8|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=9|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=10|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=None|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=1|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=2|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=3|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=4|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=5|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=6|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=7|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=8|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=9|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_corner_last|lb=10|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=None|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=1|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=2|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=3|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=4|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=5|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=6|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=7|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=8|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=9|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=10|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=None|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=1|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=2|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=3|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=4|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=5|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=6|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=7|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=8|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=9|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=10|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=None|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=1|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=2|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=3|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=4|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=5|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=6|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=7|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=8|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=9|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=10|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=None|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=1|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=2|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=3|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=4|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=5|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=6|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=7|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=8|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=9|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_last|lb=10|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=None|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=1|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=2|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=3|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=4|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=5|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=6|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=7|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=8|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=9|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=10|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=None|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=1|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=2|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=3|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=4|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=5|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=6|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=7|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=8|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=9|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=10|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=None|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=1|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=2|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=3|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=4|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=5|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=6|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=7|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=8|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=9|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=10|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=None|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=1|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=2|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=3|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=4|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=5|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=6|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=7|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=8|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=9|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_first_to_finish|lb=10|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=None|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=1|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=2|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=3|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=4|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=5|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=6|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=7|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=8|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=9|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=10|m=",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=None|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=1|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=2|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=3|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=4|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=5|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=6|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=7|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=8|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=9|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=10|m=distance",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=None|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=1|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=2|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=3|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=4|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=5|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=6|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=7|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=8|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=9|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=10|m=track",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=None|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=1|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=2|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=3|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=4|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=5|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=6|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=7|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=8|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=9|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      },
+      {
+        "column": "agg_gain_last_to_finish|lb=10|m=surface",
+        "races_passed_gate": 0,
+        "threshold": 500
+      }
+    ],
+    "mean_log_likelihood_train": -2.011743,
+    "confidence_thresholds": {
+      "solid": 0.4642,
+      "strong": 0.248002,
+      "n": 3456
+    },
+    "gate": {
+      "min_horses": 4,
+      "min_fraction": 0.5
+    },
+    "n_columns": 425,
+    "columns_fingerprint": "9071c04cd52feae9"
+  },
+  "responsiveness": {
+    "n_races_evaluated": 200,
+    "min_differs_rate": 0.05,
+    "n_cells": 425,
+    "n_responsive": 155,
+    "n_dead": 270,
+    "dead_rate": 0.6353,
+    "dead_reasons": {
+      "zero_weight": 266,
+      "column_never_usable": 0,
+      "coefficient_collapsed": 4
+    }
+  },
+  "dead_cells_sample": [
+    {
+      "column": "popularity",
+      "label": "人気(市場)",
+      "weight": 1.236823,
+      "races": 200,
+      "races_column_used": 200,
+      "differs_from_favorite": 9,
+      "differs_rate": 0.045,
+      "flat_rate": 0.0,
+      "responsive": false,
+      "reason": "coefficient_collapsed"
+    },
+    {
+      "column": "burden_delta",
+      "label": "斤量変化",
+      "weight": -0.007921,
+      "races": 200,
+      "races_column_used": 7,
+      "differs_from_favorite": 7,
+      "differs_rate": 0.035,
+      "flat_rate": 0.965,
+      "responsive": false,
+      "reason": "coefficient_collapsed"
+    },
+    {
+      "column": "avg_final_3f",
+      "label": "平均上がり3F",
+      "weight": 0.040715,
+      "races": 200,
+      "races_column_used": 4,
+      "differs_from_favorite": 3,
+      "differs_rate": 0.015,
+      "flat_rate": 0.98,
+      "responsive": false,
+      "reason": "coefficient_collapsed"
+    },
+    {
+      "column": "best_final_3f_rank",
+      "label": "上がり最高順位",
+      "weight": -0.01872,
+      "races": 200,
+      "races_column_used": 4,
+      "differs_from_favorite": 4,
+      "differs_rate": 0.02,
+      "flat_rate": 0.98,
+      "responsive": false,
+      "reason": "coefficient_collapsed"
+    },
+    {
+      "column": "recent_4corner_avg_position",
+      "label": "4角平均位置",
+      "weight": 0.0,
+      "races": 200,
+      "races_column_used": 0,
+      "differs_from_favorite": 0,
+      "differs_rate": 0.0,
+      "flat_rate": null,
+      "responsive": false,
+      "reason": "zero_weight"
+    },
+    {
+      "column": "recent_4corner_position_change",
+      "label": "コーナーでの押し上げ",
+      "weight": 0.0,
+      "races": 200,
+      "races_column_used": 0,
+      "differs_from_favorite": 0,
+      "differs_rate": 0.0,
+      "flat_rate": null,
+      "responsive": false,
+      "reason": "zero_weight"
+    },
+    {
+      "column": "agg_prize|lb=None|m=",
+      "label": "獲得賞金(可変集計)",
+      "weight": 0.0,
+      "races": 200,
+      "races_column_used": 0,
+      "differs_from_favorite": 0,
+      "differs_rate": 0.0,
+      "flat_rate": null,
+      "responsive": false,
+      "reason": "zero_weight"
+    },
+    {
+      "column": "agg_prize|lb=1|m=",
+      "label": "獲得賞金(可変集計)",
+      "weight": 0.0,
+      "races": 200,
+      "races_column_used": 0,
+      "differs_from_favorite": 0,
+      "differs_rate": 0.0,
+      "flat_rate": null,
+      "responsive": false,
+      "reason": "zero_weight"
+    },
+    {
+      "column": "agg_prize|lb=2|m=",
+      "label": "獲得賞金(可変集計)",
+      "weight": 0.0,
+      "races": 200,
+      "races_column_used": 0,
+      "differs_from_favorite": 0,
+      "differs_rate": 0.0,
+      "flat_rate": null,
+      "responsive": false,
+      "reason": "zero_weight"
+    },
+    {
+      "column": "agg_prize|lb=3|m=",
+      "label": "獲得賞金(可変集計)",
+      "weight": 0.0,
+      "races": 200,
+      "races_column_used": 0,
+      "differs_from_favorite": 0,
+      "differs_rate": 0.0,
+      "flat_rate": null,
+      "responsive": false,
+      "reason": "zero_weight"
+    },
+    {
+      "column": "agg_prize|lb=4|m=",
+      "label": "獲得賞金(可変集計)",
+      "weight": 0.0,
+      "races": 200,
+      "races_column_used": 0,
+      "differs_from_favorite": 0,
+      "differs_rate": 0.0,
+      "flat_rate": null,
+      "responsive": false,
+      "reason": "zero_weight"
+    },
+    {
+      "column": "agg_prize|lb=5|m=",
+      "label": "獲得賞金(可変集計)",
+      "weight": 0.0,
+      "races": 200,
+      "races_column_used": 0,
+      "differs_from_favorite": 0,
+      "differs_rate": 0.0,
+      "flat_rate": null,
+      "responsive": false,
+      "reason": "zero_weight"
+    },
+    {
+      "column": "agg_prize|lb=6|m=",
+      "label": "獲得賞金(可変集計)",
+      "weight": 0.0,
+      "races": 200,
+      "races_column_used": 0,
+      "differs_from_favorite": 0,
+      "differs_rate": 0.0,
+      "flat_rate": null,
+      "responsive": false,
+      "reason": "zero_weight"
+    },
+    {
+      "column": "agg_prize|lb=7|m=",
+      "label": "獲得賞金(可変集計)",
+      "weight": 0.0,
+      "races": 200,
+      "races_column_used": 0,
+      "differs_from_favorite": 0,
+      "differs_rate": 0.0,
+      "flat_rate": null,
+      "responsive": false,
+      "reason": "zero_weight"
+    },
+    {
+      "column": "agg_prize|lb=8|m=",
+      "label": "獲得賞金(可変集計)",
+      "weight": 0.0,
+      "races": 200,
+      "races_column_used": 0,
+      "differs_from_favorite": 0,
+      "differs_rate": 0.0,
+      "flat_rate": null,
+      "responsive": false,
+      "reason": "zero_weight"
+    },
+    {
+      "column": "agg_prize|lb=9|m=",
+      "label": "獲得賞金(可変集計)",
+      "weight": 0.0,
+      "races": 200,
+      "races_column_used": 0,
+      "differs_from_favorite": 0,
+      "differs_rate": 0.0,
+      "flat_rate": null,
+      "responsive": false,
+      "reason": "zero_weight"
+    },
+    {
+      "column": "agg_prize|lb=10|m=",
+      "label": "獲得賞金(可変集計)",
+      "weight": 0.0,
+      "races": 200,
+      "races_column_used": 0,
+      "differs_from_favorite": 0,
+      "differs_rate": 0.0,
+      "flat_rate": null,
+      "responsive": false,
+      "reason": "zero_weight"
+    },
+    {
+      "column": "agg_prize|lb=None|m=distance",
+      "label": "獲得賞金(可変集計)",
+      "weight": 0.0,
+      "races": 200,
+      "races_column_used": 0,
+      "differs_from_favorite": 0,
+      "differs_rate": 0.0,
+      "flat_rate": null,
+      "responsive": false,
+      "reason": "zero_weight"
+    },
+    {
+      "column": "agg_prize|lb=1|m=distance",
+      "label": "獲得賞金(可変集計)",
+      "weight": 0.0,
+      "races": 200,
+      "races_column_used": 0,
+      "differs_from_favorite": 0,
+      "differs_rate": 0.0,
+      "flat_rate": null,
+      "responsive": false,
+      "reason": "zero_weight"
+    },
+    {
+      "column": "agg_prize|lb=2|m=distance",
+      "label": "獲得賞金(可変集計)",
+      "weight": 0.0,
+      "races": 200,
+      "races_column_used": 0,
+      "differs_from_favorite": 0,
+      "differs_rate": 0.0,
+      "flat_rate": null,
+      "responsive": false,
+      "reason": "zero_weight"
+    },
+    {
+      "column": "agg_prize|lb=3|m=distance",
+      "label": "獲得賞金(可変集計)",
+      "weight": 0.0,
+      "races": 200,
+      "races_column_used": 0,
+      "differs_from_favorite": 0,
+      "differs_rate": 0.0,
+      "flat_rate": null,
+      "responsive": false,
+      "reason": "zero_weight"
+    },
+    {
+      "column": "agg_prize|lb=4|m=distance",
+      "label": "獲得賞金(可変集計)",
+      "weight": 0.0,
+      "races": 200,
+      "races_column_used": 0,
+      "differs_from_favorite": 0,
+      "differs_rate": 0.0,
+      "flat_rate": null,
+      "responsive": false,
+      "reason": "zero_weight"
+    },
+    {
+      "column": "agg_prize|lb=5|m=distance",
+      "label": "獲得賞金(可変集計)",
+      "weight": 0.0,
+      "races": 200,
+      "races_column_used": 0,
+      "differs_from_favorite": 0,
+      "differs_rate": 0.0,
+      "flat_rate": null,
+      "responsive": false,
+      "reason": "zero_weight"
+    },
+    {
+      "column": "agg_prize|lb=6|m=distance",
+      "label": "獲得賞金(可変集計)",
+      "weight": 0.0,
+      "races": 200,
+      "races_column_used": 0,
+      "differs_from_favorite": 0,
+      "differs_rate": 0.0,
+      "flat_rate": null,
+      "responsive": false,
+      "reason": "zero_weight"
+    },
+    {
+      "column": "agg_prize|lb=7|m=distance",
+      "label": "獲得賞金(可変集計)",
+      "weight": 0.0,
+      "races": 200,
+      "races_column_used": 0,
+      "differs_from_favorite": 0,
+      "differs_rate": 0.0,
+      "flat_rate": null,
+      "responsive": false,
+      "reason": "zero_weight"
+    },
+    {
+      "column": "agg_prize|lb=8|m=distance",
+      "label": "獲得賞金(可変集計)",
+      "weight": 0.0,
+      "races": 200,
+      "races_column_used": 0,
+      "differs_from_favorite": 0,
+      "differs_rate": 0.0,
+      "flat_rate": null,
+      "responsive": false,
+      "reason": "zero_weight"
+    },
+    {
+      "column": "agg_prize|lb=9|m=distance",
+      "label": "獲得賞金(可変集計)",
+      "weight": 0.0,
+      "races": 200,
+      "races_column_used": 0,
+      "differs_from_favorite": 0,
+      "differs_rate": 0.0,
+      "flat_rate": null,
+      "responsive": false,
+      "reason": "zero_weight"
+    },
+    {
+      "column": "agg_prize|lb=10|m=distance",
+      "label": "獲得賞金(可変集計)",
+      "weight": 0.0,
+      "races": 200,
+      "races_column_used": 0,
+      "differs_from_favorite": 0,
+      "differs_rate": 0.0,
+      "flat_rate": null,
+      "responsive": false,
+      "reason": "zero_weight"
+    },
+    {
+      "column": "agg_prize|lb=None|m=track",
+      "label": "獲得賞金(可変集計)",
+      "weight": 0.0,
+      "races": 200,
+      "races_column_used": 0,
+      "differs_from_favorite": 0,
+      "differs_rate": 0.0,
+      "flat_rate": null,
+      "responsive": false,
+      "reason": "zero_weight"
+    },
+    {
+      "column": "agg_prize|lb=1|m=track",
+      "label": "獲得賞金(可変集計)",
+      "weight": 0.0,
+      "races": 200,
+      "races_column_used": 0,
+      "differs_from_favorite": 0,
+      "differs_rate": 0.0,
+      "flat_rate": null,
+      "responsive": false,
+      "reason": "zero_weight"
+    },
+    {
+      "column": "agg_prize|lb=2|m=track",
+      "label": "獲得賞金(可変集計)",
+      "weight": 0.0,
+      "races": 200,
+      "races_column_used": 0,
+      "differs_from_favorite": 0,
+      "differs_rate": 0.0,
+      "flat_rate": null,
+      "responsive": false,
+      "reason": "zero_weight"
+    },
+    {
+      "column": "agg_prize|lb=3|m=track",
+      "label": "獲得賞金(可変集計)",
+      "weight": 0.0,
+      "races": 200,
+      "races_column_used": 0,
+      "differs_from_favorite": 0,
+      "differs_rate": 0.0,
+      "flat_rate": null,
+      "responsive": false,
+      "reason": "zero_weight"
+    },
+    {
+      "column": "agg_prize|lb=4|m=track",
+      "label": "獲得賞金(可変集計)",
+      "weight": 0.0,
+      "races": 200,
+      "races_column_used": 0,
+      "differs_from_favorite": 0,
+      "differs_rate": 0.0,
+      "flat_rate": null,
+      "responsive": false,
+      "reason": "zero_weight"
+    },
+    {
+      "column": "agg_prize|lb=5|m=track",
+      "label": "獲得賞金(可変集計)",
+      "weight": 0.0,
+      "races": 200,
+      "races_column_used": 0,
+      "differs_from_favorite": 0,
+      "differs_rate": 0.0,
+      "flat_rate": null,
+      "responsive": false,
+      "reason": "zero_weight"
+    },
+    {
+      "column": "agg_prize|lb=6|m=track",
+      "label": "獲得賞金(可変集計)",
+      "weight": 0.0,
+      "races": 200,
+      "races_column_used": 0,
+      "differs_from_favorite": 0,
+      "differs_rate": 0.0,
+      "flat_rate": null,
+      "responsive": false,
+      "reason": "zero_weight"
+    },
+    {
+      "column": "agg_prize|lb=7|m=track",
+      "label": "獲得賞金(可変集計)",
+      "weight": 0.0,
+      "races": 200,
+      "races_column_used": 0,
+      "differs_from_favorite": 0,
+      "differs_rate": 0.0,
+      "flat_rate": null,
+      "responsive": false,
+      "reason": "zero_weight"
+    },
+    {
+      "column": "agg_prize|lb=8|m=track",
+      "label": "獲得賞金(可変集計)",
+      "weight": 0.0,
+      "races": 200,
+      "races_column_used": 0,
+      "differs_from_favorite": 0,
+      "differs_rate": 0.0,
+      "flat_rate": null,
+      "responsive": false,
+      "reason": "zero_weight"
+    },
+    {
+      "column": "agg_prize|lb=9|m=track",
+      "label": "獲得賞金(可変集計)",
+      "weight": 0.0,
+      "races": 200,
+      "races_column_used": 0,
+      "differs_from_favorite": 0,
+      "differs_rate": 0.0,
+      "flat_rate": null,
+      "responsive": false,
+      "reason": "zero_weight"
+    },
+    {
+      "column": "agg_prize|lb=10|m=track",
+      "label": "獲得賞金(可変集計)",
+      "weight": 0.0,
+      "races": 200,
+      "races_column_used": 0,
+      "differs_from_favorite": 0,
+      "differs_rate": 0.0,
+      "flat_rate": null,
+      "responsive": false,
+      "reason": "zero_weight"
+    },
+    {
+      "column": "agg_prize|lb=None|m=surface",
+      "label": "獲得賞金(可変集計)",
+      "weight": 0.0,
+      "races": 200,
+      "races_column_used": 0,
+      "differs_from_favorite": 0,
+      "differs_rate": 0.0,
+      "flat_rate": null,
+      "responsive": false,
+      "reason": "zero_weight"
+    }
+  ],
+  "verdict": [
+    "応答しない列が過半 (64%) → 項目別小分け学習を検討"
+  ]
+}
