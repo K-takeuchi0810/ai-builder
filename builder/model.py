@@ -457,6 +457,54 @@ def compute_feature_rows(conn, horses: list[dict], race: dict, cfg: dict,
     return rows
 
 
+def score_columns_detailed(rows: dict[str, dict[str, float | None]],
+                           columns: list[dict], weights: dict[str, float]) -> dict:
+    """**列ID ベース**のスコア + 寄与分解 + 列の採否 + カバレッジ (純粋関数)。
+
+    rows: {馬番: {列ID: 生値}}、columns: [{"id","label","hib"}]、weights: {列ID: 重み}。
+    同じ特徴量キーでも lookback/match が違えば別列なので、MAIBuilder の 396 基底列は
+    こちらを使う (feature キーでは区別できない)。欠損ポリシーは normalize.py に単一実装。
+    """
+    horse_nums = list(rows.keys())
+    n_runners = len(horse_nums)
+    scores = {hn: 0.0 for hn in horse_nums}
+    contribs: dict[str, list] = {hn: [] for hn in horse_nums}
+    out_cols: list[dict] = []
+    used = 0
+
+    for c in columns:
+        cid = c["id"]
+        w = float(weights.get(cid, 0.0))
+        if w == 0.0:
+            continue
+        present = {hn: rows.get(hn, {}).get(cid) for hn in horse_nums}
+        zs, decision, n_have = nrm.race_z(present, c.get("hib", True), n_runners)
+        out_cols.append({"id": cid, "label": c.get("label", cid), "weight": w,
+                         "decision": decision, "n_with_value": n_have})
+        if decision != nrm.USE:
+            continue
+        used += 1
+        for hn in horse_nums:
+            z = zs.get(hn)
+            if z is None:
+                contribs[hn].append({"id": cid, "label": c.get("label", cid), "weight": w,
+                                     "z": None, "contribution": 0.0, "available": False})
+                continue
+            val = w * z
+            scores[hn] += val
+            contribs[hn].append({"id": cid, "label": c.get("label", cid), "weight": w,
+                                 "z": round(z, 4), "contribution": round(val, 4),
+                                 "available": True})
+
+    coverage = {hn: {"n_used": used,
+                     "n_with_value": sum(1 for x in contribs[hn] if x["available"])}
+                for hn in horse_nums}
+    for hn in contribs:
+        contribs[hn].sort(key=lambda x: abs(x["contribution"]), reverse=True)
+    return {"ranked": sorted(scores.items(), key=lambda kv: kv[1], reverse=True),
+            "contributions": contribs, "columns": out_cols, "coverage": coverage}
+
+
 def score_race_detailed(feature_rows: dict[str, dict[str, float | None]],
                         cfg: dict) -> dict:
     """スコア + **寄与分解** + 列の採否 + 馬ごとのカバレッジを返す (純粋関数)。

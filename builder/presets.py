@@ -139,6 +139,36 @@ def log_likelihood(prep_races: list[dict], col_ids: list[str],
     return total / cnt if cnt else float("nan")
 
 
+def confidence_thresholds(prep_races: list[dict], col_ids: list[str],
+                          weights: dict[str, float]) -> dict:
+    """1位と2位のスコア差の分位点。設計書 §6 の自信度3段階の閾値を事前決定する。
+
+    「鉄板級」= 上位1/3、「有力」= 中位、「混戦」= 下位1/3。
+    """
+    w = np.array([weights.get(cid, 0.0) for cid in col_ids], dtype=np.float64)
+    gaps = []
+    for Z, _win in _race_arrays(prep_races, col_ids):
+        s = np.sort(Z @ w)[::-1]
+        if s.size >= 2:
+            gaps.append(float(s[0] - s[1]))
+    if not gaps:
+        return {"solid": None, "strong": None, "n": 0}
+    q33, q67 = (float(x) for x in np.quantile(gaps, [1 / 3, 2 / 3]))
+    return {"solid": round(q67, 6), "strong": round(q33, 6), "n": len(gaps)}
+
+
+def confidence_label(gap: float | None, thresholds: dict) -> str:
+    """スコア差 → 自信度ラベル (鉄板級 / 有力 / 混戦)。閾値が無ければ「—」。"""
+    solid, strong = thresholds.get("solid"), thresholds.get("strong")
+    if gap is None or solid is None or strong is None:
+        return "—"
+    if gap >= solid:
+        return "鉄板級"
+    if gap >= strong:
+        return "有力"
+    return "混戦"
+
+
 def fit_presets(matrix: dict, *, train_from: str | None = None, train_to: str | None = None,
                 min_races_per_column: int | None = None,
                 l2: float = 1.0, iters: int = 200, lr: float = 0.1) -> dict:
@@ -168,6 +198,8 @@ def fit_presets(matrix: dict, *, train_from: str | None = None, train_to: str | 
         "column_races_passed_gate": report,
         "low_sample_columns": warnings,
         "mean_log_likelihood_train": round(log_likelihood(prep, col_ids, weights), 6),
+        # 自信度3段階の閾値 (学習期間の分位点で事前決定。設計書 §6)
+        "confidence_thresholds": confidence_thresholds(prep, col_ids, weights),
         # 学習に効いた欠損ポリシー (サービングと同一実装であることを記録)
         "gate": {"min_horses": nrm.MIN_HORSES, "min_fraction": nrm.MIN_FRACTION},
     }
