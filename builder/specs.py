@@ -97,3 +97,24 @@ def maib_step1_specs() -> list[dict]:
 def maib_all_specs() -> list[dict]:
     """MAIBuilder が事前計算する全基底列 (STEP1 + STEP2)。"""
     return maib_step1_specs() + maib_step2_specs()
+
+
+# ---------------------------------------------------------------------------
+# 判断A (2026-07-26 確定、設計書 v0.3 §2): 「人気(市場)」を参加者AIから除外する
+# ---------------------------------------------------------------------------
+# 実測 (docs/evidence/20260726_FINDINGS_preset_weights.md):
+#   人気を含めると ◎ の 95.9% が1番人気と一致し、項目を追加しても ◎ が変わるのは
+#   0.2〜2.2% だけ。「選んだ項目が根拠になる」という商品定義と両立しない。
+#
+# **基底列としては残す。** 除外するのは参加者に見える面 (選択肢・スコア・寄与) のみ:
+#   - 行列キャッシュ (4.6GB) と列構成指紋の互換性が保たれる
+#   - ベースラインの「1番人気AI」は horse の pop を直接使うのでこの列に依存しない
+#   - 列別学習は列ごとに独立なので、除外しても他列の重みは変わらない
+#     (tests/test_presets.py::test_per_column_fit_is_independent_of_other_columns)
+PARTICIPANT_EXCLUDED_KEYS: frozenset[str] = frozenset({"popularity"})
+
+
+def maib_participant_step1_specs() -> list[dict]:
+    """参加者が選べる STEP1 (判断A の除外を適用済み)。"""
+    return [s for s in maib_step1_specs()
+            if s["key"] not in PARTICIPANT_EXCLUDED_KEYS]

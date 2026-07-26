@@ -27,16 +27,34 @@ from pathlib import Path
 from . import config as cfgmod
 from . import matrix as mx
 from . import model
+from . import specs as sp
+
+
+def excluded_in_config(cfg: dict) -> list[str]:
+    """設定に含まれている **参加者AIでは使えない項目** (判断A の除外対象)。
+
+    v0.3 より前に保存された設定には「人気(市場)」が入っている。黙って落とすと
+    参加者は「選んだのに効いていない」ことに気づけないので、警告に載せるために
+    何が落ちたかを返す。
+    """
+    keys = set(cfg.get("step1") or [])
+    keys |= {c.get("metric") or c.get("key") for c in (cfg.get("step2") or [])}
+    return sorted(k for k in keys if k in sp.PARTICIPANT_EXCLUDED_KEYS)
 
 
 def normalize_config(cfg: dict) -> dict:
-    """設定を正規化 (重複除去・順序固定)。同一設定が同一ハッシュになるようにする。"""
-    step1 = sorted({k for k in (cfg.get("step1") or []) if k in model.FEATURES})
+    """設定を正規化 (重複除去・順序固定)。同一設定が同一ハッシュになるようにする。
+
+    判断A の除外対象 (「人気(市場)」) はここで落とす。**唯一の入口**にすることで、
+    参加者経路 (選択列・重み・寄与・バックテスト・順位表) のどこにも混入しない。
+    """
+    step1 = sorted({k for k in (cfg.get("step1") or [])
+                    if k in model.FEATURES and k not in sp.PARTICIPANT_EXCLUDED_KEYS})
     seen = set()
     step2 = []
     for cell in cfg.get("step2") or []:
         key = cell.get("metric") or cell.get("key")
-        if key not in model.FEATURES:
+        if key not in model.FEATURES or key in sp.PARTICIPANT_EXCLUDED_KEYS:
             continue
         match = sorted(cell.get("match") or [])
         lb = cell.get("lookback")

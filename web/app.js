@@ -29,7 +29,7 @@ const TITLES = {
   races:   ['きょうのレース', '予想できるレースから選べます'],
   build:   ['マイAIをつくる', '重視する項目を選ぶだけ · 2〜3分'],
   predict: ['マイAIの予想', 'タップすると根拠がひらきます'],
-  board:   ['きょうの順位', '参加者のマイAIで対抗戦'],
+  board:   ['本日の成績比較', 'マイAIと基準を並べて確認します'],
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -437,7 +437,7 @@ function renderPredict(p, prev) {
         <span class="waku w${wakuColor(m.horse_num, marks.length)}">${esc(String(Number(m.horse_num)))}</span>
         <div class="who">
           <div class="name">${esc(m.horse_name || '')}
-            ${upset ? '<span class="badge-upset">人気を出し抜く狙い</span>' : ''}</div>
+            ${upset ? '<span class="badge-upset">1番人気ではない</span>' : ''}</div>
           <div class="sub">${popLabel(m)}${oddsLabel(m, p)}${coverChip(m)}</div>
         </div>
         <div class="scorebar"><div class="bar"><i style="width:${w}%"></i></div></div>
@@ -454,8 +454,8 @@ function renderPredict(p, prev) {
  * 「何件か」ではなく「どの項目か」が分からないと参加者は判断できない。 */
 function warnColumns(w) {
   if (!w.columns || !w.columns.length) return '';
-  const rows = w.columns.map((c) =>
-    `<div>${esc(c.label)} — 過去 ${Number(c.train_races)}レースで学習</div>`).join('');
+  const rows = w.columns.map((c) => `<div>${esc(c.label)}${
+    c.train_races == null ? '' : ` — 過去 ${Number(c.train_races)}レースで学習`}</div>`).join('');
   const more = w.n_columns > w.columns.length
     ? `<div>ほか ${w.n_columns - w.columns.length}件</div>` : '';
   return `<div class="warn-cols">${rows}${more}</div>`;
@@ -514,8 +514,12 @@ function whyBlock(m) {
   const short = cov.n_with_value != null && cov.n_used != null && cov.n_with_value < cov.n_used;
   // 行のチップと同じ内容を再掲しない。ここでは「なぜ確かさが下がるか」の理由文だけ出す。
   // スコアの絶対値 (重み付き z の総和) は参加者に意味を持たないので出さない (§7)。
+  // 設計書 §5: 無印も全頭表示し、「なぜ無印か」を一文添える
+  const title = m.mark
+    ? `なぜこの馬が ${esc(m.mark)} か`
+    : `なぜ無印か — 選んだ項目での評価が ${Number(m.rank)}番目で、印は上位5頭まで`;
   return `<div class="why">
-    <div class="why-title">なぜこの馬が ${esc(m.mark || '—')} か</div>
+    <div class="why-title">${title}</div>
     <div class="contrib">${rows}${naRows}</div>
     <div class="cover-why">数値は、この馬の評価を動かした量のうち各項目が占める割合です。
       ${short ? '「データなし」の項目は評価に加えていません。その分だけ評価の確かさは下がります。'
@@ -561,7 +565,7 @@ function toast(html) {
   setTimeout(() => t.classList.remove('show'), 5200);
 }
 
-/* -------------------------------------------- 画面4: きょうの順位 (§5) */
+/* ------------------------------------------ 画面4: 本日の成績比較 (§7) */
 async function loadLeaderboard() {
   let d;
   try {
@@ -570,13 +574,13 @@ async function loadLeaderboard() {
   } catch (err) {
     if (err.status === 409) {
       $('#boardList').innerHTML = `<div class="empty"><div class="t">まだ集計できていません</div>
-        <div class="d">レースが確定すると順位が出ます。</div></div>`;
+        <div class="d">レースが確定すると成績が出ます。</div></div>`;
       return;
     }
     staleChip('#boardWarn');
     return;
   }
-  $('#boardSub').textContent = `◎的中数で競います · ${d.n_races_finished}レース終了時点`;
+  $('#boardSub').textContent = `◎的中数で並べています · ${d.n_races_finished}レース終了時点`;
   $('#boardRule').textContent = d.ranking_rule || '';
   const entries = d.entries || [];
   if (!entries.length) {

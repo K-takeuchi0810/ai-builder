@@ -309,6 +309,41 @@ def fit_per_column(prep_races: list[dict], col_ids: list[str], *,
     return out
 
 
+def log_likelihood_per_column(prep_races: list[dict], col_ids: list[str],
+                              weights: dict[str, float]) -> tuple[dict, float]:
+    """**列を単独で使ったとき**の平均対数尤度を全列分まとめて返す。
+
+    戻り: ({col_id: 平均対数尤度}, 一様分布の平均対数尤度)
+
+    `log_likelihood(prep, [cid], w)` を列ごとに呼ぶと `_race_arrays` が毎回
+    全馬の z 辞書 (425項目) を走査するので、425列 × 15,549レース で
+    数百億回の反復になり終わらない。`_pack` で一度だけ詰めて列を slice する。
+
+    一様分布 (全重み0) の対数尤度は列に依存せず出走頭数だけで決まるので、
+    1 回だけ計算して共通の基準として返す。
+    """
+    z, starts, wins = _pack(prep_races, col_ids)
+    if len(wins) == 0:
+        return {cid: float("nan") for cid in col_ids}, float("nan")
+    lo, race_of, win_rows = _segments(starts, wins)
+    counts = np.diff(starts).astype(np.float64)
+    ll_uniform = float(-np.log(counts).mean())          # 各レース 1/頭数
+
+    out: dict[str, float] = {}
+    for j, cid in enumerate(col_ids):
+        w = float(weights.get(cid, 0.0))
+        col = np.ascontiguousarray(z[:, j], dtype=np.float64)
+        if w == 0.0 or not col.any():
+            out[cid] = ll_uniform                       # 重み0 は一様分布と同じ
+            continue
+        s = col * w
+        s = s - np.maximum.reduceat(s, lo)[race_of]
+        e = np.exp(s)
+        p = e / np.add.reduceat(e, lo)[race_of]
+        out[cid] = float(np.log(np.maximum(p[win_rows], 1e-12)).mean())
+    return out, ll_uniform
+
+
 def log_likelihood(prep_races: list[dict], col_ids: list[str],
                    weights: dict[str, float]) -> float:
     """平均対数尤度 (勝ち馬を当てる確率の対数の平均)。学習/検証の比較用。"""

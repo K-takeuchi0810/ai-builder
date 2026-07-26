@@ -149,6 +149,49 @@ def test_no_roi_or_recovery_rate_in_ui():
     assert "payout" not in CODE["app.js"] and "tan" not in CODE["app.js"].split("const")[0]
 
 
+def test_no_contest_or_hype_vocabulary():
+    """設計書 v0.3 §1 DON'T: 対抗戦・勝負・煽り系の語彙を使わない。
+
+    位置づけが「個人利用主体の分析ツール」に変わったため、対抗戦前提の文言を
+    残さない。表現は「成績比較」「基準との差」に統一する。
+    """
+    banned = ["対抗戦", "勝負", "バトル", "優勝", "儲か", "稼げ", "必勝", "鉄板級です"]
+    for name, text in CODE.items():
+        for w in banned:
+            assert w not in text, f"{name} に {w!r}"
+    # 「見どころ」のような煽り語彙も置換済みであること
+    assert "見どころ" not in CODE["index.html"]
+    # 置換後の語彙が入っていること
+    assert "本日の成績比較" in CODE["index.html"]
+    assert "基準" in CODE["index.html"]
+
+
+def test_popularity_is_absent_from_the_ui():
+    """判断A: 「人気(市場)」を参加者向けの面に出さない。
+
+    選択肢はサーバ (feature_catalog) が返すので UI にハードコードは無いが、
+    人気を前提にした文言や独自ロジックが残っていないことを固定する。
+    """
+    js = CODE["app.js"]
+    assert "'popularity'" not in js and '"popularity"' not in js
+    # 1番人気との比較表示は残る (ベースラインは市場人気専用なので正当)
+    assert "1番人気" in js or "1番人気" in CODE["index.html"]
+
+
+def test_no_hardcoded_performance_numbers():
+    """作業項目4: ダミーの成績値をUIに埋め込まない (実測値はAPIから取る)。
+
+    モックアップにあった 24.8% のような固定値が残っていると、実測と乖離した
+    数字を参加者に見せることになる。
+    """
+    for name in ("index.html", "app.js"):
+        # 「12.3%」のような固定のパーセント表記が無いこと
+        found = re.findall(r"\d+\.\d+\s*%", CODE[name])
+        assert found == [], f"{name} に固定の成績値 {found}"
+    # 成績カードは API の値のみを描画している
+    assert "hit_rate_win" in CODE["app.js"]
+
+
 def test_no_personal_names_or_titles():
     """§10 全体DON'T: 個人名・役職名を含めない (「参加者」で統一)。"""
     banned = ["社長", "部長", "課長", "会長", "専務", "常務", "取締役", "様専用"]

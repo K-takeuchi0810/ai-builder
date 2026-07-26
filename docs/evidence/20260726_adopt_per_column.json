@@ -1,0 +1,62 @@
+{
+  "years": [
+    2021,
+    2022,
+    2023,
+    2024,
+    2025,
+    2026
+  ],
+  "method": "per_column_univariate",
+  "n_columns": 425,
+  "ll_uniform": -2.599469470967882,
+  "n_columns_better_than_uniform_alone": 423,
+  "columns_worse_than_uniform_alone": [],
+  "n_columns_worse_than_uniform_alone": 0,
+  "low_sample_columns": 266,
+  "zero_gate_columns": 2,
+  "sample_report_by_kind": {
+    "other": {
+      "n": 159,
+      "median": 13993,
+      "min": 6285,
+      "max": 15549
+    },
+    "corner": {
+      "n": 222,
+      "median": 53,
+      "min": 0,
+      "max": 173
+    },
+    "prize": {
+      "n": 44,
+      "median": 143,
+      "min": 26,
+      "max": 175
+    }
+  },
+  "responsiveness": {
+    "n_races_evaluated": 400,
+    "min_differs_rate": 0.05,
+    "n_cells": 425,
+    "n_responsive": 423,
+    "n_dead": 2,
+    "dead_rate": 0.0047,
+    "dead_reasons": {
+      "zero_weight": 2,
+      "column_never_usable": 0,
+      "coefficient_collapsed": 0
+    }
+  },
+  "collinearity_collapse_rate": 0.0,
+  "confidence_thresholds": {
+    "solid": 0.467911,
+    "strong": 0.182181,
+    "n": 15549,
+    "scale": "normalized_gap_v1"
+  },
+  "columns_fingerprint_matches_spec": true,
+  "verdict": [
+    "ok"
+  ]
+}

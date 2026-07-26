@@ -285,3 +285,36 @@ def test_pack_preserves_race_structure():
         nums = list(r["z"].keys())
         assert starts[k + 1] - starts[k] == len(nums)
         assert r["order"][nums[wins[k]]] == 1        # 勝ち馬を指している
+
+
+def test_log_likelihood_per_column_matches_the_slow_path():
+    """まとめ計算が 1列ずつ log_likelihood を呼んだ結果と一致すること。
+
+    列別採用判定はこの関数に依存する。`log_likelihood` を列ごとに呼ぶ実装は
+    425列 × 15,549レース で終わらないため差し替えたが、値は同じであること。
+    """
+    prep = matrix.prepare_races(_matrix(n_races=120))
+    cols = ["form", "prize"]
+    w = presets.fit_per_column(prep, cols)
+    fast, ll_uniform = presets.log_likelihood_per_column(prep, cols, w)
+    for cid in cols:
+        slow = presets.log_likelihood(prep, [cid], w)
+        # _pack は z を float32 で保持する (425列×25万行を 0.5GB に収めるため)。
+        # 相対差は 1e-8 台で、採用判定 (一様分布との大小) には影響しない。
+        assert math.isclose(fast[cid], slow, rel_tol=1e-6), (cid, fast[cid], slow)
+    # 一様分布は列に依存しない
+    slow_uniform = presets.log_likelihood(prep, cols, {c: 0.0 for c in cols})
+    assert math.isclose(ll_uniform, slow_uniform, rel_tol=1e-9)
+
+
+def test_log_likelihood_per_column_treats_zero_weight_as_uniform():
+    prep = matrix.prepare_races(_matrix(n_races=60, prize_horses=2))
+    got, ll_uniform = presets.log_likelihood_per_column(prep, ["form", "prize"],
+                                                       {"form": 1.0, "prize": 0.0})
+    assert got["prize"] == ll_uniform          # ゲート未通過で重み0 → 一様と同じ
+    assert got["form"] != ll_uniform
+
+
+def test_log_likelihood_per_column_handles_no_races():
+    got, ll = presets.log_likelihood_per_column([], ["form"], {"form": 1.0})
+    assert math.isnan(got["form"]) and math.isnan(ll)

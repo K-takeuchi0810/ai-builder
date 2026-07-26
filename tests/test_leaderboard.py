@@ -122,4 +122,10 @@ def test_show_rate_and_no_roi_key():
     # 回収率・ROI は集計しない (設計書 §2)
     for e in got["entries"]:
         assert "roi" not in e and "return" not in " ".join(e.keys())
-    assert "同点のときは" in got["ranking_rule"]
+    # 判断C: 順位規則を画面に出せるよう、4段すべてを文章で返す
+    rule = got["ranking_rule"]
+    for part in ("◎的中数", "出し抜", "複勝率", "同順位"):
+        assert part in rule, part
+    # 対抗戦・煽り系の語彙を混ぜない (設計書 v0.3 §1 DON'T)
+    for banned in ("対抗戦", "勝負", "優勝"):
+        assert banned not in rule

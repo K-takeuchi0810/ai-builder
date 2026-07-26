@@ -78,18 +78,22 @@
     </div>
   </section>
 
-  <!-- ============ 画面4: きょうの順位 ============ -->
+  <!-- ============ 画面4: 本日の成績比較 ============ -->
   <section class="screen" id="scr-board">
     <div class="board-hero">
-      <div class="h">きょうのマイAI対抗戦</div>
-      <div class="s" id="boardSub">◎的中数で競います</div>
+      <div class="h">本日の成績比較</div>
+      <div class="s" id="boardSub">◎的中数で並べています</div>
     </div>
     <div id="boardWarn"></div>
     <div class="card board" id="boardList"></div>
     <p class="note" style="margin-top:10px">
-      「人気を出し抜いた的中」= 1番人気ではない馬を◎にして的中したレース。基準の「1番人気AI」に勝てるかが見どころです。
+      「人気を出し抜いた的中」= 1番人気ではない馬を◎にして的中したレース。
+      基準の「1番人気AI」との差として見てください。
     </p>
     <p class="note" id="boardRule" style="margin-top:6px"></p>
+    <p class="note" style="margin-top:6px">
+      市場人気は基準の「1番人気AI」専用です。マイAIは選んだ項目だけで印を決めます。
+    </p>
   </section>
 
 </main>
@@ -108,7 +112,7 @@
   <button class="on" data-scr="races"><span class="ic">日</span>レース</button>
   <button data-scr="build"><span class="ic">作</span>マイAI</button>
   <button data-scr="predict"><span class="ic">◎</span>予想</button>
-  <button data-scr="board"><span class="ic">位</span>順位</button>
+  <button data-scr="board"><span class="ic">比</span>成績</button>
 </nav>
 
 <script src="/web/app.js"></script>

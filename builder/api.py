@@ -82,9 +82,10 @@ def _json(handler: BaseHTTPRequestHandler, obj, status: int = 200) -> None:
 def feature_catalog() -> dict:
     """UI が出す選択肢 (設計書 §4)。STEP2 は 9項目 × 条件4 × 期間11。"""
     from . import labels as lbl
+    # 判断A: 「人気(市場)」は選択肢に出さない (設計書 v0.3 §2)
     step1 = [{"key": s["key"], "label": lbl.column_label(s["key"]),
               "category": model.FEATURES[s["key"]].category}
-             for s in sp.maib_step1_specs()]
+             for s in sp.maib_participant_step1_specs()]
     # STEP2 の集計対象名は「(可変集計)」を外した素の名前 (セルは別の軸で選ばせる)
     step2 = [{"metric": k, "label": model.FEATURES[k].label.replace("(可変集計)", "")}
              for k in sp.MAIB_STEP2_METRICS if k in model.FEATURES]

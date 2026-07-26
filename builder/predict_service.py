@@ -34,9 +34,22 @@ def predict_race(race: dict, user_config: dict, preset: dict) -> dict:
     if not rows:
         return {"race_id": race.get("race_id"), "marks": [], "error": "no_horses"}
 
+    warnings = []
+    # 判断A: v0.3 より前に保存された設定には「人気(市場)」が入っている。
+    # normalize_config が落とすので印には影響しないが、黙って落とすと参加者は
+    # 「選んだのに効いていない」ことに気づけないので必ず知らせる。
+    dropped = cf.excluded_in_config(user_config)
+    if dropped:
+        warnings.append({
+            "code": "excluded_columns_dropped",
+            "message": "「人気(市場)」は予想に使わない項目になったため、この設定から外しました",
+            "hint": "市場人気は基準の「1番人気AI」専用です。マイAIは選んだ項目だけで印を決めます。",
+            "columns": [{"label": model.FEATURES[k].label} for k in dropped
+                        if k in model.FEATURES],
+        })
+
     # プリセット重みが選択列をカバーしていないと全重み0 = 印が無意味になる。
     # 黙って順位を出すと参加者に嘘を見せるので、必ず警告として返す。
-    warnings = []
     if columns and not any(weights.get(c["id"]) for c in columns):
         warnings.append({
             "code": "no_preset_weights",

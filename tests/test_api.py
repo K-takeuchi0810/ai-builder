@@ -14,7 +14,7 @@ from builder import model, predict_service as svc, specs as sp           # noqa:
 
 USER_CFG = {
     "name": "参加者AI 1",
-    "step1": ["popularity"],
+    "step1": ["burden_weight"],
     "step2": [{"metric": "agg_avg_finish", "match": [], "lookback": 3},
               {"metric": "agg_avg_finish", "match": ["distance"], "lookback": 5}],
 }
@@ -27,7 +27,8 @@ def _race(race_id="R1", date="20260801", n=10, with_order=True):
             "num": f"{k:02d}", "name": f"馬{k}",
             "order": (k if with_order else 0), "odds": 2.0 + k, "pop": k,
             "n_past_runs": 5,
-            "x": {"popularity": float(k),
+            "x": {"popularity": float(k),      # 判断A で参加者経路からは落ちる
+                  "burden_weight": float(k),
                   "agg_avg_finish|lb=3|m=": float(k),
                   "agg_avg_finish|lb=5|m=distance": float(k)},
         })
@@ -37,7 +38,7 @@ def _race(race_id="R1", date="20260801", n=10, with_order=True):
 
 
 PRESET = {
-    "weights": {"popularity": 1.0,
+    "weights": {"burden_weight": 1.0,
                 "agg_avg_finish|lb=3|m=": 2.0,
                 "agg_avg_finish|lb=5|m=distance": 2.0},
     # scale キーが無いと confidence_label は解釈を拒否する (古い絶対閾値との混同防止)
@@ -50,21 +51,21 @@ PRESET = {
 # configs: 正規化・ハッシュ・複数選択の平均
 # ---------------------------------------------------------------------------
 def test_normalize_dedupes_and_sorts():
-    raw = {"name": " AI ", "step1": ["popularity", "popularity", "存在しない列"],
+    raw = {"name": " AI ", "step1": ["burden_weight", "burden_weight", "存在しない列"],
            "step2": [{"metric": "agg_avg_finish", "match": ["distance"], "lookback": 3},
                      {"metric": "agg_avg_finish", "match": ["distance"], "lookback": 3},
                      {"metric": "agg_prize", "match": [], "lookback": None}]}
     n = cf.normalize_config(raw)
     assert n["name"] == "AI"
-    assert n["step1"] == ["popularity"]                 # 重複と未知キーを除去
+    assert n["step1"] == ["burden_weight"]              # 重複と未知キーを除去
     assert len(n["step2"]) == 2                          # 重複セルを除去
     assert [c["metric"] for c in n["step2"]] == ["agg_avg_finish", "agg_prize"]
 
 
 def test_config_hash_ignores_name_and_order():
-    a = {"name": "A", "step1": ["popularity"], "step2": []}
-    b = {"name": "B", "step1": ["popularity"], "step2": []}
-    c = {"name": "A", "step1": ["popularity", "burden_weight"], "step2": []}
+    a = {"name": "A", "step1": ["burden_weight"], "step2": []}
+    b = {"name": "B", "step1": ["burden_weight"], "step2": []}
+    c = {"name": "A", "step1": ["burden_weight", "draw_position"], "step2": []}
     assert cf.config_hash(a) == cf.config_hash(b)        # 名前は無関係
     assert cf.config_hash(a) != cf.config_hash(c)
 
@@ -72,7 +73,7 @@ def test_config_hash_ignores_name_and_order():
 def test_multi_cell_selection_averages_base_columns():
     """同じ metric で2セル選択 → 各セルの重みは 1/2 (基底列の単純平均に相当)。"""
     w = cf.column_weights(USER_CFG, PRESET["weights"])
-    assert w["popularity"] == 1.0                        # STEP1 はそのまま
+    assert w["burden_weight"] == 1.0                     # STEP1 はそのまま
     assert w["agg_avg_finish|lb=3|m="] == 1.0            # 2.0 × 1/2
     assert w["agg_avg_finish|lb=5|m=distance"] == 1.0
 
@@ -87,7 +88,7 @@ def test_save_get_history_versions(tmp_path, monkeypatch):
     monkeypatch.setattr(cfgmod, "PRESET_WEIGHTS_PATH", tmp_path / "preset.json")
     v1 = cf.save_config(USER_CFG)
     assert v1["version"] == 1
-    v2 = cf.save_config({**USER_CFG, "step1": ["popularity", "burden_weight"]},
+    v2 = cf.save_config({**USER_CFG, "step1": ["burden_weight", "draw_position"]},
                         config_id=v1["id"])
     assert v2["version"] == 2                            # マイAI v1 → v2
     hist = cf.config_history(v1["id"])
@@ -141,7 +142,7 @@ def test_confidence_gap_is_scale_invariant():
     これが成り立つから、425列で決めた閾値を数項目の設定にも当てられる。
     """
     race = _race()
-    cfg = {"step1": ["popularity"],
+    cfg = {"step1": ["burden_weight"],
            "step2": [{"metric": "agg_avg_finish", "match": [], "lookback": 3}]}
     a = svc.predict_race(race, cfg, PRESET)["confidence"]["normalized_gap"]
     scaled = dict(PRESET, weights={k: v * 100 for k, v in PRESET["weights"].items()})
@@ -348,7 +349,7 @@ def test_predict_warns_when_a_selected_column_has_thin_training_data():
     重み 173 レース学習の項目と 15,000 レース学習の項目を同じ見た目で出すと、
     参加者が確度を誤解する (実資金の判断に使われる)。
     """
-    cfg = {"step1": ["popularity"],
+    cfg = {"step1": ["burden_weight"],
            "step2": [{"metric": "agg_avg_finish", "match": ["distance"], "lookback": 5}]}
     got = svc.predict_race(_race(), cfg, _THIN_PRESET)
     warn = next(w for w in got["warnings"] if w["code"] == "low_sample_columns")
@@ -362,25 +363,25 @@ def test_predict_warns_when_a_selected_column_has_thin_training_data():
 
 
 def test_predict_does_not_warn_when_no_selected_column_is_thin():
-    cfg = {"step1": ["popularity"], "step2": []}
+    cfg = {"step1": ["burden_weight"], "step2": []}
     got = svc.predict_race(_race(), cfg, _THIN_PRESET)
     assert not any(w["code"] == "low_sample_columns" for w in got["warnings"])
 
 
 def test_predict_flags_thin_columns_in_contributions():
     """寄与の各行にも印を付ける (「なぜ◎か」を開いた参加者がそこで判断する)。"""
-    cfg = {"step1": ["popularity"],
+    cfg = {"step1": ["burden_weight"],
            "step2": [{"metric": "agg_avg_finish", "match": ["distance"], "lookback": 5}]}
     got = svc.predict_race(_race(), cfg, _THIN_PRESET)
     contribs = {c["id"]: c for c in got["marks"][0]["contributions"]}
     thin = contribs["agg_avg_finish|lb=5|m=distance"]
     assert thin["low_sample"] is True and thin["train_races"] == 173
-    assert "low_sample" not in contribs["popularity"]      # 厚い列には付けない
+    assert "low_sample" not in contribs["burden_weight"]   # 厚い列には付けない
 
 
 def test_predict_low_sample_warning_absent_when_preset_has_no_report():
     """low_sample_columns を持たない古いプリセットでも落ちないこと。"""
-    cfg = {"step1": ["popularity"], "step2": []}
+    cfg = {"step1": ["burden_weight"], "step2": []}
     got = svc.predict_race(_race(), cfg, PRESET)
     assert not any(w["code"] == "low_sample_columns" for w in got["warnings"])
 
@@ -389,8 +390,102 @@ def test_predict_carries_header_fields_for_the_ui():
     """予想画面が一覧レスポンスに依存しないよう、ヘッダ情報を同梱すること。"""
     race = dict(_race(), start_time="15:45", race_num="11",
                 odds_as_of="2026-08-01T15:31:07", trusted=False)
-    got = svc.predict_race(race, {"step1": ["popularity"], "step2": []}, PRESET)
+    got = svc.predict_race(race, {"step1": ["burden_weight"], "step2": []}, PRESET)
     assert got["start_time"] == "15:45" and got["race_num"] == "11"
     assert got["odds_as_of"] == "2026-08-01T15:31:07"
     assert got["odds_trusted"] is False
     assert got["n_columns_selected"] == 1
+
+
+# ---------------------------------------------------------------------------
+# 判断A: 「人気(市場)」を参加者AIから除外する (設計書 v0.3 §2)
+# ---------------------------------------------------------------------------
+_CFG_WITH_POP = {"name": "旧設定", "step1": ["popularity", "burden_weight"],
+                 "step2": [{"metric": "agg_avg_finish", "match": [], "lookback": 3}]}
+
+
+def test_popularity_is_not_offered_as_a_choice():
+    """選択肢に「人気(市場)」が出ないこと。"""
+    cat = api.feature_catalog()
+    assert "popularity" not in [s["key"] for s in cat["step1"]]
+    assert all("人気" not in s["label"] for s in cat["step1"])
+    # STEP2 の集計対象にも人気系は無い
+    assert all("popularity" not in m["metric"] for m in cat["step2_metrics"])
+
+
+def test_popularity_is_dropped_from_a_saved_config():
+    """v0.3 以前に保存された設定から人気が落ちること (マイグレーション)。"""
+    n = cf.normalize_config(_CFG_WITH_POP)
+    assert "popularity" not in n["step1"]
+    assert n["step1"] == ["burden_weight"]              # 他の項目は残る
+    assert cf.excluded_in_config(_CFG_WITH_POP) == ["popularity"]
+    assert cf.excluded_in_config({"step1": ["burden_weight"], "step2": []}) == []
+
+
+def test_popularity_never_reaches_columns_or_weights():
+    """選択列・重みのどちらにも人気が現れないこと。"""
+    cols = cf.selected_columns(_CFG_WITH_POP)
+    assert "popularity" not in [c["id"] for c in cols]
+    w = cf.column_weights(_CFG_WITH_POP, {"popularity": 99.0, "burden_weight": 1.0,
+                                          "agg_avg_finish|lb=3|m=": 1.0})
+    assert "popularity" not in w
+
+
+def test_predict_response_has_no_popularity_contribution():
+    """完了条件: 参加者経路のレスポンスに人気の寄与が現れないこと。"""
+    race = _race()
+    for h in race["horses"]:
+        h["x"]["burden_weight"] = float(h["num"])
+    preset = {"weights": {"popularity": 99.0, "burden_weight": 1.0,
+                          "agg_avg_finish|lb=3|m=": 1.0},
+              "confidence_thresholds": {"solid": 1.0, "strong": 0.3,
+                                        "scale": svc.ps.CONFIDENCE_SCALE}}
+    got = svc.predict_race(race, _CFG_WITH_POP, preset)
+    assert "popularity" not in [c["id"] for c in got["columns"]]
+    for m in got["marks"]:
+        ids = [c["id"] for c in m["contributions"]]
+        assert "popularity" not in ids
+        assert all("人気" not in c["label"] for c in m["contributions"])
+    # 落としたことを黙らず警告する
+    warn = next(w for w in got["warnings"] if w["code"] == "excluded_columns_dropped")
+    assert "人気" in warn["message"]
+    assert warn["columns"][0]["label"] == model.FEATURES["popularity"].label
+
+
+def test_no_warning_when_config_had_no_popularity():
+    race = _race()
+    got = svc.predict_race(race, {"step1": [], "step2": [
+        {"metric": "agg_avg_finish", "match": [], "lookback": 3}]}, PRESET)
+    assert not any(w["code"] == "excluded_columns_dropped" for w in got["warnings"])
+
+
+def test_popularity_stays_a_base_column_for_the_matrix():
+    """基底列としては残すこと (行列キャッシュと列構成指紋の互換性を保つ)。
+
+    参加者経路から外すだけで、425列の構成は変えない。ここが変わると 4.6GB の
+    行列キャッシュと保存済みプリセット重みが一斉に無効になる。
+    """
+    ids = [c["id"] for c in mx._columns(sp.maib_all_specs())]
+    assert "popularity" in ids
+    assert len(ids) == 425
+    # 参加者向けの STEP1 だけが1件少ない
+    assert len(sp.maib_participant_step1_specs()) == len(sp.maib_step1_specs()) - 1
+
+
+def test_backtest_and_leaderboard_cannot_use_popularity():
+    """バックテスト・順位表も normalize_config を通るので混入しない。"""
+    from builder import leaderboard as lb
+    matrix = {"columns": mx._columns([{"key": "popularity"}, {"key": "burden_weight"}]),
+              "races": [dict(_race(), date="20260801")]}
+    for h in matrix["races"][0]["horses"]:
+        h["x"]["burden_weight"] = float(h["num"])
+    preset = {"weights": {"popularity": 99.0, "burden_weight": 1.0}}
+    bt = svc.backtest(matrix, _CFG_WITH_POP, preset, date_from="20260101")
+    assert bt["your_ai"]["races"] == 1
+    board = lb.build_leaderboard(matrix, preset, configs=[
+        {"id": "a", "name": "旧設定AI", "config": _CFG_WITH_POP}])
+    entry = next(e for e in board["entries"] if not e["is_baseline"])
+    assert entry["races"] == 1                # 動くが人気は使われていない
+    # 人気だけの設定は「選べる列ゼロ」になる
+    only_pop = {"step1": ["popularity"], "step2": []}
+    assert cf.selected_columns(only_pop) == []
