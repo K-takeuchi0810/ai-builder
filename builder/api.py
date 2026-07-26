@@ -221,6 +221,8 @@ def feature_catalog() -> dict:
         "glossary": lbl.glossary(),
         # 成績比較の並び順。board が空でも読めるよう選択肢と同じ経路で供給する
         "ranking_rule": lbl.RANKING_RULE,
+        # 「過去走が少ない」の閾値。UI に数値を持たせない
+        "min_past_runs": svc.MIN_PAST_RUNS,
         "marks": svc.MARKS,
         "mark_legend": [{"mark": m, "term": lbl.GLOSSARY[k]["term"],
                          "desc": lbl.GLOSSARY[k]["desc"]}
@@ -257,6 +259,9 @@ def handle_predict(payload: dict) -> tuple[dict, int]:
     if race is None:
         return {"error": "race_not_found", "race_id": race_id}, 404
     got = svc.predict_race(race, user_cfg, _STATE["preset"])
+    # そのレースの条件でのマイAI成績を1行分だけ添える。
+    # 「このレースに向くAIか」を判断する材料。重みは条件別に分けない (R3-c 凍結)。
+    got["condition_record"] = _condition_record(race, user_cfg)
     if _STATE.get("preview"):
         got = _as_upcoming(got)
     # 起動時に検出したプリセットの問題は **どの種類でも** 必ず応答に載せる。
@@ -267,13 +272,40 @@ def handle_predict(payload: dict) -> tuple[dict, int]:
     return got, 200
 
 
-def handle_leaderboard() -> tuple[dict, int]:
-    """きょうの順位 (UI指示書 §5)。当日の確定レースのみ集計。"""
+def _condition_record(race: dict, user_cfg: dict) -> dict | None:
+    """このレースの条件 (芝ダート × 距離帯) でのマイAI成績。
+
+    バックテスト用行列が読み込まれていないときは None (捏造しない)。
+    レース数が閾値未満なら数値を出さず enough=False で返す。
+    """
+    src = _STATE.get("backtest_matrix")
+    if not src or not src.get("races"):
+        return None
+    surface, band = svc.condition_key(race.get("seg"))
+    if not surface or not band:
+        return None
+    key = f"{surface}:{band}"
+    cache = _STATE.setdefault("_cond_cache", {})
+    ck = (cf.config_hash(user_cfg), key)
+    if ck in cache:
+        return cache[ck]
+    bt = svc.backtest(src, user_cfg, _STATE["preset"])
+    got = next((c for c in bt["by_condition"] if c["key"] == key), None)
+    cache[ck] = got
+    return got
+
+
+def handle_leaderboard(applied: dict | None = None) -> tuple[dict, int]:
+    """本日の成績比較。当日の確定レースのみ集計。
+
+    applied: {race_id: config_id}。レースごとに適用AIを切り替えた場合、
+    その対応を渡すと「実際に使ったAI」に紐づけて集計する。
+    """
     from . import leaderboard as lb
     daily = _STATE["daily"]
     if not daily.get("races"):
         return {"error": "daily_matrix_not_built", "date": _STATE["date"]}, 409
-    return lb.build_leaderboard(daily, _STATE["preset"]), 200
+    return lb.build_leaderboard(daily, _STATE["preset"], applied=applied), 200
 
 
 def handle_backtest(payload: dict) -> tuple[dict, int]:
@@ -327,6 +359,10 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/leaderboard":
             return _json(self, *handle_leaderboard())
 
+
+        if path == "/api/configs":
+            return _json(self, {"configs": cf.list_configs()})
+
         if path.startswith("/api/configs/"):
             rest = path[len("/api/configs/"):]
             if rest.endswith("/history"):
@@ -350,9 +386,22 @@ class Handler(BaseHTTPRequestHandler):
             return _json(self, *handle_predict(payload))
         if path == "/api/backtest":
             return _json(self, *handle_backtest(payload))
+        if path == "/api/leaderboard":
+            # 適用AIの対応を渡せる POST 版 (GET は全AI×全レース)
+            return _json(self, *handle_leaderboard(payload.get("applied") or None))
         if path == "/api/configs":
-            saved = cf.save_config(payload.get("config") or payload)
+            # 既存IDを指定すればその版を繰り上げる (複数マイAIの編集用)
+            saved = cf.save_config(payload.get("config") or payload,
+                                   config_id=payload.get("config_id"))
             return _json(self, saved, 201)
+        if path == "/api/configs/rename":
+            got = cf.rename_config(str(payload.get("config_id") or ""),
+                                   payload.get("name") or "")
+            return _json(self, got or {"error": "config_not_found"}, 200 if got else 404)
+        if path == "/api/configs/duplicate":
+            got = cf.duplicate_config(str(payload.get("config_id") or ""),
+                                      payload.get("name"))
+            return _json(self, got or {"error": "config_not_found"}, 201 if got else 404)
         return _json(self, {"error": "not_found", "path": path}, 404)
 
 

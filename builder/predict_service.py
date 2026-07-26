@@ -82,6 +82,7 @@ def predict_race(race: dict, user_config: dict, preset: dict) -> dict:
         })
     _annotate_low_sample(res, preset, warnings)
     _warn_skipped_columns(columns, weights, res, warnings)
+    _annotate_plain_values(res)
     # 自信度は **尺度不変な差** で判定する。生の差は選んだ項目数と重みの大きさに
     # 比例するので、425列で決めた閾値を数項目の設定に当てると常に「混戦」になる。
     gap = ps.normalized_gap([s for _n, s in ranked])
@@ -98,14 +99,25 @@ def predict_race(race: dict, user_config: dict, preset: dict) -> dict:
             "rank": i + 1,
             "mark": MARKS[i] if i < len(MARKS) else "",
             # 初心者にはこの一文が本文。サーバで生成して表示ロジックを複製させない
-            "decisive": _decisive_sentence(contribs, MARKS[i] if i < len(MARKS) else ""),
+            "decisive": _decisive_sentence(
+                contribs, MARKS[i] if i < len(MARKS) else "", i + 1, len(ranked)),
             "horse_num": num,
             "waku": h.get("waku"),        # DB 由来。UI は表示のみ (計算しない)
             "horse_name": h.get("name"),
             "score": round(score, 4),
             "popularity": h.get("pop"),
             "odds": h.get("odds"),
+            # 出走情報 (行と whyカードで出す)。UI は表示のみ。
+            "jockey": h.get("jockey"),
+            "burden_weight": h.get("burden_weight"),
+            "trainer": h.get("trainer"),
+            "sex_age": h.get("sex_age"),
+            "horse_weight": h.get("horse_weight"),
+            "horse_weight_change": h.get("horse_weight_change"),
             "n_past_runs": h.get("n_past_runs"),
+            # 過去走が少ない馬は印の直下で開示する (whyカードを開かなくても見える)
+            "few_past_runs": (isinstance(h.get("n_past_runs"), int)
+                              and h["n_past_runs"] < MIN_PAST_RUNS),
             "coverage": cov,
             "contributions": contribs,
         })
@@ -144,15 +156,17 @@ def _result_top3(race: dict) -> list[dict]:
             for h in got]
 
 
-def _decisive_sentence(contribs: list, mark: str) -> str | None:
-    """最大寄与の項目から「決め手」の一文を組み立てる (サーバ側で生成)。
+MIN_PAST_RUNS = 3          # これ未満は「参照できた過去走が少ない」として開示する
 
-    初心者にとっては寄与のバーより **この一文が本文**。表示ロジックを UI 側に
-    複製しないため、テンプレ生成もここで行う。
 
-    2位が1位の 80% 以上なら「〜も後押ししています」を足す。
-    押し下げ側 (負の寄与) が最大の場合は「効いた」と書くと嘘になるので、
-    「評価を下げた」と書く。
+def _decisive_sentence(contribs: list, mark: str, rank: int = 1,
+                       n_runners: int | None = None) -> str | None:
+    """決め手の一文。**順位の文脈から書き始める。**
+
+    以前は寄与の向きだけで書いていたため、×印 (12頭中5番目) の馬に
+    「評価を下げています」+ 下げた内訳しか出ず、「悪い馬になぜ印が付くのか」が
+    説明されていなかった。印は絶対評価ではなく **他馬との相対順位** なので、
+    下位の印では順位を先に述べる。
     """
     used = [c for c in contribs if c.get("available")]
     if not used:
@@ -163,9 +177,16 @@ def _decisive_sentence(contribs: list, mark: str) -> str | None:
     if v == 0.0:
         return None
     label = top.get("label") or ""
+    field = f"{n_runners}頭中" if n_runners else ""
     up = v > 0
+
+    # 下位の印 (△×) で押し上げが無い場合は、順位から書く
+    if mark in ("△", "×") and not up:
+        return (f"{field}{rank}番目の評価です。"
+                f"「{label}」は低めですが、他の馬より相対的に上でした。")
+
     head = (f"「{label}」が出走馬の中で高いことが決め手です。" if up
-            else f"「{label}」が出走馬の中で低く、評価を下げています。")
+            else f"{field}{rank}番目の評価です。「{label}」が低く、評価を下げています。")
 
     tail = ""
     if len(ranked) >= 2:
@@ -173,19 +194,17 @@ def _decisive_sentence(contribs: list, mark: str) -> str | None:
         sv = second.get("contribution") or 0.0
         if sv != 0.0 and abs(sv) / abs(v) >= 0.8:
             # 2文目は1文目と向きが揃っているかで書き分ける。揃っていないのに
-            # 「も」でつなぐと「下げています。〜も後押ししています」という
-            # 意味の通らない文になる。
+            # 「も」でつなぐと意味の通らない文になる。
             same = (sv > 0) == up
+            lbl2 = second.get("label") or ""
             if same:
                 verb = "も後押ししています" if up else "も評価を下げています"
+                tail = f"「{lbl2}」{verb}。"
             else:
-                verb = ("一方で評価を下げている項目もあります" if up
-                        else "一方で評価を上げています")
-            lbl2 = second.get("label") or ""
-            tail = (f"「{lbl2}」{verb}。" if same
-                    else (f"ただし「{lbl2}」は評価を下げています。" if up
-                          else f"ただし「{lbl2}」は評価を上げています。"))
+                tail = (f"ただし「{lbl2}」は評価を下げています。" if up
+                        else f"ただし「{lbl2}」は評価を上げています。")
     return head + tail
+
 
 
 _SKIP_REASON = {
@@ -272,6 +291,33 @@ def _annotate_low_sample(res: dict, preset: dict, warnings: list) -> None:
     })
 
 
+MIN_RACES_FOR_RATE = 100      # これ未満の条件は数値を出さず「データ不足」にする
+
+# 条件別内訳の区分。**事前固定の粗い二分・三分だけ**にする。
+# 距離帯×馬場×競馬場のような細分化は F3-EDGE-001 で棄却済みの探索空間に
+# 逆戻りするので作らない (指示 R3-c の凍結)。
+DISTANCE_BANDS: tuple[tuple[str, str, int, int], ...] = (
+    ("short", "短距離", 0, 1400),
+    ("mile", "マイル", 1401, 1800),
+    ("long", "中長距離", 1801, 99999),
+)
+
+
+def distance_band(distance) -> str | None:
+    d = model._num(distance)
+    if not d:
+        return None
+    for key, _label, lo, hi in DISTANCE_BANDS:
+        if lo <= d <= hi:
+            return key
+    return None
+
+
+def condition_key(seg: dict) -> tuple[str | None, str | None]:
+    """(芝ダート, 距離帯)。どちらかが取れなければ None。"""
+    return (seg or {}).get("surface"), distance_band((seg or {}).get("distance"))
+
+
 def _blank():
     return {"races": 0, "win": 0, "show": 0, "in_marks": 0, "rank_corr_sum": 0.0,
             "rank_corr_n": 0}
@@ -299,6 +345,11 @@ def backtest(matrix: dict, user_config: dict, preset: dict, *,
     weights = cf.column_weights(user_config, preset.get("weights") or {})
 
     acc, base = _blank(), _blank()
+    # 条件別の内訳 (芝ダート / 距離帯)。参加者が「このレースに向くAIか」を
+    # 判断できる材料を出すため。**重みは条件別に分けない** (R3-c の凍結)。
+    by_cond: dict[str, dict] = {}
+    base_by_cond: dict[str, dict] = {}
+
     for race in matrix.get("races", []):
         if not (date_from <= race["date"] <= date_to):
             continue
@@ -313,11 +364,22 @@ def backtest(matrix: dict, user_config: dict, preset: dict, *,
         picks = [num for num, _ in ranked]
         _tally(acc, picks, order)
 
+        surface, band = condition_key(race.get("seg"))
+        keys = [k for k in (surface, band,
+                            (f"{surface}:{band}" if surface and band else None)) if k]
+
         fav = next((h["num"] for h in race["horses"] if h.get("pop") == 1), None)
+        fav_picks = None
         if fav:
             fav_order = sorted(race["horses"],
                                key=lambda h: (h.get("pop") is None, h.get("pop") or 99))
-            _tally(base, [h["num"] for h in fav_order], order)
+            fav_picks = [h["num"] for h in fav_order]
+            _tally(base, fav_picks, order)
+
+        for k in keys:
+            _tally(by_cond.setdefault(k, _blank()), picks, order)
+            if fav_picks:
+                _tally(base_by_cond.setdefault(k, _blank()), fav_picks, order)
 
     warnings = []
     if acc["races"] == 0:
@@ -331,7 +393,9 @@ def backtest(matrix: dict, user_config: dict, preset: dict, *,
             "note": "過去の的中率は将来の成績を保証しません",
             "config_hash": cf.config_hash(user_config),
             "warnings": warnings,
-            "your_ai": _summarize(acc), "baseline_favorite": _summarize(base)}
+            "your_ai": _summarize(acc), "baseline_favorite": _summarize(base),
+            "min_races_for_rate": MIN_RACES_FOR_RATE,
+            "by_condition": _condition_report(by_cond, base_by_cond)}
 
 
 def _tally(acc: dict, picks: list[str], order: dict) -> None:
@@ -363,3 +427,48 @@ def _summarize(a: dict) -> dict:
         "rank_corr": (round(a["rank_corr_sum"] / a["rank_corr_n"], 4)
                       if a["rank_corr_n"] else None),
     }
+
+
+def _annotate_plain_values(res: dict) -> None:
+    """寄与の各行に **平易表現** を添える (生の z を画面に出さないため)。
+
+    z は「レース内で標準偏差いくつ分か」なので、参加者には意味が伝わらない。
+    labels.plain_level が単一の辞書で 5段 (かなり上/上/平均的/下/かなり下) に
+    変換する。UI 側に同じ表を作らせない。
+
+    実値そのもの (55.0kg 等) は特徴量ごとに単位が違い、ここでは持っていない
+    (行列は z 化前の生値を持つが列IDごとの単位表が無い)。**捏造せず**
+    相対位置の表現だけを返す。
+    """
+    from . import labels as lb
+    for contribs in res["contributions"].values():
+        for c in contribs:
+            c["value_text"] = lb.plain_level(c.get("z")) if c.get("available") else None
+
+
+def _condition_report(by_cond: dict, base_by_cond: dict) -> list[dict]:
+    """条件別の内訳。**レース数が少ない条件は数値を出さない。**
+
+    100レース未満の的中率は当たり外れの偶然に支配されるので、数字を出すと
+    「この条件は得意」と誤読される。`enough=False` で返して UI に
+    「データ不足」と書かせる。
+    """
+    from . import labels as lb
+    out = []
+    band_label = {k: lab for k, lab, _lo, _hi in DISTANCE_BANDS}
+    for key in sorted(by_cond):
+        acc = by_cond[key]
+        if ":" in key:
+            sk, bk = key.split(":", 1)
+            label = f"{lb.value_label('surface', sk)}{band_label.get(bk, bk)}"
+        elif key in band_label:
+            label = band_label[key]
+        else:
+            label = lb.value_label("surface", key)
+        out.append({
+            "key": key, "label": label, "races": acc["races"],
+            "enough": acc["races"] >= MIN_RACES_FOR_RATE,
+            "your_ai": _summarize(acc),
+            "baseline_favorite": _summarize(base_by_cond.get(key, _blank())),
+        })
+    return out

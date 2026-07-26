@@ -164,3 +164,62 @@ def config_history(config_id: str) -> dict | None:
                           "n_step1": len(v["config"]["step1"]),
                           "n_step2": len(v["config"]["step2"])}
                          for v in entry["versions"]]}
+
+
+def list_configs() -> list[dict]:
+    """保存済みマイAIの一覧 (新しいものが先)。
+
+    複数のマイAIを作ってレースごとに使い分けるための一覧。設定本体は返さず、
+    選択に必要な情報だけを返す (画面の一覧が重くならないように)。
+    """
+    store = _load_store()
+    out = []
+    for cid, entry in store.items():
+        cur = get_config(cid)
+        if not cur:
+            continue
+        n = cur["config"]
+        out.append({
+            "id": cid,
+            "name": entry.get("name") or cid,
+            "version": cur["version"],
+            "n_step1": len(n["step1"]),
+            "n_step2": len(n["step2"]),
+            "n_items": len(n["step1"]) + len(n["step2"]),
+            "hash": cur["hash"],
+        })
+    out.sort(key=lambda e: e["name"])
+    return out
+
+
+def rename_config(config_id: str, name: str) -> dict | None:
+    """名称だけを変更する (設定内容とバージョンは変えない)。"""
+    store = _load_store()
+    entry = store.get(config_id)
+    if not entry:
+        return None
+    entry["name"] = (name or "").strip() or entry.get("name") or config_id
+    store[config_id] = entry
+    _save_store(store)
+    return {"id": config_id, "name": entry["name"]}
+
+
+def duplicate_config(config_id: str, name: str | None = None) -> dict | None:
+    """複製して別のマイAIにする (編集の出発点にするため)。
+
+    複製は **別の id** を持つ。同じ設定内容なら config_hash は同じになるが、
+    id は名前と履歴を分けるための識別子なので新しく振る。
+    """
+    got = get_config(config_id)
+    if not got:
+        return None
+    cfg = dict(got["config"])
+    cfg["name"] = (name or f"{got.get('name') or config_id} のコピー").strip()
+    store = _load_store()
+    base = config_hash(cfg)[:8]
+    cid = base
+    i = 2
+    while cid in store:                     # 同一内容の複製でも id を分ける
+        cid = f"{base}-{i}"
+        i += 1
+    return save_config(cfg, config_id=cid)

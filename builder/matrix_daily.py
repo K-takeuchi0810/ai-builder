@@ -25,7 +25,10 @@ from .keiba_bridge import _ensure_keiba_on_path, open_conn
 # v2: UI が必要とする start_time / 確定状態を各レースに持たせた。
 # v3: 枠番 (waku) を各馬に持たせた。UI が馬番から計算していたため誤った枠色が
 #     出ていた (7頭立てで 6/7 件外れる)。枠割は頭数依存なので UI 導出は不可能。
-DAILY_VERSION = 3
+# v4: レースのクラス/名称 (race_class / race_title) と、各馬の出走情報
+#     (騎手・斤量・調教師・性齢・馬体重と増減) を持たせた。
+#     「騎手の成績」を根拠に印を打ちながら騎手名を出していなかったため。
+DAILY_VERSION = 4
 
 
 def _daily_dir() -> Path:
@@ -105,6 +108,9 @@ def build_daily(date: str, specs: list[dict], *, rebuild: bool = False,
                     "pop": model._num(h.get("win_popularity")),
                     "name": (h.get("horse_name") or "").strip(),
                     "n_past_runs": len(past),                   # カバレッジ表示用
+                    # 出走情報 (すべて発走前に確定する情報)。
+                    # 馬体重だけは発表前は None になる — PIT を迂回しない。
+                    **_entry_info(h),
                     "x": x,
                 })
             seg = mx._seg(race)
@@ -112,7 +118,12 @@ def build_daily(date: str, specs: list[dict], *, rebuild: bool = False,
                 "race_id": _race_id(race),
                 "date": before,
                 "race_num": str(race.get("race_num")),
-                "race_name": _display_name(race, seg),
+                # 名称とクラスを **別のスロット** に持つ。表示名スロットに条件を
+                # 焼き込むと、実名を持つ特別戦で名前が条件を上書きして芝/ダート・
+                # 距離が画面から消える。UI は 1行目=名称かクラス、2行目=条件 に分ける。
+                "race_title": _race_title(race),
+                "race_class": _race_class(race),
+                "race_name": _display_name(race, seg),   # 後方互換 (旧UI用)
                 "start_time": _hhmm(race.get("start_time")),   # UI の発走時刻表示用
                 "seg": seg,
                 "horses": hrows,
@@ -159,6 +170,55 @@ def _race_id(race: dict) -> str:
     return (f"{race.get('race_year')}{race.get('race_month_day')}"
             f"{race.get('track_code')}{race.get('kaiji')}"
             f"{race.get('nichiji')}{race.get('race_num')}")
+
+
+def _race_title(race: dict) -> str | None:
+    """特別戦の名称。平場は None (クラスと条件で表す)。"""
+    name = (race.get("race_name") or race.get("race_short10")
+            or race.get("race_short6") or "").strip()
+    return name or None
+
+
+def _race_class(race: dict) -> str | None:
+    """クラス表示 (新馬/未勝利/1勝クラス/…/オープン/G1〜G3/リステッド)。
+
+    keiba.db に競走条件コードが無いので生 RA から復元した索引を引く
+    (builder/raceclass.py)。索引が無い期間は None で誠実に劣化する。
+    """
+    from . import raceclass as rc
+    got = rc.lookup(race)
+    return rc.race_class_label(got.get("class_code"), got.get("grade"))
+
+
+def _entry_info(h: dict) -> dict:
+    """出走情報 (騎手・斤量・調教師・性齢・馬体重と増減)。
+
+    AI が「騎手の最近30日の成績」を根拠に印を打つのに騎手名を一度も出して
+    いなかったため、行に出せるだけの情報を持たせる。
+
+    **PIT を迂回しない**: 馬体重は発表されるまで DB が空なので、そのまま
+    None を返す (`weight_announced` が False のレースでは UI が「発表待ち」を出す)。
+    """
+    from . import labels as lb
+    bw = model._num(h.get("burden_weight"))
+    hw = str(h.get("horse_weight") or "").strip()
+    sign = str(h.get("weight_change_sign") or "").strip()
+    diff = str(h.get("weight_change_diff") or "").strip()
+    change = None
+    if diff.isdigit():
+        n = int(diff)
+        change = -n if sign == "-" else n
+    sex = lb.value_label("sex", str(h.get("sex_code") or ""))
+    age = model._num(h.get("age"))
+    return {
+        "jockey": (h.get("jockey_short_name") or "").strip() or None,
+        # 斤量は 0.1kg 単位で格納されている (555 → 55.5kg)
+        "burden_weight": (bw / 10.0) if bw else None,
+        "trainer": (h.get("trainer_short_name") or "").strip() or None,
+        "sex_age": (f"{sex}{int(age)}" if sex and age else None),
+        "horse_weight": int(hw) if hw.isdigit() else None,
+        "horse_weight_change": change,
+    }
 
 
 def _waku(horse: dict) -> int | None:
@@ -220,6 +280,8 @@ def today_status(daily: dict, col_ids: list[str] | None = None) -> list[dict]:
             "race_id": r["race_id"],
             "race_num": r.get("race_num"),
             "race_name": r.get("race_name"),
+            "race_title": r.get("race_title"),
+            "race_class": r.get("race_class"),
             # UI の一覧表示用 (発走時刻・頭数・馬場条件) と「結果待ち」判定。
             # 日本語ラベルはサーバで付ける (labels.py が唯一の語彙表。UI 側に
             # 同じ対応表を複製すると片方だけ変わって静かにずれる)。

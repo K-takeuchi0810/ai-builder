@@ -45,6 +45,8 @@ _SEASON = {"spring": "春", "summer": "夏", "autumn": "秋", "winter": "冬",
            "unknown": "不明"}
 _POPULARITY = {"1": "1番人気", "2": "2番人気", "3": "3番人気", "4-6": "4〜6番人気",
                "7-9": "7〜9番人気", "10+": "10番人気以下", "unknown": "不明"}
+# 性別コード (JV-Data)。出走情報の「性齢」表示に使う。
+_SEX = {"1": "牡", "2": "牝", "3": "セン", "0": "", "": ""}
 
 
 # STEP2 のセル (一致条件 × さかのぼる範囲) のラベル。
@@ -145,6 +147,27 @@ GLOSSARY: dict[str, dict[str, str]] = {
 # 語彙表の一部として持ち、選択肢と同じ経路 (/api/features) で常に供給する。
 RANKING_RULE = ("並び順は ①◎的中数 → ②人気を出し抜いた的中数 → ③◎複勝率 "
                 "の順です。それでも同じなら同順位で並びます。")
+
+
+# z 値 → 平易表現 (5段)。**生の z を画面に出さない** ための単一辞書。
+# 境界は「レース内の標準偏差いくつ分か」。UI 側に同じ表を作らない。
+Z_BANDS: tuple[tuple[float, str], ...] = (
+    (1.0, "出走馬の中でかなり上"),
+    (0.35, "出走馬の中で上"),
+    (-0.35, "平均的"),
+    (-1.0, "出走馬の中で下"),
+    (float("-inf"), "出走馬の中でかなり下"),
+)
+
+
+def plain_level(z: float | None) -> str | None:
+    """z 値 → 平易表現。None は None (捏造しない)。"""
+    if z is None:
+        return None
+    for threshold, label in Z_BANDS:
+        if z >= threshold:
+            return label
+    return Z_BANDS[-1][1]
 
 
 def glossary() -> list[dict]:
@@ -264,7 +287,7 @@ def value_label(axis: str, value: str) -> str:
     table = {
         "surface": _SURFACE, "distance": _DISTANCE, "condition": _CONDITION,
         "weather": _WEATHER, "weather_wet": _WEATHER_WET, "meet_progress": _MEET,
-        "season": _SEASON, "popularity": _POPULARITY,
+        "season": _SEASON, "popularity": _POPULARITY, "sex": _SEX,
     }.get(axis)
     if table is not None:
         return table.get(v, v)

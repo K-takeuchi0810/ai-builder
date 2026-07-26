@@ -174,6 +174,58 @@ main{flex:1; padding:14px 14px 84px}
 .decisive{margin:2px 0 4px; font-size:.85rem; line-height:1.75; font-weight:500;
   background:var(--turf-100); border-radius:var(--r-md); padding:10px 12px}
 
+/* レース行: 1行目=名称かクラス / 2行目=施行条件 (常設) */
+.race-name .cond{font-size:var(--fs-min); color:var(--ink-soft); margin-top:3px}
+.race-name .rcls{margin-left:7px; font-size:var(--fs-min); font-weight:500;
+  color:var(--turf-700); background:var(--turf-100); padding:1px 7px; border-radius:999px}
+.race-name .meta{margin-top:4px}
+/* ゲート事前判定の共通通知 (行チップの反復をやめる) */
+.gate-note{background:#fff; border:1px solid var(--line); border-radius:var(--r-md);
+  padding:10px 13px; margin-bottom:12px; font-size:var(--fs-min);
+  color:var(--ink-soft); line-height:1.7}
+
+/* 予想ヘッダの施行条件行 (常設) */
+.rcond{margin-top:5px; font-size:var(--fs-min); color:#BFD2C6}
+/* 適用AIの切替ボタン */
+.ai-pick{margin-left:auto; min-height:var(--tap); padding:6px 10px; font-family:inherit;
+  font-size:var(--fs-min); color:#BFD2C6; background:rgba(255,255,255,.12);
+  border:none; border-radius:999px; cursor:pointer}
+.ai-pick b{color:#fff}
+/* このレース条件での成績1行 */
+.cond-rec{margin-top:9px; padding-top:9px; border-top:1px solid rgba(255,255,255,.15);
+  font-size:var(--fs-min); color:#DCEAE0; line-height:1.7}
+.cond-rec b{color:#fff; font-size:.82rem}
+.cond-rec.muted{color:#9DB8A8}
+/* マイAI切替シートの行 */
+.ai-row{display:flex; align-items:center; gap:10px; width:100%; min-height:var(--tap);
+  padding:11px 4px; background:none; border:none; border-bottom:1px solid var(--line-soft);
+  font-family:inherit; cursor:pointer; text-align:left}
+.ai-row .an{flex:1; font-size:.88rem; font-weight:700; color:var(--ink)}
+.ai-row .am{font-size:var(--fs-min); color:var(--ink-faint)}
+.ai-row .ac{font-size:var(--fs-min); font-weight:700; color:var(--turf-700);
+  background:var(--turf-100); padding:2px 8px; border-radius:999px}
+.ai-row.on .an{color:var(--turf-700)}
+/* 出走情報の行 */
+.horse .entry{font-size:var(--fs-min); color:var(--ink-soft); margin-top:3px;
+  font-variant-numeric:tabular-nums}
+/* 馬単位のデータ薄警告 (whyカードを開かなくても見える位置) */
+.thin-race{margin:0 0 8px; padding:9px 13px; border-radius:var(--r-md);
+  background:var(--gold-soft); color:var(--gold); font-size:var(--fs-min);
+  font-weight:700; line-height:1.7}
+.thin-horse{margin-top:4px; font-size:var(--fs-min); font-weight:700; color:var(--gold);
+  line-height:1.6}
+/* 内訳が空のときの明示 (セクションごと消さない) */
+.c-none{font-size:var(--fs-min); color:var(--ink-faint); padding:2px 0 4px}
+/* 条件別内訳カード */
+.cb{padding:4px 14px}
+.cb-row{display:flex; align-items:center; gap:10px; padding:10px 0;
+  border-bottom:1px solid var(--line-soft)}
+.cb-row:last-child{border-bottom:none}
+.cb-k{flex:1; font-size:.85rem}
+.cb-v{font-size:.85rem; text-align:right}
+.cb-base{font-size:var(--fs-min); color:var(--ink-faint); margin-left:6px}
+.cb-none{font-size:var(--fs-min); color:var(--ink-faint)}
+
 /* ---------- レース一覧 ---------- */
 /* 会場チップ: 3,200px の一覧を素通りさせず、タップで会場へ飛べるようにする */
 .venue-chips{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px}

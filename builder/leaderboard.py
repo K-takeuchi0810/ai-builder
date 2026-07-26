@@ -91,11 +91,15 @@ def _assign_ranks(entries: list[dict]) -> None:
 
 def build_leaderboard(daily: dict, preset: dict, *,
                       configs: list[dict] | None = None,
-                      as_of: str | None = None) -> dict:
+                      as_of: str | None = None,
+                      applied: dict | None = None) -> dict:
     """当日の確定レースから順位表を作る。
 
     daily: matrix_daily の当日行列。preset: プリセット重み。
     configs: [{"id","name","config"}] (省略時は保存済み全設定を使う)。
+    applied: {race_id: config_id}。**指定された場合は「そのレースに実際に
+        適用したAI」だけを集計する** — 使っていないレースの成績を混ぜないため。
+        対象レース数が AI ごとに違うので、各行の races を必ず表示すること。
     """
     races = [r for r in daily.get("races", [])
              if any(h.get("order") == 1 for h in r.get("horses", []))]
@@ -120,7 +124,11 @@ def build_leaderboard(daily: dict, preset: dict, *,
         order = {h["num"]: h.get("order") for h in r["horses"]}
         favorite = next((h["num"] for h in r["horses"] if h.get("pop") == 1), None)
         _tally(base, favorite, favorite, order)      # ベースライン = 1番人気を◎とする
+        # 適用AIの指定があるレースは、その1つだけを集計する
+        target = (applied or {}).get(r.get("race_id"))
         for c in configs:
+            if target and c["id"] != target:
+                continue
             ranked = model.score_columns_detailed(
                 rows, columns_by_id[c["id"]], weights_by_id[c["id"]])["ranked"]
             pick = ranked[0][0] if ranked else None
@@ -139,6 +147,8 @@ def build_leaderboard(daily: dict, preset: dict, *,
         # 文言は labels.RANKING_RULE が正本 (board が空でも UI が出せるよう
         # /api/features からも供給される)。
         "ranking_rule": lb.RANKING_RULE,
+        # 適用AI指定があると AI ごとに対象レース数が変わる。UI は races を必ず出す
+        "scoped_to_applied": bool(applied),
         "entries": entries,
         "marks": svc.MARKS,
     }

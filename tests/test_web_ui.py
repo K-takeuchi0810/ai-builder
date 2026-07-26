@@ -128,9 +128,14 @@ def test_localstorage_is_not_the_source_of_truth():
     保持していいのは「サーバ上の設定を指す id」だけで、設定本体は毎回 API から取る。
     """
     assert "localStorage" not in CODE["app.js"]
-    # sessionStorage は id の保存/読み出しのみ
+    # sessionStorage に置いていいのは **id と、レース→AIの対応** だけ。
+    # 設定本体はサーバから取り直す。
+    allowed = {"CFG_ID_KEY", "RACE_CFG_KEY"}
     for m in re.finditer(r"sessionStorage\.(getItem|setItem|removeItem)\(([^)]*)\)", JS):
-        assert "CFG_ID_KEY" in m.group(2), f"id 以外を保存している: {m.group(0)}"
+        key = m.group(2).split(",")[0].strip()
+        assert key in allowed, f"許可外のキーを保存している: {m.group(0)}"
+    # 設定の中身を保存していないこと
+    assert not re.search(r"sessionStorage\.setItem\([^)]*step1", JS)
     # 復元は必ず API を叩く
     assert "/api/configs/" in JS
 

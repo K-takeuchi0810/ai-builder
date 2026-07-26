@@ -590,15 +590,15 @@ def test_decisive_sentence_keeps_both_clauses_consistent():
     「評価を下げています。〜も後押ししています」のような、意味の通らない
     つなぎ方をしないこと (実際に生成されていた)。
     """
-    # 下げ + 下げ → 「も評価を下げています」
+    # 下げ + 下げ → 「も評価を下げています」(上位の印。△× は順位文脈に切り替わる)
     dd = [{"id": "a", "label": "A", "contribution": -1.0, "available": True},
           {"id": "b", "label": "B", "contribution": -0.9, "available": True}]
-    s = svc._decisive_sentence(dd, "×")
+    s = svc._decisive_sentence(dd, "▲")
     assert "も評価を下げています" in s and "後押し" not in s
     # 下げ + 上げ → 「ただし〜は評価を上げています」
     du = [{"id": "a", "label": "A", "contribution": -1.0, "available": True},
           {"id": "b", "label": "B", "contribution": 0.9, "available": True}]
-    s2 = svc._decisive_sentence(du, "×")
+    s2 = svc._decisive_sentence(du, "▲")
     assert "ただし" in s2 and "評価を上げています" in s2 and "後押し" not in s2
     # 上げ + 下げ → 「ただし〜は評価を下げています」
     ud = [{"id": "a", "label": "A", "contribution": 1.0, "available": True},
@@ -610,7 +610,7 @@ def test_decisive_sentence_keeps_both_clauses_consistent():
 def test_decisive_sentence_is_honest_about_negative_drivers():
     """最大寄与が押し下げなら「決め手」と書かない (嘘をつかない)。"""
     neg = [{"id": "a", "label": "項目A", "contribution": -1.0, "available": True}]
-    s = svc._decisive_sentence(neg, "×")
+    s = svc._decisive_sentence(neg, "▲", rank=3, n_runners=12)
     assert "評価を下げ" in s and "決め手" not in s
     # 使える寄与が無ければ文を作らない
     assert svc._decisive_sentence([], "◎") is None
@@ -807,3 +807,202 @@ def test_ranking_rule_is_static_and_served_with_the_catalog():
     # leaderboard も同じ文字列を使う (二重管理しない)
     board = lb.build_leaderboard({"races": []}, PRESET, configs=[])
     assert board["ranking_rule"] == lbl.RANKING_RULE
+
+
+# ---------------------------------------------------------------------------
+# R4: 印の説明を順位文脈で書く
+# ---------------------------------------------------------------------------
+def test_low_mark_explanation_starts_from_the_rank():
+    """×印 (寄与が押し下げのみ) の説明が順位から始まること。
+
+    以前は「評価を下げています」+ 下げた内訳しか出ず、「悪い馬になぜ印が
+    付くのか」が説明されていなかった。印は絶対評価ではなく相対順位。
+    """
+    neg = [{"id": "a", "label": "近走の調子", "contribution": -0.8, "available": True}]
+    for mark, rank in (("△", 4), ("×", 5)):
+        s = svc._decisive_sentence(neg, mark, rank=rank, n_runners=12)
+        assert s.startswith(f"12頭中{rank}番目の評価です。"), s
+        assert "相対的に上でした" in s, s
+        assert "決め手" not in s
+
+
+def test_top_mark_explanation_keeps_the_decisive_wording():
+    """上位の印 (◎○) は現行の「決め手です」を踏襲すること。"""
+    pos = [{"id": "a", "label": "平均着順", "contribution": 1.2, "available": True}]
+    s = svc._decisive_sentence(pos, "◎", rank=1, n_runners=12)
+    assert "決め手です" in s and "「平均着順」" in s
+
+
+def test_thin_past_runs_is_flagged_on_the_mark():
+    """過去走が少ない馬は印の側で開示する (whyカードを開かなくても見える)。"""
+    race = _race(n=8)
+    for h in race["horses"]:
+        h["x"]["burden_weight"] = float(h["num"])
+    race["horses"][0]["n_past_runs"] = 1
+    race["horses"][1]["n_past_runs"] = 8
+    got = svc.predict_race(race, USER_CFG, PRESET)
+    by = {m["horse_num"]: m for m in got["marks"]}
+    assert by["01"]["few_past_runs"] is True
+    assert by["02"]["few_past_runs"] is False
+    assert svc.MIN_PAST_RUNS == 3
+
+
+# ---------------------------------------------------------------------------
+# R5: 出走情報と平易表現
+# ---------------------------------------------------------------------------
+def test_marks_carry_the_entry_information():
+    """騎手・斤量・調教師・性齢・馬体重が印に載ること。
+
+    AI が「騎手の成績」を根拠に印を打つのに騎手名を出していなかった。
+    """
+    race = _race(n=6)
+    for h in race["horses"]:
+        h["x"]["burden_weight"] = float(h["num"])
+        h.update({"jockey": "テスト騎手", "burden_weight": 55.0, "trainer": "テスト調教師",
+                  "sex_age": "牡4", "horse_weight": 486, "horse_weight_change": 4})
+    got = svc.predict_race(race, USER_CFG, PRESET)
+    m = got["marks"][0]
+    assert m["jockey"] == "テスト騎手" and m["burden_weight"] == 55.0
+    assert m["trainer"] == "テスト調教師" and m["sex_age"] == "牡4"
+    assert m["horse_weight"] == 486 and m["horse_weight_change"] == 4
+
+
+def test_contributions_carry_plain_wording_not_raw_z():
+    """寄与に平易表現が付き、生の z をそのまま見せなくて済むこと。"""
+    from builder import labels as lbl
+    race = _race(n=10)
+    for h in race["horses"]:
+        h["x"]["burden_weight"] = float(h["num"])
+    got = svc.predict_race(race, USER_CFG, PRESET)
+    cs = got["marks"][0]["contributions"]
+    assert cs
+    for c in cs:
+        if c["available"]:
+            assert c["value_text"] in [b[1] for b in lbl.Z_BANDS], c
+        else:
+            assert c["value_text"] is None
+
+
+def test_plain_level_bands_are_ordered_and_single_sourced():
+    """5段変換が labels.py の単一辞書で、境界が単調であること。"""
+    from builder import labels as lbl
+    zs = [2.0, 0.5, 0.0, -0.5, -2.0]
+    got = [lbl.plain_level(z) for z in zs]
+    assert got == ["出走馬の中でかなり上", "出走馬の中で上", "平均的",
+                   "出走馬の中で下", "出走馬の中でかなり下"]
+    assert lbl.plain_level(None) is None
+    # 境界は降順 (単調)
+    ths = [t for t, _ in lbl.Z_BANDS]
+    assert ths == sorted(ths, reverse=True)
+
+
+# ---------------------------------------------------------------------------
+# R2/R3/R7: レース表示・条件別成績・適用AI
+# ---------------------------------------------------------------------------
+def test_race_title_and_class_are_separate_fields():
+    """名称スロットに条件を焼き込まないこと (特別戦で条件が消えるのを防ぐ)。"""
+    from builder import matrix_daily as mdmod
+    named = {"race_name": "羊ヶ丘特別", "race_short10": "", "race_short6": ""}
+    assert mdmod._race_title(named) == "羊ヶ丘特別"
+    assert mdmod._race_title({"race_name": "", "race_short10": ""}) is None
+
+
+def test_race_class_labels_prefer_the_grade():
+    """重賞グレードがあればクラスより前に出すこと。"""
+    from builder import raceclass as rc
+    assert rc.race_class_label("999", "A") == "G1"
+    assert rc.race_class_label("999", "L") == "リステッド"
+    assert rc.race_class_label("999", "E") == "オープン"   # E は特別戦なのでクラスを使う
+    assert rc.race_class_label("703", "") == "未勝利"
+    assert rc.race_class_label("005", "") == "1勝クラス"
+    assert rc.race_class_label("zzz", "") is None          # 未知は捏造しない
+
+
+def test_race_condition_parser_offsets():
+    """競走条件コードの位置と切り出しが固定されていること。"""
+    from builder import raceclass as rc
+    rec = bytearray(b" " * 700)
+    rec[rc.GRADE_POS] = ord("C")
+    rec[rc.COND_START:rc.COND_START + 15] = b"000000016016016"
+    got = rc.parse_conditions(bytes(rec))
+    assert got["grade"] == "C"
+    assert got["conditions"] == ["000", "000", "016", "016", "016"]
+    assert got["class_code"] == "016"
+    assert rc.race_class_label(got["class_code"], got["grade"]) == "G3"
+    # 短いレコードは空 dict (捏造しない)
+    assert rc.parse_conditions(b"RA7") == {}
+
+
+def test_backtest_reports_condition_breakdown():
+    """芝ダート・距離帯の内訳が出て、少数条件は数値を出さないこと。"""
+    races = []
+    for i in range(3):
+        r = _race(f"R{i}", date="20250801")
+        r["seg"] = {"surface": "turf", "distance": 1200}
+        for h in r["horses"]:
+            h["x"]["burden_weight"] = float(h["num"])
+        races.append(r)
+    bt = svc.backtest({"columns": [], "races": races}, USER_CFG, PRESET,
+                      date_from="20250101")
+    keys = {c["key"] for c in bt["by_condition"]}
+    assert {"turf", "short", "turf:short"} <= keys
+    for c in bt["by_condition"]:
+        # 3レースしかないので数値を出さない判定になる
+        assert c["enough"] is False and c["races"] == 3
+    assert bt["min_races_for_rate"] == svc.MIN_RACES_FOR_RATE
+
+
+def test_distance_bands_are_fixed_and_coarse():
+    """距離帯は事前固定の3分割のみ (細分化は R3-c で凍結)。"""
+    assert svc.distance_band(1200) == "short"
+    assert svc.distance_band(1600) == "mile"
+    assert svc.distance_band(2400) == "long"
+    assert svc.distance_band(None) is None
+    assert len(svc.DISTANCE_BANDS) == 3
+
+
+def test_leaderboard_can_scope_to_the_applied_ai():
+    """適用AIの対応を渡すと、そのレースに使ったAIだけ集計すること。"""
+    from builder import leaderboard as lb
+    races = []
+    for i in range(2):
+        r = _race(f"R{i}")
+        for h in r["horses"]:
+            h["x"]["burden_weight"] = float(h["num"])
+        races.append(r)
+    daily = {"races": races}
+    cfgs = [{"id": "a", "name": "AI-A", "config": USER_CFG},
+            {"id": "b", "name": "AI-B", "config": USER_CFG}]
+    # 指定なし: 両AIが全レースを集計
+    full = lb.build_leaderboard(daily, PRESET, configs=cfgs)
+    by = {e["name"]: e for e in full["entries"]}
+    assert by["AI-A"]["races"] == 2 and by["AI-B"]["races"] == 2
+    assert full["scoped_to_applied"] is False
+    # 指定あり: R0 は A、R1 は B
+    scoped = lb.build_leaderboard(daily, PRESET, configs=cfgs,
+                                  applied={"R0": "a", "R1": "b"})
+    by2 = {e["name"]: e for e in scoped["entries"]}
+    assert by2["AI-A"]["races"] == 1 and by2["AI-B"]["races"] == 1
+    assert scoped["scoped_to_applied"] is True
+    # ベースラインは全レース
+    assert next(e for e in scoped["entries"] if e["is_baseline"])["races"] == 2
+
+
+def test_config_list_rename_and_duplicate(tmp_path, monkeypatch):
+    """複数マイAIの一覧・改名・複製 (R3-b)。"""
+    monkeypatch.setattr(cfgmod, "PRESET_WEIGHTS_PATH", tmp_path / "p.json")
+    a = cf.save_config({"name": "AI-A", "step1": ["burden_weight"], "step2": []})
+    cf.save_config({"name": "AI-B", "step1": ["draw_position"], "step2": []})
+    names = [e["name"] for e in cf.list_configs()]
+    assert names == ["AI-A", "AI-B"]
+    assert all(e["n_items"] == 1 for e in cf.list_configs())
+    # 複製は別 id
+    dup = cf.duplicate_config(a["id"])
+    assert dup["id"] != a["id"] and "コピー" in dup["name"]
+    # 改名は内容とバージョンを変えない
+    before = cf.get_config(a["id"])["version"]
+    cf.rename_config(a["id"], "改名")
+    assert cf.get_config(a["id"])["version"] == before
+    assert cf.get_config(a["id"])["name"] == "改名"
+    assert cf.rename_config("nope", "x") is None
+    assert cf.duplicate_config("nope") is None

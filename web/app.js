@@ -60,9 +60,24 @@ async function api(path, opts) {
   if (!res.ok) {
     const err = new Error((body && body.error) || `HTTP ${res.status}`);
     err.status = res.status; err.body = body;
+    // 起動後にサーバ側コードが変わると、無い経路が 404 になって理由が分からない。
+    // 失敗のたびに動作モードを確かめ、古いプロセスなら画面に出す。
+    if (path !== '/api/version') maybeWarnStale();
     throw err;
   }
   return body;
+}
+
+let staleWarned = false;
+async function maybeWarnStale() {
+  if (staleWarned) return;
+  let v;
+  try { v = await getJSON('/api/version'); } catch (e) { return; }
+  if (!v || !v.stale) return;
+  staleWarned = true;
+  const el = $('#racesWarn') || $('#predWarn');
+  if (el) el.innerHTML = `<div class="warn-card"><div class="m">${esc(v.message)}</div></div>`;
+  toast(v.message);
 }
 const getJSON = (p) => api(p);
 const postJSON = (p, obj) => api(p, {
@@ -72,11 +87,16 @@ const postJSON = (p, obj) => api(p, {
 });
 
 /* 取得失敗を「エラーダイアログ」ではなくチップで見せる (グレースフルデグレード) */
-function staleChip(where) {
+/* 何が更新できていないのか・いつの表示なのかを添える。
+ * 「更新できていません」だけでは、参加者は何を疑えばいいのか分からない。 */
+function staleChip(where, what, asOf) {
   state.stale = true;
   const el = $(where);
-  if (el) el.innerHTML = `<p class="note"><span class="chip alert">更新できていません</span>
-    表示は最後に取得できた内容です。</p>`;
+  if (!el) return;
+  const subject = what || '情報';
+  const when = asOf ? `(表示は${esc(asOf)}時点)` : '(表示は最後に取得できた内容)';
+  el.innerHTML = `<p class="note"><span class="chip alert">${esc(subject)}`
+    + `を更新できていません</span> ${when}</p>`;
 }
 function clearStale(where) {
   state.stale = false;
@@ -152,11 +172,35 @@ function raceChip(r) {
   // 同じ言葉を使わない (終了レースに「暫定印」が付いて見えたのはこの混同が原因)。
   if (!r.weight_announced) return '<span class="chip wait">馬体重の発表待ち</span>';
   if (!r.ready) return '<span class="chip muted">分析できる項目がありません</span>';
-  if (r.gate_pass_rate != null && r.gate_pass_rate < 1) {
-    return '<span class="chip ok">予想できます</span>'
-      + '<span class="chip muted">一部の項目が使えません</span>';
-  }
+  // 使えない項目のチップは行に出さない。全レースに同じ内容が並ぶと情報にならない
+  // ので、共通なら一覧上部に1回だけ出す (gateNotice)。
   return '<span class="chip ok">予想できます</span>';
+}
+
+/* 使えない項目が全レース共通なら、一覧上部に1回だけ具体名で知らせる。
+ * レースごとに違う場合は行数が多いので件数だけを出す。 */
+function gateNotice(races) {
+  const upcoming = races.filter((r) => !r.finished && (r.n_gate_missing || 0) > 0);
+  if (!upcoming.length) return '';
+  const sets = upcoming.map((r) => (r.gate_missing_columns || []).slice().sort().join('|'));
+  const common = sets.every((x) => x === sets[0]);
+  const groups = groupMissing(upcoming[0].gate_missing_columns || []);
+  if (common && groups.length) {
+    return `<div class="gate-note">${esc(groups.join('・'))}は、`
+      + `きょうのレースでは使えません (印は残りの項目で付けています)</div>`;
+  }
+  return `<div class="gate-note">${upcoming.length}レースで一部の項目が使えません`
+    + `(各レースの予想画面に内訳が出ます)</div>`;
+}
+/* 列IDを参加者向けの括りにまとめる (「賞金系」「コーナー系」)。
+ * 列IDそのものは出さない (開発者語彙)。 */
+function groupMissing(ids) {
+  const names = new Set();
+  ids.forEach((id) => {
+    if (id.includes('prize')) names.add('獲得本賞金');
+    else if (id.includes('corner') || id.includes('gain')) names.add('コーナー通過順位');
+  });
+  return [...names];
 }
 
 async function loadRaces() {
@@ -170,7 +214,7 @@ async function loadRaces() {
         <div class="d">当日のデータ作成が終わると一覧が出ます。</div></div>`;
       return;
     }
-    staleChip('#racesWarn');
+    staleChip('#racesWarn', 'レース一覧');
     return;
   }
   state.races = data.races || [];
@@ -199,11 +243,11 @@ async function loadRaces() {
   const venues = [];
   groups.forEach((g, i) => {
     if (!g.key || g.done) return;
-    venues.push({ id: `grp${i}`, label: g.key, n: g.races.length });
+    venues.push({ id: `grp${i}`, label: g.key });
   });
-  $('#raceList').innerHTML =
-    (venues.length > 1 ? `<div class="venue-chips">${venues.map((v) =>
-      `<button class="vchip" data-jump="${v.id}">${esc(v.label)} ${v.n}R</button>`
+  $('#raceList').innerHTML = gateNotice(state.races)
+    + (venues.length > 1 ? `<div class="venue-chips">${venues.map((v) =>
+      `<button class="vchip" data-jump="${v.id}">${esc(v.label)}</button>`
     ).join('')}</div>` : '')
     + groups.map((g, i) => `
     <div class="race-group${g.done ? ' done' : ''}" id="grp${i}">
@@ -232,16 +276,29 @@ function scrollToNextRace() {
   const el = document.querySelector(`#raceList .race-item[data-race="${cssEsc(next.race_id)}"]`);
   if (el) el.scrollIntoView({ behavior: 'auto', block: 'center' });
 }
+/* 1行目 = 特別戦名があればそれ、なければクラス。2行目 = 施行条件 (常設)。
+ * 表示名スロットに条件を焼き込むと、実名を持つ特別戦で名前が条件を上書きして
+ * 芝/ダート・距離が画面から消える。**条件行は名称の有無に関わらず必ず出す。** */
+function raceTitleOf(r) {
+  return r.race_title || r.race_class || `${Number(r.race_num)}R`;
+}
+function raceCondOf(r) {
+  const surface = r.surface_label || '';
+  const dist = r.distance ? `${r.distance}m` : '';
+  return [surface + dist, r.n_horses ? `${r.n_horses}頭` : '', r.condition_label]
+    .filter(Boolean).join(' · ');
+}
 function raceRow(r) {
   // 日本語ラベルはサーバ (labels.py) の値をそのまま出す。UI に対応表を持たない。
-  const meta = [`${r.n_horses}頭`, r.condition_label].filter(Boolean).join(' · ');
   const sel = r.race_id === state.selectedRaceId ? ' on' : '';
+  const cls = (r.race_title && r.race_class) ? `<span class="rcls">${esc(r.race_class)}</span>` : '';
   return `<button class="race-item${sel}" data-race="${esc(r.race_id)}">
       <div class="race-time"><div class="t num">${esc(r.start_time || '--:--')}</div>
         <div class="r">${esc(Number(r.race_num))}R</div></div>
       <div class="race-name">
-        <div class="n">${esc(r.race_name || '')}</div>
-        <div class="meta"><span>${esc(meta)}</span>${raceChip(r)}</div>
+        <div class="n">${esc(raceTitleOf(r))}${cls}</div>
+        <div class="cond">${esc(raceCondOf(r))}</div>
+        <div class="meta">${raceChip(r)}</div>
       </div>
       <div class="go">›</div>
     </button>`;
@@ -266,7 +323,7 @@ async function loadFeatures() {
   try {
     state.features = await getJSON('/api/features');
   } catch (err) {
-    staleChip('#racesWarn');
+    staleChip('#racesWarn', '選べる項目');
     return;
   }
   const f = state.features;
@@ -505,6 +562,7 @@ async function loadBacktest() {
       ${btCell('印の中に勝ち馬', pct(you.hit_rate_in_marks), `1番人気AI ${pct(base.hit_rate_in_marks)}`)}
       ${btCell('対象レース数', `${you.races}`, `${ymd(bt.period[0])}以降`)}
     </div></div>
+    ${condBreakdown(bt)}
     <p class="note" style="margin-top:8px">${esc(bt.note || '')}</p>
     <button class="cta" data-go="races">レースを選んで予想する</button>`;
   bindTerms();
@@ -521,7 +579,13 @@ function bindGo() {
 }
 
 /* ------------------------------------------------------- 画面3: 予想 */
-function renderPredictScreen() {
+async function renderPredictScreen() {
+  // そのレースに前回使ったAIがあれば戻す (記憶している意味を持たせる)
+  const remembered = raceConfigMap()[state.selectedRaceId];
+  if (remembered && (!state.config || state.config.id !== remembered)) {
+    await applyConfigId(remembered, false);
+    return;                       // applyConfigId が描画まで行う
+  }
   const noAi = !state.config;
   const noRace = !state.selectedRaceId;
   $('#predEmpty').classList.toggle('hidden', !noAi);
@@ -539,12 +603,23 @@ async function loadPredict() {
       { race_id: state.selectedRaceId, config: buildConfig() });
     clearStale('#predWarn');
   } catch (err) {
-    staleChip('#predWarn');
+    const last = state.lastPredict;
+    staleChip('#predWarn', 'オッズと印', isoHM(last && last.odds_as_of));
     return;
   }
   const prev = state.lastPredict;
   state.lastPredict = p;
-  renderPredict(p, prev);
+  // 描画中の例外で画面が無言の空白になるのを防ぐ。実際に起きた
+  // (変数の宣言順ミスで renderPredict が throw し、印リストが空のまま無警告)。
+  try {
+    renderPredict(p, prev);
+  } catch (e) {
+    $('#predWarn').innerHTML = `<div class="warn-card">
+      <div class="m">画面を描画できませんでした</div>
+      <div class="h">レースを開き直すか、リロードしてください。</div></div>`;
+    $('#markList').innerHTML = '';
+    $('#markLegend').innerHTML = '';
+  }
 }
 
 function renderPredict(p, prev) {
@@ -555,20 +630,24 @@ function renderPredict(p, prev) {
     ? p.n_columns_used : (p.columns || []).filter((c) => c.decision === 'used').length;
   const total = p.n_columns_selected != null ? p.n_columns_selected : used;
 
+  const r0 = state.races.find((x) => x.race_id === p.race_id) || {};
+  const cond = raceCondOf({ ...r0, n_horses: (p.marks || []).length || r0.n_horses });
   $('#raceHead').innerHTML = `
     <div class="top">
       <span class="place">${esc(p.race_num || '')}R</span>
-      <h2>${esc(p.race_name || '')}</h2>
+      <h2>${esc(raceTitleOf({ ...r0, race_num: p.race_num }))}</h2>
       <span class="off num">発走 ${esc(p.start_time || '--:--')}</span>
     </div>
+    <div class="rcond">${esc(cond)}</div>
     <div class="bottom">
       <button class="badge-conf" id="confBadge">${esc(conf.label || '—')}<span class="ci">ⓘ</span></button>
       <span class="head-chip" data-term="coverage">分析に使えた項目 ${used}/${total}</span>
       ${p.weight_announced ? '' : '<span class="head-chip">暫定印(馬体重の発表前)</span>'}
-      ${p.odds_trusted === false ? '<span class="head-chip">オッズが古い可能性</span>' : ''}
-      <span class="ai">予想: <b>${esc(state.config ? state.config.name : '')}</b></span>
-    </div>`;
+      <button class="ai-pick" id="aiPick">予想: <b>${esc(state.config ? state.config.name : '')}</b> ▾</button>
+    </div>
+    ${condRecordLine(p)}`;
   $('#confBadge').addEventListener('click', () => openTermSheet('confidence'));
+  $('#aiPick').addEventListener('click', openAiSheet);
   setMiniHead(p);
 
   // warnings は印リストの上に出す
@@ -604,11 +683,18 @@ function renderPredict(p, prev) {
   // 印の凡例 (初見で意味が分かるように印リスト直上に1行)
   const legend = (state.features && state.features.mark_legend || [])
     .filter((m) => m.mark).map((m) => esc(m.term)).join(' ');
+  const marks = p.marks || [];
+  // 全馬が過去走の少ない馬 (2歳の新馬・未勝利など) なら、行ごとに繰り返さず
+  // レース単位で1回だけ知らせる。全行に同じ警告が並ぶと情報にならない。
+  const allThin = marks.length > 0
+    && marks.filter((m) => m.few_past_runs).length === marks.length;
+
   $('#markLegend').innerHTML = `<button class="legend-row" id="legendRow">
-    <span class="l-marks">${legend}</span><span class="l-more">意味をみる</span></button>`;
+    <span class="l-marks">${legend}</span><span class="l-more">意味をみる</span></button>`
+    + (allThin ? `<div class="thin-race">出走全馬の参照できた過去走が`
+        + `${svcMinPastRuns()}走未満です。このレースは評価の確かさが低めです</div>` : '');
   $('#legendRow').addEventListener('click', openMarkSheet);
 
-  const marks = p.marks || [];
   const maxAbs = Math.max(...marks.map((m) => Math.abs(m.score || 0)), 1e-9);
   const prevMark = {};
   if (prev) (prev.marks || []).forEach((m) => { prevMark[m.horse_num] = m.mark; });
@@ -631,7 +717,10 @@ function renderPredict(p, prev) {
         <div class="who">
           <div class="name">${esc(m.horse_name || '')}
             ${upset ? '<span class="badge-upset">人気とは別の根拠</span>' : ''}</div>
+          <div class="entry">${entryLine(m, p)}</div>
           <div class="sub">${popLabel(m)}${oddsLabel(m, p)}${coverChip(m)}</div>
+          ${(m.few_past_runs && !allThin) ? `<div class="thin-horse">参照できた過去走が`
+            + `${Number(m.n_past_runs)}走のみ。評価の確かさは低めです</div>` : ''}
         </div>
         <div class="scorebar"><div class="bar"><i style="width:${w}%"></i></div></div>
       </div>
@@ -741,7 +830,8 @@ function whyBlock(m) {
       const a = Math.abs(c.contribution || 0);
       const w = Math.max(2, Math.round((a / maxAbs) * 100));
       const share = total > 0 ? Math.round((a / total) * 100) : null;
-      return `<div class="lbl">${esc(c.label)}${thinNote(c)}${itemCover(c)}</div>
+      const vt = c.value_text ? `<small>${esc(c.value_text)}</small>` : '';
+      return `<div class="lbl">${esc(c.label)}${vt}${thinNote(c)}${itemCover(c)}</div>
         <div class="cbar"><i class="${cls}" style="width:${w}%"></i></div>
         <div class="v ${cls} num">${share == null ? '—' : `${share}%`}</div>`;
     }).join('');
@@ -756,14 +846,17 @@ function whyBlock(m) {
   return `<div class="why">
     <div class="why-title">${title}</div>
     ${m.decisive ? `<p class="decisive">${esc(m.decisive)}</p>` : ''}
-    ${plus.length ? `<div class="c-head">評価を上げた内訳</div>
-      <div class="contrib">${rows(plus, 'plus')}</div>` : ''}
-    ${minus.length ? `<div class="c-head">評価を下げた内訳</div>
-      <div class="contrib">${rows(minus, 'minus')}</div>` : ''}
+    <div class="c-head">評価を上げた内訳</div>
+    ${plus.length ? `<div class="contrib">${rows(plus, 'plus')}</div>`
+      : '<p class="c-none">評価を上げた項目はありません。</p>'}
+    <div class="c-head">評価を下げた内訳</div>
+    ${minus.length ? `<div class="contrib">${rows(minus, 'minus')}</div>`
+      : '<p class="c-none">評価を下げた項目はありません。</p>'}
     ${naRows ? `<div class="c-head">使えなかった項目</div>
       <div class="contrib">${naRows}</div>` : ''}
     <div class="cover-why">数字は、評価を上げた/下げた量の内訳です。
       ${na.length ? '「データなし」の項目は評価に加えていません。その分だけ確かさは下がります。' : ''}</div>
+    ${profileLine(m)}
     ${m.n_past_runs != null
       ? `<div class="score-line">この馬の過去 ${m.n_past_runs}走を参照しています</div>` : ''}
   </div>`;
@@ -809,7 +902,7 @@ function toast(html) {
 async function loadLeaderboard() {
   let d;
   try {
-    d = await getJSON('/api/leaderboard');
+    d = await postJSON('/api/leaderboard', { applied: raceConfigMap() });
     clearStale('#boardWarn');
   } catch (err) {
     if (err.status === 409) {
@@ -817,10 +910,11 @@ async function loadLeaderboard() {
       bindGo();
       return;
     }
-    staleChip('#boardWarn');
+    staleChip('#boardWarn', '成績');
     return;
   }
-  $('#boardSub').textContent = `◎的中数で並べています · ${d.n_races_finished}レース終了時点`;
+  $('#boardSub').textContent = `◎的中数で並べています · ${d.n_races_finished}レース終了時点`
+    + (d.scoped_to_applied ? ' · そのレースに使ったAIで集計' : '');
   if (d.ranking_rule) $('#boardRule').textContent = d.ranking_rule;
   const entries = d.entries || [];
   const mine = entries.filter((e) => !e.is_baseline);
@@ -834,8 +928,9 @@ async function loadLeaderboard() {
   $('#boardList').innerHTML = `<div class="card board">${entries.map((e) => {
     const top = e.rank === 1;
     const stat = e.is_baseline
-      ? 'いつも1番人気を◎にするAI'
-      : `◎が3着以内 ${pct(e.show_rate)} · 人気を出し抜いた的中 <b>${e.upset_hits}回</b>`;
+      ? `いつも1番人気を◎にするAI · ${e.races}レース`
+      : `${e.races}レース · ◎が3着以内 ${pct(e.show_rate)}`
+        + ` · 人気を出し抜いた的中 <b>${e.upset_hits}回</b>`;
     return `<div class="brow${top ? ' top' : ''}${e.is_baseline ? ' baseline' : ''}">
       <div class="rank">${e.is_baseline ? '—' : esc(String(e.rank))}</div>
       <div class="who"><div class="aname">${esc(e.name)}${e.is_baseline ? '(基準)' : ''}</div>
@@ -867,7 +962,8 @@ function init() {
     if (e.target.id === 'sheet') $('#sheet').classList.remove('show');
   });
 
-  // デモ関連の DOM は ?demo=1 のときだけ存在させる
+  // 検証モードのバナーは checkVersion() がサーバの応答で決める (UIフラグでは決めない)。
+  // デモ演出だけは URL パラメータで切り替える (サーバに触らない見せ方なので)。
   if (IS_DEMO) {
     $('#demoStrip').classList.remove('hidden');
     $('#demoBanner').hidden = false;
@@ -962,3 +1058,125 @@ async function simulateWeight() {
 }
 
 document.addEventListener('DOMContentLoaded', init);
+
+/* ------------------------------------ R3-a: このレース条件での成績1行 */
+/* 「このレースに向くAIか」を判断する材料。数値はサーバ集計で、
+ * レース数が閾値未満なら数値を出さない (偶然を実力と誤読させない)。 */
+function condRecordLine(p) {
+  const c = p.condition_record;
+  if (!c) return '';
+  if (!c.enough) {
+    return `<div class="cond-rec muted">${esc(c.label)}でのこのAIの成績: `
+      + `データ不足 (${c.races}レース)</div>`;
+  }
+  const you = pct(c.your_ai.hit_rate_win);
+  const base = pct(c.baseline_favorite.hit_rate_win);
+  return `<div class="cond-rec">${esc(c.label)}でのこのAIの◎的中率: `
+    + `<b>${you}</b> (1番人気AI ${base} · ${c.races}レース)</div>`;
+}
+
+/* ------------------------------------ R3-b: 適用AIの切替 */
+async function openAiSheet() {
+  let list = [];
+  try { list = (await getJSON('/api/configs')).configs || []; } catch (e) { list = []; }
+  if (!list.length) {
+    openSheet('マイAIの切替', '<p>保存済みのマイAIがありません。</p>');
+    return;
+  }
+  const rows = list.map((c) => {
+    const on = state.config && c.id === state.config.id;
+    return `<button class="ai-row${on ? ' on' : ''}" data-cfg="${esc(c.id)}">
+      <span class="an">${esc(c.name)}</span>
+      <span class="am">${c.n_items}項目 · v${c.version}</span>
+      ${on ? '<span class="ac">適用中</span>' : ''}</button>`;
+  }).join('');
+  openSheet('このレースに使うマイAI', rows
+    + '<p class="sheet-foot">レースごとに使い分けられます。選んだ組み合わせは記憶されます。</p>');
+  $$('#sheetBody .ai-row').forEach((b) => b.addEventListener('click', async () => {
+    $('#sheet').classList.remove('show');
+    await applyConfigId(b.dataset.cfg, true);
+  }));
+}
+
+/* レースごとの適用AIを覚える (race_id → config_id)。正本はサーバの設定、
+ * ここに置くのは「どのレースにどれを使ったか」の対応だけ。 */
+const RACE_CFG_KEY = 'maib.race_config';
+function raceConfigMap() {
+  try { return JSON.parse(sessionStorage.getItem(RACE_CFG_KEY) || '{}'); }
+  catch (e) { return {}; }
+}
+function rememberRaceConfig(raceId, cfgId) {
+  if (!raceId || !cfgId) return;
+  const m = raceConfigMap();
+  m[raceId] = cfgId;
+  try { sessionStorage.setItem(RACE_CFG_KEY, JSON.stringify(m)); } catch (e) { /* 無視 */ }
+}
+
+async function applyConfigId(cfgId, remember) {
+  let got;
+  try { got = await getJSON(`/api/configs/${encodeURIComponent(cfgId)}`); }
+  catch (e) { toast('マイAIを読み込めませんでした'); return; }
+  if (!got || !got.config) return;
+  state.config = { id: got.id, name: got.name, version: got.version };
+  try { sessionStorage.setItem(CFG_ID_KEY, got.id); } catch (e) { /* 無視 */ }
+  applyConfigToForm(got.config, got.name);
+  if (remember) rememberRaceConfig(state.selectedRaceId, got.id);
+  $('#predEmpty').classList.add('hidden');
+  $('#predNoRace').classList.add('hidden');
+  $('#predBody').classList.remove('hidden');
+  await loadPredict();
+  if (remember) toast(`「${esc(got.name)}」で予想しました`);
+}
+
+/* ------------------------------------ R5: 出走情報の行 */
+/* サーバの値をそのまま出す。馬体重は発表前は null なので「発表待ち」と書く
+ * (PIT を迂回して前走の体重を出したりしない)。 */
+function entryLine(m, p) {
+  const parts = [];
+  if (m.jockey) parts.push(esc(m.jockey));
+  if (m.burden_weight != null) {
+    parts.push(`${term('burden_weight', '斤量')} ${m.burden_weight.toFixed(1)}kg`);
+  }
+  if (m.horse_weight != null) {
+    const ch = m.horse_weight_change;
+    const sign = ch == null ? '' : (ch > 0 ? `+${ch}` : `${ch}`);
+    parts.push(`${m.horse_weight}kg${sign ? `(${sign})` : ''}`);
+  } else if (p && p.weight_announced === false) {
+    parts.push('馬体重 発表待ち');
+  }
+  return parts.join(' · ');
+}
+
+/* 行に出しきらない属性は whyカード側に置く (行の情報密度を上げすぎない) */
+function profileLine(m) {
+  const parts = [];
+  if (m.sex_age) parts.push(esc(m.sex_age));
+  if (m.trainer) parts.push(`${esc(m.trainer)}厩舎`);
+  return parts.length ? `<div class="score-line">${parts.join(' · ')}</div>` : '';
+}
+
+/* ------------------------------------ R3-a: 条件別の内訳 */
+/* 芝ダート・距離帯ごとの成績。**レース数が閾値未満は数値を出さない** —
+ * 少数の当たり外れを「この条件は得意」と誤読させないため。 */
+function condBreakdown(bt) {
+  const list = (bt.by_condition || []).filter((c) => !c.key.includes(':'));
+  if (!list.length) return '';
+  const rows = list.map((c) => {
+    const right = c.enough
+      ? `<b>${pct(c.your_ai.hit_rate_win)}</b> <span class="cb-base">1番人気AI `
+        + `${pct(c.baseline_favorite.hit_rate_win)}</span>`
+      : `<span class="cb-none">データ不足 (${c.races}レース)</span>`;
+    return `<div class="cb-row"><span class="cb-k">${esc(c.label)}</span>
+      <span class="cb-v">${right}</span></div>`;
+  }).join('');
+  return `<div class="section-label">条件別の内訳</div>
+    <div class="card cb">${rows}</div>
+    <p class="note" style="margin-top:6px">${bt.min_races_for_rate}レース未満の条件は`
+    + `数値を出しません (偶然に左右されるため)。</p>`;
+}
+
+/* 「過去走が少ない」の閾値はサーバが決める (labels/predict_service と揃える)。
+ * features に載っているので UI で数値を持たない。 */
+function svcMinPastRuns() {
+  return (state.features && state.features.min_past_runs) || 3;
+}
