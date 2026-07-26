@@ -20,8 +20,10 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import mimetypes
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlparse
+from pathlib import Path
+from urllib.parse import parse_qs, unquote, urlparse
 
 from . import config as cfgmod
 from . import configs as cf
@@ -35,6 +37,37 @@ from . import specs as sp
 logger = logging.getLogger("builder.api")
 
 _STATE: dict = {"date": None, "daily": {}, "preset": {}, "specs": []}
+
+# UI の静的ファイル (素の HTML/CSS/JS)。外部依存ゼロ・1プロセス起動のため
+# フレームワークやビルドツールは使わず、ここから直接配信する (UI指示書 §0)。
+WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+
+
+def _serve_static(handler: BaseHTTPRequestHandler, rel: str) -> None:
+    """web/ 配下を配信する。パストラバーサルは拒否する。"""
+    rel = unquote(rel).lstrip("/")
+    if not rel or rel.endswith("/"):
+        rel = "index.html"
+    target = (WEB_DIR / rel).resolve()
+    try:
+        target.relative_to(WEB_DIR.resolve())      # web/ の外を指していないか
+    except ValueError:
+        return _json(handler, {"error": "forbidden"}, 403)
+    if not target.is_file():
+        return _json(handler, {"error": "not_found", "path": rel}, 404)
+
+    ctype, _enc = mimetypes.guess_type(str(target))
+    if target.suffix in (".html", ".css", ".js", ".json", ".svg"):
+        ctype = {".html": "text/html", ".css": "text/css", ".js": "text/javascript",
+                 ".json": "application/json", ".svg": "image/svg+xml"}[target.suffix]
+        ctype += "; charset=utf-8"
+    body = target.read_bytes()
+    handler.send_response(200)
+    handler.send_header("Content-Type", ctype or "application/octet-stream")
+    handler.send_header("Content-Length", str(len(body)))
+    handler.send_header("Cache-Control", "no-cache")   # デモ中の差し替えを即反映
+    handler.end_headers()
+    handler.wfile.write(body)
 
 
 def _json(handler: BaseHTTPRequestHandler, obj, status: int = 200) -> None:
@@ -81,6 +114,15 @@ def handle_predict(payload: dict) -> tuple[dict, int]:
     return got, 200
 
 
+def handle_leaderboard() -> tuple[dict, int]:
+    """きょうの順位 (UI指示書 §5)。当日の確定レースのみ集計。"""
+    from . import leaderboard as lb
+    daily = _STATE["daily"]
+    if not daily.get("races"):
+        return {"error": "daily_matrix_not_built", "date": _STATE["date"]}, 409
+    return lb.build_leaderboard(daily, _STATE["preset"]), 200
+
+
 def handle_backtest(payload: dict) -> tuple[dict, int]:
     user_cfg = payload.get("config") or {}
     period = payload.get("period") or {}
@@ -122,6 +164,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/features":
             return _json(self, feature_catalog())
 
+        if path == "/api/leaderboard":
+            return _json(self, *handle_leaderboard())
+
         if path.startswith("/api/configs/"):
             rest = path[len("/api/configs/"):]
             if rest.endswith("/history"):
@@ -129,6 +174,12 @@ class Handler(BaseHTTPRequestHandler):
                 return _json(self, got or {"error": "not_found"}, 200 if got else 404)
             got = cf.get_config(rest)
             return _json(self, got or {"error": "not_found"}, 200 if got else 404)
+
+        # UI (素の HTML/CSS/JS)。`/` と `/web/*` を web/ から配信する。
+        if path in ("", "/"):
+            return _serve_static(self, "index.html")
+        if path.startswith("/web/"):
+            return _serve_static(self, path[len("/web/"):])
 
         return _json(self, {"error": "not_found", "path": path}, 404)
 

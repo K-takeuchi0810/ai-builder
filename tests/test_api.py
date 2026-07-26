@@ -220,6 +220,67 @@ def test_handle_predict_found_and_missing():
     assert status == 404 and body["error"] == "race_not_found"
 
 
+def test_static_serving_resolves_and_blocks_traversal(tmp_path, monkeypatch):
+    """web/ 配下のみ配信し、web/ の外を指すパスは拒否すること。"""
+    web = tmp_path / "web"
+    web.mkdir()
+    (web / "index.html").write_text("<h1>ok</h1>", encoding="utf-8")
+    (web / "app.css").write_text(":root{}", encoding="utf-8")
+    (tmp_path / "secret.txt").write_text("do not serve", encoding="utf-8")
+    monkeypatch.setattr(api, "WEB_DIR", web)
+
+    sent = {}
+
+    class FakeHandler:
+        def __init__(self):
+            self.wfile = self
+            self.headers = {}
+
+        def send_response(self, code):
+            sent["status"] = code
+
+        def send_header(self, k, v):
+            self.headers[k] = v
+
+        def end_headers(self):
+            pass
+
+        def write(self, body):
+            sent["body"] = body
+
+    h = FakeHandler()
+    api._serve_static(h, "index.html")
+    assert sent["status"] == 200
+    assert h.headers["Content-Type"].startswith("text/html")
+    assert b"ok" in sent["body"]
+
+    h2 = FakeHandler()
+    api._serve_static(h2, "app.css")
+    assert h2.headers["Content-Type"].startswith("text/css")
+
+    # ディレクトリ指定は index.html にフォールバック
+    h3 = FakeHandler()
+    api._serve_static(h3, "")
+    assert sent["status"] == 200
+
+    # パストラバーサルは 403
+    h4 = FakeHandler()
+    api._serve_static(h4, "../secret.txt")
+    assert sent["status"] == 403
+
+    # 無いファイルは 404
+    h5 = FakeHandler()
+    api._serve_static(h5, "nope.js")
+    assert sent["status"] == 404
+
+
+def test_handle_leaderboard_requires_daily_matrix():
+    api._STATE["daily"] = {"races": []}
+    api._STATE["preset"] = PRESET
+    body, status = api.handle_leaderboard()
+    assert status == 409 and body["error"] == "daily_matrix_not_built"
+
+
 def test_handle_backtest_requires_data():
     api._STATE["daily"] = {"races": []}
     api._STATE["preset"] = PRESET
