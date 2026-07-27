@@ -71,9 +71,15 @@ def match_label(match, *, short: bool = False) -> str:
 
 
 def lookback_label(lookback, *, short: bool = False) -> str:
-    """さかのぼる範囲 (None=全走 / N=直近N走) → 日本語。"""
+    """さかのぼる範囲 (None=全走 / N=直近N走) → 日本語。
+
+    C-2: 長い形を「全レース」から「これまでの全走」に変えた。一致条件の
+    「全レース」と同じ文字列で、「どの条件で × どこまでさかのぼる」の
+    両軸に同名のチップが並び、どちらの軸の話か読めなかった。
+    短い形 (列名に埋め込む「全走」) は変えない。
+    """
     if lookback in (None, "", 0):
-        return "全走" if short else "全レース"
+        return "全走" if short else "これまでの全走"
     return f"直近{int(lookback)}走" if short else f"直近{int(lookback)}レース"
 
 
@@ -145,8 +151,10 @@ GLOSSARY: dict[str, dict[str, str]] = {
 # API レスポンス経由で埋めていたため、board が空だと差し込まれず画面に
 # プレースホルダの「—」が残っていた。規則は集計結果に依存しない事実なので、
 # 語彙表の一部として持ち、選択肢と同じ経路 (/api/features) で常に供給する。
-RANKING_RULE = ("並び順は ①◎的中数 → ②人気を出し抜いた的中数 → ③◎複勝率 "
-                "の順です。それでも同じなら同順位で並びます。")
+RANKING_RULE = ("並び順は ①◎的中率 → ②人気を出し抜いた的中数 → ③◎複勝率 "
+                "の順です。それでも同じなら同順位で並びます。"
+                "率で並べるのは、AI ごとに対象レース数が違うためです "
+                "(的中数だけで並べると多く使ったAIが機械的に上位になります)。")
 
 
 # z 値 → 平易表現 (5段)。**生の z を画面に出さない** ための単一辞書。
@@ -206,8 +214,10 @@ _STEP1: dict[str, tuple[str, str, str | None]] = {
     "fit_surface": ("芝ダートの適性", "record", "surface"),
     "horse_track_top3_rate": ("この競馬場での実績", "record", "fukushou"),
     "horse_recent_90d_top3_rate": ("最近90日の実績", "record", "fukushou"),
-    "recent_avg_finish": ("近走の平均着順", "record", None),
-    "recent_trend_delta": ("近走の調子", "record", None),
+    # C-1: STEP2 の「平均着順」と区別できなかった。実装は直近3走固定
+    # (keiba-yosou predictor/features.py の recent3)。窓を名前に出す。
+    "recent_avg_finish": ("直近3走の平均着順", "record", None),
+    "recent_trend_delta": ("直近3走の調子(上向き/下向き)", "record", None),
     "last_finish": ("前走の着順", "record", None),
 
     "draw_position": ("枠の内外", "running", "draw"),

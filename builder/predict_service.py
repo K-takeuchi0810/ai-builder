@@ -128,9 +128,7 @@ def predict_race(race: dict, user_config: dict, preset: dict) -> dict:
         "date": race.get("date"),
         "marks": marks,
         "columns": res["columns"],
-        "confidence": {"normalized_gap": None if gap is None else round(gap, 4),
-                       "score_gap": None if raw_gap is None else round(raw_gap, 4),
-                       "label": ps.confidence_label(gap, thresholds)},
+        "confidence": _confidence(gap, raw_gap, thresholds, used, len(columns)),
         "weight_announced": race.get("weight_announced"),
         "config_hash": cf.config_hash(user_config),
         "warnings": warnings,
@@ -501,3 +499,34 @@ def _roi_note() -> str:
             f"{_roi.MIN_RACES_FOR_ROI}レース未満は数値を出しません。"
             f"単勝の控除率は{int(_roi.TAKEOUT * 100)}%なので、"
             f"長期の回収率は約{int(_roi.LONG_RUN_CEILING * 100)}%が上限です。")
+
+
+# 使えた項目がこの割合を下回ったら自信度を降格する
+LOW_COVERAGE_RATIO = 0.5
+
+
+def _confidence(gap, raw_gap, thresholds: dict, used: int, selected: int) -> dict:
+    """自信度。**使えた項目が少ないときは降格する。**
+
+    3項目のうち2項目が使えず実質1項目の単純ソートなのに「有力」と出していた。
+    スコア差が大きく見えるのは項目が1つしかないからで、確かさの根拠にならない。
+    降格したことと理由を返し、UI が併記する。
+    """
+    label = ps.confidence_label(gap, thresholds)
+    ratio = (used / selected) if selected else 0.0
+    downgraded = False
+    reason = None
+    if used > 0 and ratio < LOW_COVERAGE_RATIO and label in ("鉄板級", "有力"):
+        # 1段下げる (鉄板級→有力→混戦)
+        label = "有力" if label == "鉄板級" else "混戦"
+        downgraded = True
+        reason = (f"選んだ項目のうち使えたのは {used}/{selected} 件なので、"
+                  f"自信度を1段下げています")
+    return {
+        "normalized_gap": None if gap is None else round(gap, 4),
+        "score_gap": None if raw_gap is None else round(raw_gap, 4),
+        "label": label,
+        "downgraded": downgraded,
+        "downgrade_reason": reason,
+        "coverage_ratio": round(ratio, 4),
+    }

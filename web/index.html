@@ -31,6 +31,8 @@
   <!-- ============ 画面1: きょうのレース ============ -->
   <section class="screen active" id="scr-races">
     <div id="racesWarn"></div>
+    <!-- C-5: マイAI未作成なら、レースを選ばせる前にここで作成へ誘導する -->
+    <div id="firstRun"></div>
     <div id="raceList"></div>
     <p class="note" style="margin-top:10px">「馬体重の発表待ち」のレースは、発表(発走の約50分前)後に自動で予想できるようになります。</p>
   </section>
@@ -44,11 +46,27 @@
 
     <div id="starterBox"></div>
 
-    <div class="section-label">STEP 1 — 重視する項目</div>
+    <div class="section-label">重視する項目</div>
     <div id="step1groups"></div>
 
-    <div class="section-label">STEP 2 — 過去レースの成績(条件 × さかのぼる範囲)</div>
-    <div class="card step2" id="step2list"></div>
+    <!-- C-1: 以前は「STEP 1」「STEP 2」と並列に置いていたが、STEP1「直近3走の
+         平均着順」と STEP2「平均着順」の役割が区別できなかった。STEP2 は条件と
+         期間を自分で組む上級者向けなので、初期は閉じた「詳細設定」に格下げする。 -->
+    <div class="adv">
+      <button class="adv-head" id="advHead" aria-expanded="false" aria-controls="advBody">
+        <span class="adv-t">詳細設定 — 過去成績の集計を自分で組む</span>
+        <span class="adv-n" id="advCount"></span>
+        <span class="adv-caret">&#9662;</span>
+      </button>
+      <div class="adv-body" id="advBody" hidden>
+        <p class="adv-desc">
+          上の項目はあらかじめ決まった集計です(例:「直近3走の平均着順」は直近3走に固定)。
+          ここでは<b>どの条件のレースを・どこまでさかのぼって</b>集計するかを自分で決められます。
+          決めなくても予想はできます。
+        </p>
+        <div class="card step2" id="step2list"></div>
+      </div>
+    </div>
 
     <div class="ai-name">
       <div class="section-label" style="margin-top:0">マイAIの名前</div>
@@ -92,7 +110,7 @@
   <section class="screen" id="scr-board">
     <div class="board-hero">
       <div class="h">本日の成績比較</div>
-      <div class="s" id="boardSub">◎的中数で並べています</div>
+      <div class="s" id="boardSub">◎的中率で並べています</div>
     </div>
     <div id="boardWarn"></div>
     <div id="boardList"></div>
@@ -127,11 +145,13 @@
   </div>
 </div>
 
+<!-- C-6: 以前は「日・作・◎・比」の漢字1文字をアイコンに使っていた。◎以外は
+     アイコンとして機能せず、「比」は初見で意味が取れない。ラベルだけにする。 -->
 <nav class="tabs">
-  <button class="on" data-scr="races"><span class="ic">日</span>レース</button>
-  <button data-scr="build"><span class="ic">作</span>マイAI</button>
-  <button data-scr="predict"><span class="ic">◎</span>予想</button>
-  <button data-scr="board"><span class="ic">比</span>成績</button>
+  <button class="on" data-scr="races">レース</button>
+  <button data-scr="build">マイAI</button>
+  <button data-scr="predict">予想</button>
+  <button data-scr="board">成績</button>
 </nav>
 
 <script src="/web/app.js"></script>

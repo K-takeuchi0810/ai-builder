@@ -6,12 +6,17 @@
 **対抗戦・ポイント制は不採用** (判断C、v0.3 で確定)。語彙は「成績比較」
 「基準との差」で統一し、勝負・煽り系の表現は使わない。
 
-## 順位規則 (判断C で確定)
+## 順位規則 (判断C で確定 / 2026-07-27 に母数の扱いを修正)
 
-    ① ◎的中数 (win_hits)
+    ① ◎的中 **率** (win_rate)   ← 絶対数ではなく率
     ② 人気を出し抜いた的中数 (upset_hits) = ◎が1番人気と違い、かつ的中した数
     ③ ◎複勝率 (show_rate)
     ④ それでも同点なら **同順位** で表示する
+
+第1キーを的中数から的中率に変えた理由: レースごとに適用AIを切り替えられる
+ようになり、AI ごとに対象レース数が違う。絶対数を第1キーにすると
+**多くのレースに使われたAIが機械的に上位** になり、成績の比較にならない。
+的中数は画面に併記する (どちらも見えるようにする)。
 
 ## 1番人気ベースライン
 
@@ -74,6 +79,8 @@ def _entry(name: str, acc: dict, *, config_id: str | None = None,
         "name": name,
         "races": n,
         "win_hits": acc["win_hits"],
+        # C-4: 順位の第1キーは率。母数が違う AI を絶対数で並べない
+        "win_rate": round(acc["win_hits"] / n, 4) if n else None,
         "upset_hits": acc["upset_hits"],
         "show_rate": round(acc["show_hits"] / n, 4) if n else None,
         "is_baseline": is_baseline,
@@ -84,8 +91,8 @@ def _entry(name: str, acc: dict, *, config_id: str | None = None,
 
 
 def _sort_key(e: dict):
-    # ①◎的中数 ②出し抜き数 ③複勝率 の降順
-    return (-e["win_hits"], -e["upset_hits"], -(e["show_rate"] or 0.0))
+    # ①◎的中率 ②出し抜き数 ③複勝率 の降順 (率が第1キー。C-4)
+    return (-(e["win_rate"] or 0.0), -e["upset_hits"], -(e["show_rate"] or 0.0))
 
 
 def _assign_ranks(entries: list[dict]) -> None:

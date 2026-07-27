@@ -86,7 +86,7 @@ def test_ranking_order_and_baseline_has_no_rank():
     got = lb.build_leaderboard(daily, PRESET, configs=_configs())
     entries = got["entries"]
 
-    # ①◎的中数の降順 → A が先頭
+    # ①◎的中率の降順 → A が先頭
     assert entries[0]["name"] == "AI-A" and entries[0]["rank"] == 1
     # ベースラインには順位数字を付けない (参加者と競わせない)
     base = next(e for e in entries if e["is_baseline"])
@@ -129,7 +129,7 @@ def test_show_rate_and_no_roi_key():
         assert e["roi_rank"] is None
     # 判断C: 順位規則を画面に出せるよう、4段すべてを文章で返す
     rule = got["ranking_rule"]
-    for part in ("◎的中数", "出し抜", "複勝率", "同順位"):
+    for part in ("◎的中率", "出し抜", "複勝率", "同順位"):
         assert part in rule, part
     # 対抗戦・煽り系の語彙を混ぜない (設計書 v0.3 §1 DON'T)
     for banned in ("対抗戦", "勝負", "優勝"):

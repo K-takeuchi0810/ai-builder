@@ -363,24 +363,27 @@ async function loadFeatures() {
   }));
 
   $('#step2list').innerHTML = f.step2_metrics.map((m) => {
+    const mt = esc(m.metric);
     const matches = f.step2_matches.map((x, j) =>
-      `<button class="cchip" data-kind="match" data-metric="${esc(m.metric)}" data-idx="${j}">${esc(x.label)}</button>`).join('');
-    const lbs = f.step2_lookbacks.map((x, j) =>
-      `<button class="cchip" data-kind="lb" data-metric="${esc(m.metric)}" data-idx="${j}">${esc(x.label)}</button>`).join('');
-    return `<div class="item" data-metric="${esc(m.metric)}">
+      `<button class="cchip" data-kind="match" data-metric="${mt}" data-idx="${j}"
+         aria-pressed="false">${esc(x.label)}</button>`).join('');
+    return `<div class="item" data-metric="${mt}">
       <div class="head">
         <label class="toggle">
-          <input type="checkbox" data-metric="${esc(m.metric)}" aria-label="${esc(m.label)}を使う">
-          <span class="nm">${esc(m.label)}${thinChip(m)}</span>
+          <input type="checkbox" data-metric="${mt}" aria-label="${esc(m.label)}を使う">
+          <span class="nm">${esc(m.label)}${thinMark(m)}</span>
         </label>
         <span class="st">使わない</span>
+        ${(m.term || m.low_sample) ? `<button class="pinfo" data-term="${esc(m.term || 'low_sample')}"
+          aria-label="${esc(m.label)}の説明">ⓘ</button>` : ''}
         <button class="disc" aria-label="${esc(m.label)}の詳細を開く" aria-expanded="false">▾</button>
       </div>
       <div class="body">
         <div class="mini-label">どの条件のレースで</div>
         <div class="cellrow">${matches}</div>
         <div class="mini-label">どこまでさかのぼる</div>
-        <div class="cellrow">${lbs}</div>
+        ${lookbackControl(m, f)}
+        <p class="cellnote" data-cells="${mt}"></p>
       </div>
     </div>`;
   }).join('');
@@ -410,7 +413,7 @@ async function loadFeatures() {
     syncCells(metric);
     refreshSaveCta();
   }));
-  $$('#step2list .cchip').forEach((chip) => chip.addEventListener('click', () => {
+  $$('#step2list .cchip[data-kind="match"]').forEach((chip) => chip.addEventListener('click', () => {
     const metric = chip.dataset.metric;
     const s = sel.step2.get(metric);
     if (!s) {   // 項目トグルOFFのままセルを押したらONにする (迷子防止)
@@ -418,7 +421,7 @@ async function loadFeatures() {
       cb.checked = true; cb.dispatchEvent(new Event('change'));
       return;
     }
-    const set = chip.dataset.kind === 'match' ? s.matches : s.lookbacks;
+    const set = s.matches;
     const idx = Number(chip.dataset.idx);
     if (set.has(idx)) {
       if (set.size === 1) return;   // 条件≥1 かつ 期間≥1 を必須
@@ -427,18 +430,132 @@ async function loadFeatures() {
     syncCells(metric);
     refreshSaveCta();
   }));
+  bindLookback();
   bindTerms();
+  bindAdvanced();
   refreshSaveCta();
 }
-function step1Chip(s) {
-  return `<button class="pchip" data-key="${esc(s.key)}">${esc(s.label)}`
-    + `${s.term ? term(s.term, 'ⓘ') : ''}${thinChip(s)}</button>`;
+
+/* C-1: 詳細設定 (STEP2) の開閉。閉じているときも選択数を見せる。 */
+function bindAdvanced() {
+  const head = $('#advHead'), body = $('#advBody');
+  head.addEventListener('click', () => {
+    const open = body.hidden;
+    body.hidden = !open;
+    head.setAttribute('aria-expanded', String(open));
+    head.querySelector('.adv-caret').textContent = open ? '\u25b4' : '\u25be';
+  });
 }
-/* 低サンプル項目は **選ぶ前に** マークする (事前+事後の二段開示) */
-function thinChip(s) {
-  if (!s.low_sample) return '';
-  return `<span class="chip-thin" data-term="low_sample"
-    aria-label="データ少なめの説明">データ少なめ</span>`;
+/* A-2 回帰: 以前は <button class="pchip"> の中に ⓘ ボタンと「データ少なめ」チップを
+ * 入れていた。**button の中に操作可能な要素を置けない** (HTML の内容モデル違反で、
+ * パーサが吐き出す環境では表示が崩れ、そうでない環境でもスクリーンリーダーと
+ * タップ判定が壊れる)。ⓘ をチップの **兄弟** に出し、チップ内は選択だけにする。
+ * 「データ少なめ」はチップ内に残すが **操作不可の印** にし、説明は ⓘ に寄せる。 */
+function step1Chip(s) {
+  const info = s.term || s.low_sample
+    ? `<button class="pinfo" data-term="${esc(s.term || 'low_sample')}"
+        aria-label="${esc(s.label)}の説明">ⓘ</button>` : '';
+  return `<span class="pchip-wrap">
+    <button class="pchip" data-key="${esc(s.key)}">${esc(s.label)}${thinMark(s)}</button>
+    ${info}</span>`;
+}
+/* 低サンプル項目の印。**操作不可** (説明は隣の ⓘ が開く)。 */
+function thinMark(s) {
+  return s.low_sample ? '<span class="thin-mark" aria-label="データ少なめ">少</span>' : '';
+}
+/* C-2: 「直近1〜10レース」の11チップをスライダー1つに畳む。9項目 × 11 = 99個の
+ * チップが並んでいた。期間は連続量なので選択肢として並べる必要がない。
+ * 「これまでの全走」は連続量の外にあるので別トグルで残す (どちらか一方は必須)。
+ * 内部のデータ構造 (lookbacks は Set) は変えない — 複数期間を持つ保存済み設定を
+ * 黙って書き換えないため。複数持っている設定はその旨を表示して保持する。 */
+const LB_MAX = 10;
+function lookbackControl(m, f) {
+  const mt = esc(m.metric);
+  const allIdx = f.step2_lookbacks.findIndex((x) => x.value == null);
+  const allLabel = allIdx >= 0 ? f.step2_lookbacks[allIdx].label : 'これまでの全走';
+  // ON/OFF は <label> + checkbox ではなく button チップにする。
+  // 実機で checkbox を label で包むと、プログラム的な click が label に転送されて
+  // 二重にトグルされ、状態が戻る事象が出た。一致条件と同じ button 方式に揃えると
+  // 「押した = 選んだ」が DOM の checked に依存しなくなる (正本は sel.step2)。
+  return `<div class="lbctl">
+    <div class="cellrow">
+      <button class="cchip" data-kind="lbuse" data-metric="${mt}"
+        aria-pressed="false">直近のレース数で区切る</button>
+      <button class="cchip" data-kind="lball" data-metric="${mt}"
+        aria-pressed="false">${esc(allLabel)}も使う</button>
+    </div>
+    <div class="lb-slide">
+      <input type="range" min="1" max="${LB_MAX}" value="3" step="1"
+        data-metric="${mt}" data-kind="lbrange"
+        aria-label="${esc(m.label)}をさかのぼるレース数">
+      <output class="lb-out" data-metric="${mt}">直近3レース</output>
+    </div>
+    <p class="lb-multi hidden" data-metric="${mt}"></p>
+  </div>`;
+}
+/* lookbacks の Set (index) → スライダーとトグルの状態 */
+function lbState(sset) {
+  const all = state.features.step2_lookbacks;
+  const idx = Array.from(sset.lookbacks);
+  const nums = idx.filter((i) => all[i] && all[i].value != null)
+    .map((i) => Number(all[i].value)).sort((a, b) => a - b);
+  return { hasAll: idx.some((i) => all[i] && all[i].value == null), nums };
+}
+function lbIdx(value) {
+  return state.features.step2_lookbacks.findIndex((x) =>
+    (value == null ? x.value == null : Number(x.value) === Number(value)));
+}
+function bindLookback() {
+  $$('#step2list [data-kind="lbrange"]').forEach((el) => el.addEventListener('input', () => {
+    const metric = el.dataset.metric;
+    const sset = ensureMetricOn(metric);
+    if (!sset) return;
+    // スライダーは「直近N走」を1つに確定させる (複数持ちだった設定はここで1つになる)
+    lbState(sset).nums.forEach((n) => sset.lookbacks.delete(lbIdx(n)));
+    sset.lookbacks.add(lbIdx(Number(el.value)));
+    syncCells(metric);
+    refreshSaveCta();
+  }));
+  $$('#step2list [data-kind="lball"], #step2list [data-kind="lbuse"]')
+    .forEach((el) => el.addEventListener('click', () => {
+      const metric = el.dataset.metric;
+      const sset = ensureMetricOn(metric);
+      if (!sset) return;
+      const kind = el.dataset.kind;
+      const range = $(`#step2list [data-kind="lbrange"][data-metric="${cssEsc(metric)}"]`);
+      const st = lbState(sset);
+      const on = kind === 'lball' ? st.hasAll : st.nums.length > 0;
+      if (kind === 'lball') {
+        if (on) sset.lookbacks.delete(lbIdx(null));
+        else sset.lookbacks.add(lbIdx(null));
+      } else if (on) {
+        st.nums.forEach((n) => sset.lookbacks.delete(lbIdx(n)));
+      } else {
+        sset.lookbacks.add(lbIdx(Number(range.value)));
+      }
+      // 期間が空になる操作は認めない (片方は必ず残す)
+      if (sset.lookbacks.size === 0) {
+        if (kind === 'lball') sset.lookbacks.add(lbIdx(null));
+        else sset.lookbacks.add(lbIdx(Number(range.value)));
+        toast('期間はどちらか一方は必要です');
+      }
+      syncCells(metric);
+      refreshSaveCta();
+    }));
+}
+/* 項目トグルOFFのまま期間を触ったらONにする (チップと同じ迷子防止) */
+function ensureMetricOn(metric) {
+  const got = sel.step2.get(metric);
+  if (got) return got;
+  const cb = $(`#step2list input[type=checkbox][data-metric="${cssEsc(metric)}"]:not([data-kind])`);
+  cb.checked = true; cb.dispatchEvent(new Event('change'));
+  return sel.step2.get(metric);
+}
+/* チップの見た目と aria-pressed を選択状態に合わせる (正本は sel.step2) */
+function chipOn(el, on) {
+  if (!el) return;
+  el.classList.toggle('on', !!on);
+  el.setAttribute('aria-pressed', String(!!on));
 }
 function bindTerms() {
   $$('[data-term]').forEach((el) => {
@@ -466,13 +583,52 @@ function applyStarter(sp) {
 function syncCells(metric) {
   const item = $(`#step2list .item[data-metric="${cssEsc(metric)}"]`);
   const s = sel.step2.get(metric);
-  item.querySelectorAll('.cchip').forEach((c) => {
-    const set = !s ? null : (c.dataset.kind === 'match' ? s.matches : s.lookbacks);
-    c.classList.toggle('on', !!set && set.has(Number(c.dataset.idx)));
+  item.querySelectorAll('.cchip[data-kind="match"]').forEach((c) => {
+    chipOn(c, !!s && s.matches.has(Number(c.dataset.idx)));
   });
+  syncLookbackUi(item, metric, s);
   const st = item.querySelector('.st');
   if (!s) { st.textContent = '使わない'; return; }
-  st.textContent = `${summary(state.features.step2_matches, s.matches)} × ${summary(state.features.step2_lookbacks, s.lookbacks)}`;
+  // C-2b: 折りたたんでいるときはこの1行しか見えないので、組数もここに出す
+  const n = s.matches.size * s.lookbacks.size;
+  st.textContent = `${summary(state.features.step2_matches, s.matches)}`
+    + ` × ${summary(state.features.step2_lookbacks, s.lookbacks)}`
+    + (n > 1 ? ` · ${n}通り` : '');
+}
+/* スライダー・トグル・組数表示を選択状態に合わせる (C-2) */
+function syncLookbackUi(item, metric, s) {
+  const range = item.querySelector('[data-kind="lbrange"]');
+  const all = item.querySelector('[data-kind="lball"]');
+  const use = item.querySelector('[data-kind="lbuse"]');
+  const out = item.querySelector('.lb-out');
+  const multi = item.querySelector('.lb-multi');
+  const note = item.querySelector('.cellnote');
+  if (!range) return;
+  const st = s ? lbState(s) : { hasAll: false, nums: [] };
+  const useOn = st.nums.length > 0;
+  chipOn(all, st.hasAll);
+  chipOn(use, useOn);
+  if (useOn) range.value = String(st.nums[0]);
+  range.disabled = !useOn;
+  out.textContent = lbLabel(Number(range.value));
+  // 複数の「直近N走」を持つ保存済み設定を黙って1つに丸めない。
+  // 保持したまま、スライダーを動かせば1つになることを明示する。
+  if (st.nums.length > 1) {
+    multi.classList.remove('hidden');
+    multi.textContent = `この設定は期間を${st.nums.length}種類使っています`
+      + `(${st.nums.map((n) => lbLabel(n)).join('・')})。`
+      + `スライダーを動かすと1つにまとまります。`;
+  } else {
+    multi.classList.add('hidden');
+    multi.textContent = '';
+  }
+  // C-2b: 選択の直積でセルが生成されるのに、生成数が画面に出ていなかった
+  const cells = s ? s.matches.size * s.lookbacks.size : 0;
+  note.textContent = cells ? `この項目で${cells}通りの組み合わせを使います` : '';
+}
+function lbLabel(n) {
+  const got = state.features.step2_lookbacks.find((x) => Number(x.value) === Number(n));
+  return got ? got.label : `直近${n}レース`;
 }
 function summary(all, set) {
   const idx = Array.from(set).sort((a, b) => a - b);
@@ -480,14 +636,28 @@ function summary(all, set) {
   const first = all[idx[0]].label;
   return idx.length === 1 ? first : `${first} ほか${idx.length - 1}`;
 }
+/* 詳細設定 (STEP2) で生成されるセルの総数。C-2b: 直積の規模を見せる。 */
+function totalCells() {
+  let n = 0;
+  sel.step2.forEach((s) => { n += s.matches.size * s.lookbacks.size; });
+  return n;
+}
 
 function refreshSaveCta() {
   const n = sel.step1.size + sel.step2.size;
   const btn = $('#saveBtn');
   btn.disabled = n === 0;
+  const cells = totalCells();
   $('#saveReason').textContent = n === 0
     ? '項目を1つ以上選んでください'
-    : `${n}項目を選択中`;
+    : (cells ? `${n}項目を選択中(詳細設定で${cells}通りの組み合わせ)` : `${n}項目を選択中`);
+  // 折りたたんだままでも詳細設定の中身が分かるようにする (C-1)
+  const badge = $('#advCount');
+  if (badge) {
+    badge.textContent = sel.step2.size
+      ? `${sel.step2.size}項目 · ${cells}通り` : '未設定';
+    badge.classList.toggle('on', sel.step2.size > 0);
+  }
 }
 
 function buildConfig() {
@@ -556,20 +726,43 @@ async function loadBacktest() {
   }
   box.classList.remove('hidden');
   box.innerHTML = `<div class="section-label">${term('backtest', 'このマイAIのこれまでの成績')}</div>
-    <div class="card"><div class="bt-grid">
-      ${btCell('◎が1着だった割合', pct(you.hit_rate_win), `1番人気AI ${pct(base.hit_rate_win)}`)}
-      ${btCell('◎が3着以内', pct(you.hit_rate_show), `1番人気AI ${pct(base.hit_rate_show)}`)}
-      ${btCell('印の中に勝ち馬', pct(you.hit_rate_in_marks), `1番人気AI ${pct(base.hit_rate_in_marks)}`)}
-      ${btCell('対象レース数', `${you.races}`, `${ymd(bt.period[0])}以降`)}
-    </div></div>
+    <div class="card bt2">
+      <div class="bt2-head"><span></span>
+        <span class="bt2-pair"><span>このAI</span><span class="bt2-sep"></span>
+          <span>1番人気AI</span></span><span>差</span></div>
+      ${btRow('◎が1着だった割合', you.hit_rate_win, base.hit_rate_win)}
+      ${btRow('◎が3着以内', you.hit_rate_show, base.hit_rate_show)}
+      ${btRow('印の中に勝ち馬', you.hit_rate_in_marks, base.hit_rate_in_marks)}
+      <div class="bt2-foot">${you.races}レース · ${esc(ymd(bt.period[0]))}以降</div>
+    </div>
+    ${btRoiBlock(bt)}
     ${condBreakdown(bt)}
     <p class="note" style="margin-top:8px">${esc(bt.note || '')}</p>
     <button class="cta" data-go="races">レースを選んで予想する</button>`;
   bindTerms();
   bindGo();
 }
+/* B-1 回帰: 自分の値を 1.2rem 太字、基準を 0.72rem 淡色で出していたため、
+ * **数字の強弱が実際の優劣と逆** になっていた (19% が大きく、基準 33% が小さい)。
+ * 基準を同格に並べ、差を主表示にする。 */
 const btCell = (k, v, b) => `<div class="bt-cell"><div class="k">${esc(k)}</div>
   <div class="v num">${esc(v)}</div><div class="b">${esc(b)}</div></div>`;
+function btRow(label, you, base) {
+  if (you == null || base == null) {
+    return `<div class="bt2-row"><div class="bt2-k">${esc(label)}</div>
+      <div class="bt2-v">—</div></div>`;
+  }
+  const diff = Math.round((you - base) * 100);
+  const sign = diff > 0 ? `+${diff}` : `${diff}`;
+  const cls = diff > 0 ? 'up' : (diff < 0 ? 'down' : 'even');
+  return `<div class="bt2-row">
+    <div class="bt2-k">${esc(label)}</div>
+    <div class="bt2-pair"><span class="bt2-you num">${pct(you)}</span>
+      <span class="bt2-sep">対</span>
+      <span class="bt2-base num">${pct(base)}</span></div>
+    <div class="bt2-diff ${cls} num">${sign}pt</div>
+  </div>`;
+}
 function bindGo() {
   $$('[data-go]').forEach((b) => {
     if (b.dataset.bound) return;
@@ -641,14 +834,21 @@ function renderPredict(p, prev) {
     </div>
     <div class="rcond">${esc(cond)}</div>
     <div class="bottom">
-      <button class="badge-conf" id="confBadge">${esc(conf.label || '—')}<span class="ci">ⓘ</span></button>
+      <button class="badge-conf${conf.downgraded ? ' low' : ''}" id="confBadge">${esc(conf.label || '—')}<span class="ci">ⓘ</span></button>
       <span class="head-chip" data-term="coverage">分析に使えた項目 ${used}/${total}</span>
       ${p.weight_announced ? '' : '<span class="head-chip">暫定印(馬体重の発表前)</span>'}
       <button class="ai-pick" id="aiPick">予想: <b>${esc(state.config ? state.config.name : '')}</b> ▾</button>
+      <button class="refresh" id="refreshBtn" aria-label="オッズと印を更新">更新</button>
     </div>
+    ${conf.downgrade_reason ? `<div class="conf-note">${esc(conf.downgrade_reason)}</div>` : ''}
     ${condRecordLine(p)}`;
   $('#confBadge').addEventListener('click', () => openTermSheet('confidence'));
   $('#aiPick').addEventListener('click', openAiSheet);
+  $('#refreshBtn').addEventListener('click', async () => {
+    await loadRaces();
+    await loadPredict();
+    toast('オッズと印を取り直しました');
+  });
   setMiniHead(p);
 
   // warnings は印リストの上に出す
@@ -701,14 +901,20 @@ function renderPredict(p, prev) {
         + `${svcMinPastRuns()}走未満です。このレースは評価の確かさが低めです</div>` : '');
   $('#legendRow').addEventListener('click', openMarkSheet);
 
-  const maxAbs = Math.max(...marks.map((m) => Math.abs(m.score || 0)), 1e-9);
+  // A-1 回帰: 以前は |score| / max|score| でバーを描いていた。スコアは符号付き
+  // (重み付き z の総和) なので、**大きく負の馬ほどバーが長くなり**、12頭中12位の
+  // 無印馬が◎と同じ長さになっていた。最小〜最大で正規化して順位と一致させる。
+  const scores = marks.map((m) => m.score || 0);
+  const sMin = Math.min(...scores, 0);
+  const sMax = Math.max(...scores, 0);
+  const sSpan = (sMax - sMin) || 1;
   const prevMark = {};
   if (prev) (prev.marks || []).forEach((m) => { prevMark[m.horse_num] = m.mark; });
 
   $('#markList').innerHTML = marks.map((m) => {
     const isHon = m.mark === '◎';
     const upset = isHon && m.popularity != null && m.popularity !== 1;
-    const w = Math.max(2, Math.round((Math.abs(m.score || 0) / maxAbs) * 100));
+    const w = Math.max(2, Math.round((((m.score || 0) - sMin) / sSpan) * 100));
     const promoted = prev && prevMark[m.horse_num] && prevMark[m.horse_num] !== m.mark
       && rankOf(m.mark) < rankOf(prevMark[m.horse_num]);
     // 行は **button にしない**。中に用語ボタン (data-term) を置くため、
@@ -774,6 +980,18 @@ function updateMiniHead() {
 }
 window.addEventListener('scroll', updateMiniHead, { passive: true });
 
+/* A-4 回帰: `.track-head{top:96px}` を決め打ちしていたため、検証モードバナー
+ * (sticky) が挟まると会場見出しがヘッダに食い込んだ。実測して変数に入れる。 */
+function syncHeaderHeight() {
+  let h = 0;
+  ['header.app', '#demoBanner', '#previewBanner'].forEach((sel) => {
+    const el = $(sel);
+    if (el && !el.hidden) h += el.offsetHeight;
+  });
+  if (h > 0) document.documentElement.style.setProperty('--head-h', `${h}px`);
+}
+window.addEventListener('resize', syncHeaderHeight);
+
 /* 警告に項目の内訳が付いている場合は名前を出す。
  * 「何件か」ではなく「どの項目か」が分からないと参加者は判断できない。 */
 function warnColumns(w) {
@@ -833,12 +1051,15 @@ function whyBlock(m) {
   // 押し上げ・押し下げをそれぞれの見出しの下に **正の割合** で出す。
   // 負のパーセントは初心者に読めないため使わない。
   const total = all.reduce((s, c) => s + Math.abs(c.contribution || 0), 0);
+  const nUsable = plus.length + minus.length;
   const rows = (list, cls) => {
     const maxAbs = Math.max(...list.map((c) => Math.abs(c.contribution || 0)), 1e-9);
     return list.map((c) => {
       const a = Math.abs(c.contribution || 0);
       const w = Math.max(2, Math.round((a / maxAbs) * 100));
-      const share = total > 0 ? Math.round((a / total) * 100) : null;
+      // B-5: 使えた項目が1つだけならシェアは定義上必ず 100% で、全馬に
+      // 「100%」が並ぶだけになる。意味を持たないので数値を出さない。
+      const share = (total > 0 && nUsable > 1) ? Math.round((a / total) * 100) : null;
       const vt = c.value_text ? `<small>${esc(c.value_text)}</small>` : '';
       return `<div class="lbl">${esc(c.label)}${vt}${thinNote(c)}${itemCover(c)}</div>
         <div class="cbar"><i class="${cls}" style="width:${w}%"></i></div>
@@ -885,7 +1106,13 @@ function startPolling() {
       const prev = state.lastPredict;
       await loadPredict();
       announceChanges(prev, state.lastPredict);
+      return;
     }
+    // E-1 回帰: 再取得のトリガーが馬体重発表だけだったため、「09:50時点」の
+    // オッズが **最も動く発走直前まで** 残っていた。取得時刻が進んでいたら
+    // 印も取り直す (印はオッズを使わないが、表示中のオッズを古くしない)。
+    const shownAsOf = state.lastPredict && state.lastPredict.odds_as_of;
+    if (r.odds_as_of && r.odds_as_of !== shownAsOf) await loadPredict();
   }, 30000);
 }
 function stopPolling() {
@@ -922,7 +1149,7 @@ async function loadLeaderboard() {
     staleChip('#boardWarn', '成績');
     return;
   }
-  $('#boardSub').textContent = `◎的中数で並べています · ${d.n_races_finished}レース終了時点`
+  $('#boardSub').textContent = `◎的中率で並べています · ${d.n_races_finished}レース終了時点`
     + (d.scoped_to_applied ? ' · そのレースに使ったAIで集計' : '');
   if (d.ranking_rule) $('#boardRule').textContent = d.ranking_rule;
   const entries = d.entries || [];
@@ -940,8 +1167,9 @@ async function loadLeaderboard() {
     const top = e.rank === 1;
     const stat = e.is_baseline
       ? `いつも1番人気を◎にするAI · ${e.races}レース`
-      : `${e.races}レース · ◎が3着以内 ${pct(e.show_rate)}`
-        + ` · 人気を出し抜いた的中 <b>${e.upset_hits}回</b>`;
+      : `${e.races}レース · ◎的中率 <b>${pct(e.win_rate)}</b>`
+        + ` · ◎が3着以内 ${pct(e.show_rate)}`
+        + ` · 人気を出し抜いた的中 ${e.upset_hits}回`;
     return `<div class="brow${top ? ' top' : ''}${e.is_baseline ? ' baseline' : ''}">
       <div class="rank">${e.is_baseline ? '—' : esc(String(e.rank))}</div>
       <div class="who"><div class="aname">${esc(e.name)}${e.is_baseline ? '(基準)' : ''}</div>
@@ -990,9 +1218,29 @@ function init() {
   history.replaceState({ scr: h.key, raceId: h.raceId }, '', location.hash || '#races');
   loadRaces();
   checkVersion();
+  maybeInviteFirstRun();
+  syncHeaderHeight();
   loadFeatures().then(restoreConfig).then(() => {
     if (h.key !== 'races') go(h.key, false);
   });
+}
+
+/* C-5: 初回導線が「レース一覧 → レース選択 → まだマイAIがありません → 作成」の
+ * 3ホップだった。設定が1件も無いことは一覧を開いた時点で分かるので、
+ * その場で作成へ誘導する (レースを選ばせてから空を告げるのをやめる)。 */
+async function maybeInviteFirstRun() {
+  let list;
+  try { list = await getJSON('/api/configs'); } catch (e) { return; }
+  const n = (list && list.configs || []).length;
+  const box = $('#firstRun');
+  if (!box) return;
+  if (n > 0) { box.remove(); return; }
+  box.innerHTML = `<div class="fr">
+    <div class="fr-t">まずマイAIをつくります</div>
+    <div class="fr-d">重視したい項目を選ぶと、レースごとに印(◎○▲△×)が出ます。所要2〜3分です。</div>
+    <button class="cta" data-go="build">マイAIをつくる</button>
+  </div>`;
+  box.querySelector('[data-go]').addEventListener('click', () => go('build'));
 }
 
 /* サーバのコードが起動時より新しいと、修正が画面に出ない。黙って迷わせない。 */
@@ -1005,6 +1253,7 @@ async function checkVersion() {
   if (pb) {
     if (v.preview) { pb.textContent = v.preview_message; pb.hidden = false; }
     else pb.remove();
+    syncHeaderHeight();
   }
   if (!v.stale) return;
   const el = $('#racesWarn');
@@ -1043,9 +1292,18 @@ function applyConfigToForm(cfg, name) {
   $$('#step2list .item').forEach((item) => {
     const on = sel.step2.has(item.dataset.metric);
     item.classList.toggle('on', on);
-    item.querySelector('input[type=checkbox]').checked = on;
+    // C-2: 期間のトグルも checkbox になったので、項目トグルを明示的に選ぶ
+    item.querySelector('input[type=checkbox]:not([data-kind])').checked = on;
     syncCells(item.dataset.metric);
   });
+  // C-1: 詳細設定を使っている設定を読み込んだら、閉じたままにせず開く
+  const advBody = $('#advBody');
+  if (advBody && sel.step2.size > 0 && advBody.hidden) {
+    advBody.hidden = false;
+    const head = $('#advHead');
+    head.setAttribute('aria-expanded', 'true');
+    head.querySelector('.adv-caret').textContent = '\u25b4';
+  }
   if (name) $('#aiName').value = name;
   refreshSaveCta();
 }
@@ -1225,8 +1483,7 @@ function betSlipBlock(p) {
   if (!slip.length) return '';
   const rows = slip.map((t) => `<div class="bs-row">
       <div class="bs-k">${esc(t.label)}<small>${esc(t.desc)}</small></div>
-      <div class="bs-v num">${t.combos.map((c) =>
-        esc(c.map((x) => Number(x)).join('-'))).join(' / ')}</div>
+      <div class="bs-v num">${(t.texts || []).map(esc).join(' / ')}</div>
       <div class="bs-n">${t.n}点</div>
     </div>`).join('');
   return `<div class="section-label">買い目(印の並べ替え)</div>
@@ -1239,7 +1496,7 @@ function betSlipBlock(p) {
     <p class="note bs-note">これは印を券種ごとに並べ替えたものです。
       金額は扱いません。QRコードはJRA公式サイトでのみ作成できます
       (形式が公開されていないため、このツールでは作りません)。
-      ◎の的中率は実測で約20%(1番人気は約33%)、回収率は長期では控除率に収束します。</p>`;
+      ◎の的中率は実測で約20%(1番人気は約33%)です。</p>`;
 }
 function bindBetSlip(p) {
   const btn = $('#bsCopy');
@@ -1302,4 +1559,23 @@ async function loadRoiRanking() {
     <p class="note" style="margin-top:6px">
       ${esc(ymd((d.period || [])[0] || ''))}以降の全レースに同じ設定を当てはめた集計です。
       ${esc(d.roi_note || '')}</p>`;
+}
+
+/* B-1: 的中率では1番人気をほぼ上回れないので、作成直後の成績にも
+ * **回収率(人気薄を当てた価値が入る指標)** を出す。信頼区間つき。 */
+function btRoiBlock(bt) {
+  const s = bt.roi_stats, b = bt.baseline_roi_stats;
+  if (!s) return '';
+  const line = s.enough
+    ? `<span class="bt2-you num">${pct(s.roi)}</span>
+       <span class="bt2-sep">対</span>
+       <span class="bt2-base num">${b && b.enough ? pct(b.roi) : '—'}</span>`
+    : `<span class="bt2-base">判定できません(${s.races}/${s.min_races}レース)</span>`;
+  const ci = s.enough && s.ci
+    ? `<div class="bt2-foot">回収率の幅 ${pct(s.ci[0])}〜${pct(s.ci[1])}。`
+      + `${esc(bt.roi_note || '')}</div>` : '';
+  return `<div class="card bt2" style="margin-top:9px">
+    <div class="bt2-row"><div class="bt2-k">回収率(単勝)</div>
+      <div class="bt2-pair">${line}</div><div class="bt2-diff even"></div></div>
+    ${ci}</div>`;
 }

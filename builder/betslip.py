@@ -28,9 +28,18 @@ BET_TYPES: tuple[dict, ...] = (
     {"key": "fuku", "label": "複勝", "desc": "3着以内に入る馬を1頭選ぶ"},
     {"key": "umaren", "label": "馬連", "desc": "1着と2着の組(順序は問わない)"},
     {"key": "wide", "label": "ワイド", "desc": "3着以内に2頭とも入る組"},
-    {"key": "umatan", "label": "馬単", "desc": "1着と2着を順序どおりに当てる"},
+    # C-3: 馬連「11-10」と馬単「11-10」が同じ文字列だと券種の違いを誤学習する。
+    # 順序固定の券種は矢印で方向を示す (ordered=True)。
+    {"key": "umatan", "label": "馬単", "desc": "1着と2着を順序どおりに当てる",
+     "ordered": True},
     {"key": "sanrenpuku", "label": "三連複", "desc": "3着までの3頭の組(順序は問わない)"},
 )
+
+
+def combo_text(bet_type: dict, combo: list[str]) -> str:
+    """1点の表記。順序固定の券種は「11→10」、それ以外は「11-10」。"""
+    nums = [str(int(x)) for x in combo]
+    return ("→" if bet_type.get("ordered") else "-").join(nums)
 
 
 def _nums(marks: list[dict]) -> list[str]:
@@ -61,7 +70,9 @@ def build(marks: list[dict]) -> list[dict]:
         c = [x for x in combos.get(t["key"], []) if len(set(x)) == len(x)]
         if not c:
             continue
-        out.append({**t, "combos": c, "n": len(c)})
+        # UI が文字列を組み立て直さないよう、表記済みの text も返す
+        out.append({**t, "combos": c, "n": len(c),
+                    "texts": [combo_text(t, x) for x in c]})
     return out
 
 

@@ -70,7 +70,8 @@ def test_match_and_lookback_labels_have_long_and_short_forms():
     assert lb.match_label([], short=True) == "全レース"
     assert lb.match_label(["distance"]) == "距離が同じ"
     assert lb.match_label(["distance"], short=True) == "同距離"
-    assert lb.lookback_label(None) == "全レース"
+    # C-2: 一致条件の「全レース」と衝突しない長い形
+    assert lb.lookback_label(None) == "これまでの全走"
     assert lb.lookback_label(None, short=True) == "全走"
     assert lb.lookback_label(3) == "直近3レース"
     assert lb.lookback_label(3, short=True) == "直近3走"

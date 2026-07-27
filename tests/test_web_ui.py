@@ -93,25 +93,31 @@ def test_no_framework_or_build_tooling():
             assert banned not in low, f"{name} に {banned!r}"
 
 
+# D-1: 下限を .72rem (11.5px) から .78rem に引き上げた。判断材料の大半が
+# 最小サイズで出ており、競馬ユーザーの年齢層を考えると小さすぎた。
+FONT_FLOOR = 0.78
+
+
 def test_no_font_size_below_the_floor():
-    """§0 DON'T: フォントサイズ .72rem 未満を新設しない。
+    """§0 DON'T: フォントサイズを下限未満で新設しない。
 
     v0.2 モックアップには .62〜.70rem が残っていたので、機械的に閉じる。
     """
     small = []
     for m in re.finditer(r"font-size:\s*([0-9.]+)rem", CSS):
         v = float(m.group(1))
-        if v < 0.72:
+        if v < FONT_FLOOR:
             small.append(m.group(0))
-    assert small == [], f"下限 .72rem 未満: {small}"
-    assert "--fs-min:.72rem" in CSS.replace(" ", "")
+    assert small == [], f"下限 {FONT_FLOOR}rem 未満: {small}"
+    assert f"--fs-min:{FONT_FLOOR}rem".replace("0.", ".") in CSS.replace(" ", "")
 
 
 def test_no_px_font_size_below_the_floor():
-    """px 指定で下限を回り込まないこと (.72rem = 11.52px 相当)。"""
+    """px 指定で下限を回り込まないこと (.78rem = 12.48px 相当)。"""
+    floor_px = FONT_FLOOR * 16
     small = [m.group(0) for m in re.finditer(r"font-size:\s*(\d+)px", CSS)
-             if int(m.group(1)) < 12]
-    assert small == [], f"12px 未満: {small}"
+             if int(m.group(1)) < floor_px]
+    assert small == [], f"{floor_px}px 未満: {small}"
 
 
 def test_tap_targets_are_at_least_44px():
@@ -331,7 +337,9 @@ def test_beginner_affordances_are_present():
     assert "openMarkSheet" in js                     # 印の凡例シート
     assert "openTermSheet" in js and "data-term" in js
     assert "m.decisive" in js                        # 決め手の一文 (サーバ生成)
-    assert "chip-thin" in js                         # 低サンプルの事前マーク
+    # A-2: 以前は button 内の <button class="chip-thin">。内容モデル違反だったので
+    # 操作不可の印 (thin-mark) に変え、説明は兄弟の ⓘ に寄せた。
+    assert "thin-mark" in js                         # 低サンプルの事前マーク
     assert "starter_preset" in js                    # 「まよったら」
     assert 'id="sheet"' in html                      # ボトムシート本体
     assert 'id="markLegend"' in html
@@ -540,3 +548,119 @@ def test_all_api_endpoints_are_wired_in_the_ui():
     for path in ("/api/races/today", "/api/features", "/api/leaderboard",
                  "/api/predict", "/api/backtest", "/api/configs"):
         assert path in JS, path
+
+# ---------------------------------------------------------------------------
+# D-2: 文字色のコントラストを機械的に固定する
+# ---------------------------------------------------------------------------
+# 実測で落ちていたのは --ink-faint (#8B9486, 白地 3.14:1) と、文字に使っていた
+# --gold (#A8811C, gold-soft 上 3.09:1)。どちらも最小サイズ本文で使われていた。
+# 目視では気づけないので、パレットの比を計算して閉じる。
+AA_NORMAL = 4.5      # WCAG 2.1 AA: 通常サイズ本文
+AA_LARGE = 3.0       # 大きい文字 (>=18.66px bold / >=24px) と UI 部品の境界
+
+
+def _srgb(v: float) -> float:
+    v /= 255.0
+    return v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
+
+
+def _lum(hex_colour: str) -> float:
+    h = hex_colour.lstrip("#")
+    r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
+    return 0.2126 * _srgb(r) + 0.7152 * _srgb(g) + 0.0722 * _srgb(b)
+
+
+def contrast(fg: str, bg: str) -> float:
+    a, b = _lum(fg), _lum(bg)
+    hi, lo = max(a, b), min(a, b)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def _palette() -> dict:
+    return dict(re.findall(r"--([a-z0-9-]+):\s*(#[0-9A-Fa-f]{6})", CSS))
+
+
+def test_body_text_colours_meet_wcag_aa():
+    """本文に使う色が card / paper の両方で AA を満たすこと。"""
+    pal = _palette()
+    for bg_key in ("card", "paper"):
+        bg = pal[bg_key]
+        for fg_key in ("ink", "ink-soft", "ink-faint", "gold-text", "turf-700",
+                       "minus", "alert", "turf-500"):
+            got = contrast(pal[fg_key], bg)
+            assert got >= AA_NORMAL, f"{fg_key} on {bg_key} = {got:.2f}"
+
+
+def test_the_faint_tier_stays_a_tier():
+    """--ink-faint は AA を満たしつつ --ink-soft より薄いこと (階層を潰さない)。"""
+    pal = _palette()
+    faint = contrast(pal["ink-faint"], pal["card"])
+    soft = contrast(pal["ink-soft"], pal["card"])
+    assert AA_NORMAL <= faint < soft, (faint, soft)
+
+
+def test_soft_backgrounds_carry_readable_text():
+    """淡色の下地 (注意・警告・turf) に載る文字が AA を満たすこと。
+
+    B-2 で自信度を turf 系へ移し、gold を注意専用にした。両方を検査する。
+    """
+    pal = _palette()
+    pairs = [("gold-text", "gold-soft"), ("turf-700", "turf-100")]
+    for fg, bg in pairs:
+        got = contrast(pal[fg], pal[bg])
+        assert got >= AA_NORMAL, f"{fg} on {bg} = {got:.2f}"
+
+
+def test_no_small_text_uses_a_failing_colour():
+    """最小サイズの文字に AA 未満の色を新設しないこと。
+
+    ルール単位で「font-size:var(--fs-min)」と色指定が同居する宣言を集め、
+    その色が card 上で AA を満たすかを見る。
+    """
+    pal = _palette()
+    bad = []
+    for rule in re.findall(r"\{([^}]*)\}", CSS):
+        if "var(--fs-min)" not in rule:
+            continue
+        m = re.search(r"(?<!-)color:\s*var\(--([a-z0-9-]+)\)", rule)
+        if not m:
+            continue
+        key = m.group(1)
+        if key not in pal:
+            continue          # 固定色 (#... 直書き) は下の例外表で扱う
+        if contrast(pal[key], pal["card"]) < AA_NORMAL:
+            bad.append((key, rule.strip()[:60]))
+    assert bad == [], bad
+
+
+# ---------------------------------------------------------------------------
+# E-1: オッズの再取得トリガー / C-5: 初回導線
+# ---------------------------------------------------------------------------
+def test_odds_are_refetched_when_the_snapshot_time_changes():
+    """再取得のトリガーが馬体重発表だけになっていないこと。
+
+    以前は `weight_announced` の立ち上がりだけで、「09:50時点」のオッズが
+    **最も動く発走直前まで** 残っていた。取得時刻の変化でも取り直す。
+    """
+    js = CODE["app.js"]
+    assert "odds_as_of" in js
+    assert "r.odds_as_of !== shownAsOf" in js, "取得時刻の比較が無い"
+    assert 'id="refreshBtn"' in js, "手動更新ボタンが無い"
+
+
+def test_first_run_routes_to_creation():
+    """マイAI 0件を検出したら、レースを選ばせる前に作成へ誘導すること。"""
+    js, html = CODE["app.js"], CODE["index.html"]
+    assert 'id="firstRun"' in html
+    assert "maybeInviteFirstRun" in js
+    # 一覧の描画より前に判定を走らせる (レース選択後に空を告げない)
+    assert js.index("maybeInviteFirstRun()") < js.index("function maybeInviteFirstRun")
+
+
+def test_tab_bar_uses_labels_only():
+    """漢字1文字のアイコンを置かないこと (「比」は初見で意味が取れない)。"""
+    html = CODE["index.html"]
+    nav = html[html.index("<nav class=\"tabs\">"):html.index("</nav>")]
+    assert 'class="ic"' not in nav, nav
+    for ch in ("日", "作", "比"):
+        assert f">{ch}<" not in nav, ch

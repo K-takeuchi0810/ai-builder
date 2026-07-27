@@ -11,7 +11,13 @@
  * 生成された HTML を標準出力に出す。構造の検査は呼び出し側 (Python の
  * html.parser) で行う — ブラウザと同じ「本物のパーサ」で入れ子を判定する。
  *
- * 使い方: node tests/dom_render.js <predict.json> [features.json]
+ * 使い方:
+ *   node tests/dom_render.js <predict.json> [features.json]   … 予想画面
+ *   node tests/dom_render.js --build <features.json>          … 作成画面
+ *
+ * A-2 の反省: 予想画面しか描画していなかったため、作成画面に残っていた
+ * 「button の中の button」(pchip の中の ⓘ) を検出できなかった。
+ * 作成画面も同じパーサに通す。
  */
 'use strict';
 
@@ -80,7 +86,11 @@ const sandbox = {
   sessionStorage: { getItem: () => null, setItem: () => {}, clear: () => {} },
   localStorage: undefined,
   URLSearchParams: URLSearchParams,
-  fetch: async () => ({ ok: true, status: 200, json: async () => ({}) }),
+  // URL ごとに応答を差し替えられるようにする (作成画面は /api/features を読む)
+  fetch: async (url) => ({
+    ok: true, status: 200,
+    json: async () => (sandbox.__routes && sandbox.__routes[url]) || {},
+  }),
   setInterval: () => 0,
   clearInterval: () => {},
   setTimeout: (fn) => { if (typeof fn === 'function') fn(); return 0; },
@@ -109,6 +119,22 @@ const src = fs.readFileSync(
   path.join(__dirname, '..', 'web', 'app.js'), 'utf8');
 const ctx = vm.createContext(sandbox);
 vm.runInContext(src, ctx, { filename: 'app.js' });
+
+const BUILD = process.argv[2] === '--build';
+if (BUILD) {
+  const features = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
+  sandbox.__routes = { '/api/features': features };
+  vm.runInContext('loadFeatures().then(() => { __done = true; });', ctx);
+  // loadFeatures は await 1 回だけ。マイクロタスクを流してから読み出す。
+  setImmediate(() => {
+    process.stdout.write(JSON.stringify({
+      step1groups: el('#step1groups').innerHTML,
+      step2list: el('#step2list').innerHTML,
+      starterBox: el('#starterBox').innerHTML,
+    }));
+  });
+  return;
+}
 
 const predict = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const features = process.argv[3]

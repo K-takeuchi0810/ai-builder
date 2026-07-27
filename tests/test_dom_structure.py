@@ -109,6 +109,15 @@ class Tree(HTMLParser):
             s += self.all_text(ch)
         return s
 
+    def find_tag(self, tag, node=None):
+        node = self.root if node is None else node
+        out = []
+        for ch in node["children"]:
+            if ch["tag"] == tag:
+                out.append(ch)
+            out.extend(self.find_tag(tag, ch))
+        return out
+
     def ancestors(self, node):
         out = []
         p = node["parent"]
@@ -130,6 +139,24 @@ def _render(predict: dict, features: dict | None = None, tmp_path=None) -> dict:
         ff.write_text(json.dumps(features, ensure_ascii=False), encoding="utf-8")
         args.append(str(ff))
     res = subprocess.run(args, capture_output=True, text=True, encoding="utf-8",
+                         cwd=str(ROOT), timeout=60)
+    assert res.returncode == 0, f"描画に失敗: {res.stderr[-2000:]}"
+    return json.loads(res.stdout)
+
+
+def _render_build(features: dict, tmp_path=None) -> dict:
+    """作成画面 (STEP1 + 詳細設定) を実際に描画する。
+
+    A-2 の再発防止: 予想画面だけを描画していたため、作成画面の
+    `<button class="pchip">` の中に `<button>` を置いた実装を検出できなかった。
+    """
+    tmp = Path(tmp_path or ROOT / "out")
+    tmp.mkdir(parents=True, exist_ok=True)
+    ff = tmp / "_features_build.json"
+    ff.write_text(json.dumps(features, ensure_ascii=False), encoding="utf-8")
+    res = subprocess.run(["node", str(ROOT / "tests" / "dom_render.js"),
+                          "--build", str(ff)],
+                         capture_output=True, text=True, encoding="utf-8",
                          cwd=str(ROOT), timeout=60)
     assert res.returncode == 0, f"描画に失敗: {res.stderr[-2000:]}"
     return json.loads(res.stdout)
@@ -333,3 +360,108 @@ def test_decisive_sentence_is_rendered(tmp_path):
     d = t.find("decisive")
     assert d, "決め手の一文が描画されていない"
     assert "「" in t.all_text(d[0])
+
+
+# ---------------------------------------------------------------------------
+# A-2: 作成画面でも操作可能要素を入れ子にしない
+# ---------------------------------------------------------------------------
+def test_build_screen_has_no_nested_interactive_elements(tmp_path):
+    """項目チップの中に button / input を置かないこと。
+
+    以前は `<button class="pchip">` の中に ⓘ ボタンと「データ少なめ」チップを
+    入れていた (22箇所)。HTML の内容モデル違反で、パーサが吐き出す環境では
+    表示が崩れ、そうでない環境でもスクリーンリーダーとタップ判定が壊れる。
+    """
+    out = _render_build(api.feature_catalog(), tmp_path)
+    assert out["step1groups"], "STEP1 が描画されていない"
+    for name in ("step1groups", "step2list", "starterBox"):
+        t = Tree()
+        t.feed(out[name])
+        assert t.max_button_depth <= 1, f"{name} で button が入れ子になっている"
+        # button の中に input (チェックボックス・スライダー) も置かない
+        for node in t.find_tag("input"):
+            assert not any(a["tag"] == "button" for a in t.ancestors(node)), \
+                f"{name} で button の中に input がある"
+
+
+def test_info_button_is_a_sibling_of_the_chip(tmp_path):
+    """ⓘ はチップの兄弟であること (チップの子だと入れ子になる)。"""
+    out = _render_build(api.feature_catalog(), tmp_path)
+    t = Tree()
+    t.feed(out["step1groups"])
+    chips = t.find("pchip")
+    infos = t.find("pinfo")
+    assert chips, "項目チップが無い"
+    assert infos, "説明ボタンが無い"
+    for i in infos:
+        assert not any("pchip" in a["cls"] for a in t.ancestors(i)), \
+            "ⓘ がチップの子になっている"
+        assert any("pchip-wrap" in a["cls"] for a in t.ancestors(i))
+
+
+def test_low_sample_mark_is_not_interactive(tmp_path):
+    """「データ少なめ」の印は操作不可 (説明は隣の ⓘ に寄せる)。
+
+    `low_sample` はプリセットの `low_sample_columns` から付くので、
+    `api.feature_catalog()` をそのまま使うと **他のテストが置いた合成プリセット**に
+    左右される (単独では通るのに全体実行で落ちた)。ここは印の構造だけを見たいので、
+    カタログに明示的に低サンプル項目を1つ作る。
+    """
+    cat = api.feature_catalog()
+    cat["step1"] = [dict(x) for x in cat["step1"]]
+    cat["step1"][0]["low_sample"] = True
+    cat["step1"][0]["min_train_races"] = 53
+    out = _render_build(cat, tmp_path)
+    t = Tree()
+    t.feed(out["step1groups"])
+    marks = t.find("thin-mark")
+    assert marks, "低サンプルの印が無い"
+    for m in marks:
+        assert m["tag"] == "span", m["tag"]
+        assert "data-term" not in m["attrs"]
+        # 印そのものは操作不可。説明は同じチップの隣の ⓘ が担う
+        wrap = next(a for a in t.ancestors(m) if "pchip-wrap" in a["cls"])
+        assert t.find("pinfo", wrap), "低サンプル項目に説明ボタンが無い"
+
+
+# ---------------------------------------------------------------------------
+# C-2: 期間はスライダー1つ (11チップを並べない)
+# ---------------------------------------------------------------------------
+def test_lookback_is_a_slider_not_eleven_chips(tmp_path):
+    """9項目 × 11 = 99個のチップを並べないこと。"""
+    cat = api.feature_catalog()
+    n_metrics = len(cat["step2_metrics"])
+    n_lookbacks = len(cat["step2_lookbacks"])
+    assert n_lookbacks >= 11, "期間の選択肢が減っていたらこのテストの前提が変わる"
+    out = _render_build(cat, tmp_path)
+    t = Tree()
+    t.feed(out["step2list"])
+    ranges = [x for x in t.find_tag("input")
+              if x["attrs"].get("type") == "range"]
+    assert len(ranges) == n_metrics, (len(ranges), n_metrics)
+    for r in ranges:
+        assert r["attrs"].get("aria-label"), "スライダーにラベルが無い"
+        assert r["attrs"].get("max") == "10", r["attrs"]
+    # 期間のチップは「区切る/全走も使う」の2つだけ (11択を並べない)
+    chips = t.find("cchip")
+    kinds = {}
+    for c in chips:
+        kinds[c["attrs"].get("data-kind")] = kinds.get(c["attrs"].get("data-kind"), 0) + 1
+    assert kinds.get("match") == n_metrics * len(cat["step2_matches"]), kinds
+    assert kinds.get("lbuse") == n_metrics, kinds
+    assert kinds.get("lball") == n_metrics, kinds
+    assert set(kinds) == {"match", "lbuse", "lball"}, kinds
+    # 押した状態は aria-pressed で伝える (見た目のクラスだけにしない)
+    assert all(c["attrs"].get("aria-pressed") is not None for c in chips)
+
+
+def test_cell_count_is_visible(tmp_path):
+    """直積で生成されるセル数の表示先があること (規模を隠さない)。"""
+    out = _render_build(api.feature_catalog(), tmp_path)
+    t = Tree()
+    t.feed(out["step2list"])
+    notes = t.find("cellnote")
+    assert len(notes) == len(api.feature_catalog()["step2_metrics"])
+    js = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    assert "通りの組み合わせ" in js, "セル数の文言が無い"
+    assert "function totalCells" in js

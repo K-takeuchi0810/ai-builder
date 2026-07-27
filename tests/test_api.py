@@ -252,9 +252,11 @@ def test_feature_catalog_shape():
     assert any("獲得本賞金" in n for n in cat["notes"])
 
 
-def test_handle_predict_found_and_missing():
-    api._STATE["daily"] = {"races": [_race("R1")]}
-    api._STATE["preset"] = PRESET
+def test_handle_predict_found_and_missing(monkeypatch):
+    # _STATE への直代入はテスト間に漏れる (別ファイルの feature_catalog が
+    # 合成プリセットを掴み、低サンプル項目が消えて落ちた)。必ず巻き戻す。
+    monkeypatch.setitem(api._STATE, "daily", {"races": [_race("R1")]})
+    monkeypatch.setitem(api._STATE, "preset", PRESET)
     body, status = api.handle_predict({"race_id": "R1", "config": USER_CFG})
     assert status == 200 and body["marks"][0]["mark"] == "◎"
     body, status = api.handle_predict({"race_id": "nope", "config": USER_CFG})
@@ -315,21 +317,22 @@ def test_static_serving_resolves_and_blocks_traversal(tmp_path, monkeypatch):
     assert sent["status"] == 404
 
 
-def test_handle_leaderboard_requires_daily_matrix():
-    api._STATE["daily"] = {"races": []}
-    api._STATE["preset"] = PRESET
+def test_handle_leaderboard_requires_daily_matrix(monkeypatch):
+    monkeypatch.setitem(api._STATE, "daily", {"races": []})
+    monkeypatch.setitem(api._STATE, "preset", PRESET)
     body, status = api.handle_leaderboard()
     assert status == 409 and body["error"] == "daily_matrix_not_built"
 
 
-def test_handle_backtest_requires_data():
-    api._STATE["daily"] = {"races": []}
-    api._STATE["preset"] = PRESET
-    api._STATE.pop("backtest_matrix", None)
+def test_handle_backtest_requires_data(monkeypatch):
+    monkeypatch.setitem(api._STATE, "daily", {"races": []})
+    monkeypatch.setitem(api._STATE, "preset", PRESET)
+    monkeypatch.delitem(api._STATE, "backtest_matrix", raising=False)
     body, status = api.handle_backtest({"config": USER_CFG})
     assert status == 409 and body["error"] == "no_backtest_data"
 
-    api._STATE["backtest_matrix"] = {"columns": [], "races": [_race("A", date="20250801")]}
+    monkeypatch.setitem(api._STATE, "backtest_matrix",
+                        {"columns": [], "races": [_race("A", date="20250801")]})
     body, status = api.handle_backtest({"config": USER_CFG, "period": {"from": "20250701"}})
     assert status == 200 and body["your_ai"]["races"] == 1
 
@@ -802,7 +805,7 @@ def test_ranking_rule_is_static_and_served_with_the_catalog():
     from builder import labels as lbl, leaderboard as lb
     cat = api.feature_catalog()
     assert cat["ranking_rule"] == lbl.RANKING_RULE
-    for part in ("◎的中数", "出し抜", "複勝率", "同順位"):
+    for part in ("◎的中率", "出し抜", "複勝率", "同順位"):
         assert part in lbl.RANKING_RULE, part
     # leaderboard も同じ文字列を使う (二重管理しない)
     board = lb.build_leaderboard({"races": []}, PRESET, configs=[])
