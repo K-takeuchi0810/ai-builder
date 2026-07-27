@@ -226,6 +226,56 @@ main{flex:1; padding:14px 14px 84px}
 .cb-base{font-size:var(--fs-min); color:var(--ink-faint); margin-left:6px}
 .cb-none{font-size:var(--fs-min); color:var(--ink-faint)}
 
+/* 回収率の行 — 点推定を単独で見せない (幅とレース数を必ず併記) */
+.roi-row{display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  padding:8px 14px 12px; font-size:var(--fs-min); color:var(--ink-soft)}
+.roi-row b{font-size:.95rem; color:var(--ink)}
+.roi-row.muted{color:var(--ink-faint)}
+.roi-rank{font-weight:700; color:var(--turf-700); background:var(--turf-100);
+  padding:2px 8px; border-radius:999px}
+.roi-ci{color:var(--ink-faint)}
+.roi-tie{color:var(--gold); background:var(--gold-soft); padding:2px 8px;
+  border-radius:999px; font-weight:700}
+
+/* 回収率ランキング (表示期間の集計) */
+.rr{padding:2px 14px}
+.rr-row{display:flex; align-items:center; gap:11px; padding:11px 0;
+  border-bottom:1px solid var(--line-soft)}
+.rr-row:last-child{border-bottom:none}
+.rr-row.baseline{background:var(--turf-100); margin:0 -14px; padding:11px 14px}
+.rr-rank{flex:none; width:2.6em; font-size:.85rem; font-weight:700;
+  color:var(--turf-700); text-align:center}
+.rr-who{flex:1; min-width:0}
+.rr-name{font-size:.88rem; font-weight:700}
+.rr-sub{font-size:var(--fs-min); color:var(--ink-faint); margin-top:2px}
+.rr-v{flex:none; text-align:right}
+.rr-v b{font-size:.95rem}
+
+/* 全員が同順位のときの見出し (「1位」を並べても情報にならないので事実を書く) */
+.rr-tied{background:var(--gold-soft); color:var(--gold); border-radius:var(--r-md);
+  padding:10px 13px; margin-bottom:9px; font-size:var(--fs-min);
+  font-weight:700; line-height:1.7}
+
+/* 買い目 (公式サイトへ手入力するための一覧) */
+.bs{padding:4px 14px}
+.bs-row{display:flex; align-items:flex-start; gap:10px; padding:11px 0;
+  border-bottom:1px solid var(--line-soft)}
+.bs-row:last-child{border-bottom:none}
+.bs-k{flex:none; width:5.2em; font-size:.85rem; font-weight:700}
+.bs-k small{display:block; font-size:var(--fs-min); font-weight:400;
+  color:var(--ink-faint); line-height:1.5; margin-top:2px}
+.bs-v{flex:1; font-size:.85rem; line-height:1.8; word-break:break-all}
+.bs-n{flex:none; font-size:var(--fs-min); color:var(--ink-faint)}
+.bs-actions{display:flex; gap:9px; margin-top:10px; flex-wrap:wrap}
+.bs-copy{flex:1; min-height:var(--tap); padding:11px; font-family:inherit;
+  font-size:.85rem; font-weight:700; color:#fff; background:var(--turf-700);
+  border:none; border-radius:var(--r-md); cursor:pointer}
+.bs-link{flex:1; min-height:var(--tap); display:flex; align-items:center;
+  justify-content:center; padding:11px; font-size:.85rem; font-weight:700;
+  color:var(--turf-700); background:#fff; border:1.5px solid var(--turf-500);
+  border-radius:var(--r-md); text-decoration:none}
+.bs-note{margin-top:9px; line-height:1.8}
+
 /* ---------- レース一覧 ---------- */
 /* 会場チップ: 3,200px の一覧を素通りさせず、タップで会場へ飛べるようにする */
 .venue-chips{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px}

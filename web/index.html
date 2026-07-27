@@ -82,6 +82,8 @@
       <div class="demo-strip hidden" id="demoStrip">
         <button class="demo-btn" id="demoBtn">▶ 馬体重発表をシミュレート(デモ演出)</button>
       </div>
+      <!-- 買い目 (印の並べ替え)。QR は JRA 公式サイトでのみ作成できる -->
+      <div id="betSlip"></div>
       <p class="note disclaimer">印は選んだ項目にもとづく分析です。過去の成績は将来の結果を保証しません。</p>
     </div>
   </section>
@@ -94,6 +96,8 @@
     </div>
     <div id="boardWarn"></div>
     <div id="boardList"></div>
+    <!-- 回収率ランキング。当日36レースでは最小50に届かないので表示期間で集計する -->
+    <div id="roiRanking"></div>
     <!-- 順位規則は board が空のときも必ず読めるようにする -->
     <div class="card rule-card">
       <div class="rule-title">並び順の決め方</div>
@@ -104,6 +108,7 @@
         基準の「1番人気AI」との差として見てください。
       </p>
       <p class="rule-note">市場人気は基準の「1番人気AI」専用です。マイAIは選んだ項目だけで印を決めます。</p>
+      <p class="rule-note" id="boardRoiNote"></p>
     </div>
   </section>
 

@@ -21,22 +21,33 @@
 市場人気はこのベースライン専用。マイAI のスコアには一切混入しない
 (判断A、`configs.normalize_config` が単一の入口で落とす)。
 
-回収率は集計しない (設計書 v0.3 §3: 回収率は表示しない。ROI キーを持たない)。
+## 回収率 (2026-07-27 の判断で追加)
+
+当初は「回収率を表示しない」方針だった (実測で再現するエッジが0件、回収率で
+浮上した3件は◎勝率 2.6〜8.0% の大穴くじだった)。ビルダー同士を回収率で
+比較したいという判断が入り、表示することになった。
+
+ただし **点推定だけでは順位を決めない**。`roi.py` が信頼区間・最小レース数・
+控除率上限・最大配当の占有率を必ず添え、区間が重なる相手は同順位にする。
+1日36レースでは回収率は「誰かの◎に30倍が来たか」でほぼ決まるため。
 """
 
 from __future__ import annotations
 
 from . import configs as cf
 from . import labels as lb
+from . import roi as roimod
 from . import model
 from . import predict_service as svc
 
 
 def _blank() -> dict:
-    return {"races": 0, "win_hits": 0, "show_hits": 0, "upset_hits": 0}
+    # picks: 回収率の計算に使う (◎の馬番, レース) の並び
+    return {"races": 0, "win_hits": 0, "show_hits": 0, "upset_hits": 0, "picks": []}
 
 
-def _tally(acc: dict, pick: str | None, favorite: str | None, order: dict) -> None:
+def _tally(acc: dict, pick: str | None, favorite: str | None, order: dict,
+           race: dict | None = None) -> None:
     """1 レース分を加算する。pick=◎の馬番。"""
     if pick is None:
         return
@@ -44,6 +55,8 @@ def _tally(acc: dict, pick: str | None, favorite: str | None, order: dict) -> No
     if not isinstance(o, int) or o <= 0:
         return                      # 結果未確定 (or 取消) は集計対象外
     acc["races"] += 1
+    if race is not None:
+        acc["picks"].append((pick, race))
     won = o == 1
     if won:
         acc["win_hits"] += 1
@@ -64,6 +77,9 @@ def _entry(name: str, acc: dict, *, config_id: str | None = None,
         "upset_hits": acc["upset_hits"],
         "show_rate": round(acc["show_hits"] / n, 4) if n else None,
         "is_baseline": is_baseline,
+        # 回収率は **点推定だけでは順位を決められない** ので、信頼区間・
+        # 最小レース数・控除率上限・最大配当の占有率を一緒に持たせる (roi.py)。
+        "roi_stats": roimod.summarize(roimod.unit_returns(acc["picks"])),
     }
 
 
@@ -123,7 +139,7 @@ def build_leaderboard(daily: dict, preset: dict, *,
         rows = {h["num"]: h["x"] for h in r["horses"]}
         order = {h["num"]: h.get("order") for h in r["horses"]}
         favorite = next((h["num"] for h in r["horses"] if h.get("pop") == 1), None)
-        _tally(base, favorite, favorite, order)      # ベースライン = 1番人気を◎とする
+        _tally(base, favorite, favorite, order, race=r)   # ベースライン = 1番人気を◎
         # 適用AIの指定があるレースは、その1つだけを集計する
         target = (applied or {}).get(r.get("race_id"))
         for c in configs:
@@ -132,12 +148,14 @@ def build_leaderboard(daily: dict, preset: dict, *,
             ranked = model.score_columns_detailed(
                 rows, columns_by_id[c["id"]], weights_by_id[c["id"]])["ranked"]
             pick = ranked[0][0] if ranked else None
-            _tally(accs[c["id"]], pick, favorite, order)
+            _tally(accs[c["id"]], pick, favorite, order, race=r)
 
     entries = [_entry(c["name"], accs[c["id"]], config_id=c["id"]) for c in configs]
     entries.append(_entry("1番人気AI", base, is_baseline=True))
     entries.sort(key=_sort_key)
     _assign_ranks(entries)
+    # 回収率の順位は別軸で付ける (区間が重なる相手は同順位)
+    roimod.rank(entries)
 
     return {
         "as_of": as_of or daily.get("date"),
@@ -149,6 +167,12 @@ def build_leaderboard(daily: dict, preset: dict, *,
         "ranking_rule": lb.RANKING_RULE,
         # 適用AI指定があると AI ごとに対象レース数が変わる。UI は races を必ず出す
         "scoped_to_applied": bool(applied),
+        "roi_note": ("回収率は当たり外れの偶然に大きく左右されます。"
+                     f"{roimod.MIN_RACES_FOR_ROI}レース未満は数値を出しません。"
+                     f"単勝の控除率は{int(roimod.TAKEOUT * 100)}%なので、"
+                     f"長期の回収率は約{int(roimod.LONG_RUN_CEILING * 100)}%が上限です。"),
+        "roi_min_races": roimod.MIN_RACES_FOR_ROI,
+        "roi_long_run_ceiling": roimod.LONG_RUN_CEILING,
         "entries": entries,
         "marks": svc.MARKS,
     }

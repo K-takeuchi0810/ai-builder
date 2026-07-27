@@ -15,6 +15,7 @@ from . import config as cfgmod
 from . import matrix as mx
 from . import model
 from . import presets as ps
+from . import roi as _roi
 
 MARKS = ["◎", "○", "▲", "△", "×"]
 
@@ -144,7 +145,17 @@ def predict_race(race: dict, user_config: dict, preset: dict) -> dict:
         # UI は終了レースでは印の代わりに結果を出す。
         "finished": any(h.get("order") == 1 for h in race["horses"]),
         "result": _result_top3(race),
+        # 買い目 (印の並べ替え)。金額は扱わず、QR も生成しない。
+        # スマッピー投票の QR データ形式は非公開なので、公式サイトへ手入力する
+        # ための一覧として出す (builder/betslip.py)。
+        "bet_slip": _bet_slip(marks),
     }
+
+
+def _bet_slip(marks: list[dict]) -> list[dict]:
+    """印から買い目を組む。印が無ければ空 (印を出さないレースでは買い目も出さない)。"""
+    from . import betslip
+    return betslip.build(marks) if marks else []
 
 
 def _result_top3(race: dict) -> list[dict]:
@@ -349,6 +360,9 @@ def backtest(matrix: dict, user_config: dict, preset: dict, *,
     # 判断できる材料を出すため。**重みは条件別に分けない** (R3-c の凍結)。
     by_cond: dict[str, dict] = {}
     base_by_cond: dict[str, dict] = {}
+    # 回収率は蓄積しないと意味を持たない。表示期間 (数千レース) で集計する。
+    roi_picks: list = []
+    base_roi_picks: list = []
 
     for race in matrix.get("races", []):
         if not (date_from <= race["date"] <= date_to):
@@ -363,6 +377,8 @@ def backtest(matrix: dict, user_config: dict, preset: dict, *,
         ranked = model.score_columns_detailed(rows, columns, weights)["ranked"]
         picks = [num for num, _ in ranked]
         _tally(acc, picks, order)
+        if picks:
+            roi_picks.append((picks[0], race))
 
         surface, band = condition_key(race.get("seg"))
         keys = [k for k in (surface, band,
@@ -375,6 +391,7 @@ def backtest(matrix: dict, user_config: dict, preset: dict, *,
                                key=lambda h: (h.get("pop") is None, h.get("pop") or 99))
             fav_picks = [h["num"] for h in fav_order]
             _tally(base, fav_picks, order)
+            base_roi_picks.append((fav_picks[0], race))
 
         for k in keys:
             _tally(by_cond.setdefault(k, _blank()), picks, order)
@@ -395,7 +412,11 @@ def backtest(matrix: dict, user_config: dict, preset: dict, *,
             "warnings": warnings,
             "your_ai": _summarize(acc), "baseline_favorite": _summarize(base),
             "min_races_for_rate": MIN_RACES_FOR_RATE,
-            "by_condition": _condition_report(by_cond, base_by_cond)}
+            "by_condition": _condition_report(by_cond, base_by_cond),
+            # 回収率。点推定だけでは判断できないので roi.py が不確かさを添える
+            "roi_stats": _roi.summarize(_roi.unit_returns(roi_picks)),
+            "baseline_roi_stats": _roi.summarize(_roi.unit_returns(base_roi_picks)),
+            "roi_note": _roi_note()}
 
 
 def _tally(acc: dict, picks: list[str], order: dict) -> None:
@@ -472,3 +493,11 @@ def _condition_report(by_cond: dict, base_by_cond: dict) -> list[dict]:
             "baseline_favorite": _summarize(base_by_cond.get(key, _blank())),
         })
     return out
+
+
+def _roi_note() -> str:
+    """回収率の数値に必ず添える注記 (labels ではなく roi.py の定数から作る)。"""
+    return ("回収率は当たり外れの偶然に大きく左右されます。"
+            f"{_roi.MIN_RACES_FOR_ROI}レース未満は数値を出しません。"
+            f"単勝の控除率は{int(_roi.TAKEOUT * 100)}%なので、"
+            f"長期の回収率は約{int(_roi.LONG_RUN_CEILING * 100)}%が上限です。")

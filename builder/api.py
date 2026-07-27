@@ -308,6 +308,50 @@ def handle_leaderboard(applied: dict | None = None) -> tuple[dict, int]:
     return lb.build_leaderboard(daily, _STATE["preset"], applied=applied), 200
 
 
+def handle_roi_ranking() -> tuple[dict, int]:
+    """保存済みマイAI全部を **表示期間の回収率** で並べる。
+
+    当日の36レースでは回収率の最小レース数 (50) に届かないので、
+    ランキングは表示期間 (数千レース) で集計する。回収率は蓄積して初めて
+    意味を持つ数値なので、1日単位で競わせない。
+    """
+    from . import roi as roimod
+    src = _STATE.get("backtest_matrix")
+    if not src or not src.get("races"):
+        return {"error": "no_backtest_data",
+                "hint": "起動時に --backtest-from を指定してください"}, 409
+    entries = []
+    for c in cf.list_configs():
+        got = cf.get_config(c["id"])
+        if not got:
+            continue
+        bt = svc.backtest(src, got["config"], _STATE["preset"])
+        entries.append({
+            "config_id": c["id"], "name": c["name"], "n_items": c["n_items"],
+            "races": bt["your_ai"]["races"],
+            "hit_rate_win": bt["your_ai"]["hit_rate_win"],
+            "roi_stats": bt["roi_stats"], "is_baseline": False,
+        })
+    if entries:
+        base = svc.backtest(src, {"step1": [], "step2": []}, _STATE["preset"])
+        entries.append({
+            "config_id": None, "name": "1番人気AI", "n_items": None,
+            "races": base["baseline_favorite"]["races"],
+            "hit_rate_win": base["baseline_favorite"]["hit_rate_win"],
+            "roi_stats": base["baseline_roi_stats"], "is_baseline": True,
+        })
+    roimod.rank(entries)
+    entries.sort(key=lambda e: (e["roi_rank"] is None, e["roi_rank"] or 0,
+                                not e["is_baseline"]))
+    return {
+        "period": svc.backtest(src, {"step1": [], "step2": []},
+                               _STATE["preset"])["period"],
+        "entries": entries,
+        "roi_note": svc._roi_note(),
+        "roi_min_races": roimod.MIN_RACES_FOR_ROI,
+    }, 200
+
+
 def handle_backtest(payload: dict) -> tuple[dict, int]:
     user_cfg = payload.get("config") or {}
     period = payload.get("period") or {}
@@ -352,6 +396,9 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/features":
             return _json(self, feature_catalog())
+
+        if path == "/api/roi_ranking":
+            return _json(self, *handle_roi_ranking())
 
         if path == "/api/version":
             return _json(self, version_info())

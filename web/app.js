@@ -619,6 +619,7 @@ async function loadPredict() {
       <div class="h">レースを開き直すか、リロードしてください。</div></div>`;
     $('#markList').innerHTML = '';
     $('#markLegend').innerHTML = '';
+    $('#betSlip').innerHTML = '';
   }
 }
 
@@ -660,6 +661,7 @@ function renderPredict(p, prev) {
   // 発走済みのレースでは印を出さず結果を出す (印は発走前のもの)
   if (p.finished) {
     $('#markLegend').innerHTML = '';
+    $('#betSlip').innerHTML = '';
     const rows = (p.result || []).map((r) =>
       `<div class="res-row"><span class="o">${esc(r.order)}着</span>
         <span class="n">${esc(r.horse_num)} ${esc(r.horse_name || '')}</span></div>`).join('');
@@ -678,7 +680,11 @@ function renderPredict(p, prev) {
   const HARMLESS = ['low_sample_columns', 'excluded_columns_dropped',
                     'columns_skipped_in_race'];
   const blocked = warns.some((w) => !HARMLESS.includes(w.code));
-  if (blocked) { $('#markLegend').innerHTML = ''; $('#markList').innerHTML = ''; return; }
+  if (blocked) {
+    $('#markLegend').innerHTML = ''; $('#markList').innerHTML = '';
+    $('#betSlip').innerHTML = '';
+    return;
+  }
 
   // 印の凡例 (初見で意味が分かるように印リスト直上に1行)
   const legend = (state.features && state.features.mark_legend || [])
@@ -727,6 +733,9 @@ function renderPredict(p, prev) {
       ${whyBlock(m)}
     </div>`;
   }).join('');
+
+  $('#betSlip').innerHTML = betSlipBlock(p);
+  bindBetSlip(p);
 
   $$('#markList .row').forEach((row) => {
     const toggle = () => {
@@ -925,6 +934,8 @@ async function loadLeaderboard() {
     bindGo();
     return;
   }
+  $('#boardRoiNote').textContent = d.roi_note || '';
+  loadRoiRanking();
   $('#boardList').innerHTML = `<div class="card board">${entries.map((e) => {
     const top = e.rank === 1;
     const stat = e.is_baseline
@@ -936,7 +947,8 @@ async function loadLeaderboard() {
       <div class="who"><div class="aname">${esc(e.name)}${e.is_baseline ? '(基準)' : ''}</div>
         <div class="astat">${stat}</div></div>
       <div class="hits"><div class="n num">${e.win_hits}</div><div class="l">◎的中</div></div>
-    </div>`;
+    </div>
+    ${roiRow(e)}`;
   }).join('')}</div>`;
 }
 function boardEmpty(kind) {
@@ -1179,4 +1191,115 @@ function condBreakdown(bt) {
  * features に載っているので UI で数値を持たない。 */
 function svcMinPastRuns() {
   return (state.features && state.features.min_past_runs) || 3;
+}
+
+/* ---------------------------------------- 回収率 (信頼区間つき) */
+/* **点推定だけを見せない。** 1日36レースでは回収率は「◎に30倍が来たか」で
+ * ほぼ決まるので、レース数・信頼区間・控除率上限を必ず併記し、
+ * 差が誤差の範囲なら順位を確定させない。数値はすべてサーバ集計 (roi.py)。 */
+function roiRow(e) {
+  const s = e.roi_stats;
+  if (!s) return '';
+  if (!s.enough) {
+    return `<div class="roi-row muted">回収率: 判定できません`
+      + `(${s.races}/${s.min_races}レース)</div>`;
+  }
+  const ci = s.ci ? `幅 ${pct(s.ci[0])}〜${pct(s.ci[1])}` : '';
+  const rank = e.roi_rank ? `<span class="roi-rank">回収率 ${e.roi_rank}位</span>` : '';
+  const tied = (e.roi_rank && e.roi_rank !== 1 && e.roi_tied_with_leader)
+    ? '<span class="roi-tie">首位との差は誤差の範囲</span>' : '';
+  // 最大配当1本が半分以上を占めるなら、それは AI の性能の話ではない
+  const dom = (s.top_share != null && s.top_share >= 0.5)
+    ? `<span class="roi-tie">${pct(s.top_share)}が最大配当1本によるもの</span>` : '';
+  return `<div class="roi-row">${rank}
+    <b class="num">${pct(s.roi)}</b> <span class="roi-ci">${esc(ci)}</span>
+    ${tied}${dom}</div>`;
+}
+
+/* ---------------------------------------- 買い目 (公式サイトへ手入力) */
+/* QR は生成しない。**スマッピー投票の QR データ形式は非公開**で、JRA 公式の
+ * 生成サイトだけが正規の経路。形式を推測すると、読めないか間違った馬券を
+ * 実際のお金で登録する危険がある。ここは券種と馬番の一覧まで。金額は扱わない。 */
+function betSlipBlock(p) {
+  const slip = p.bet_slip || [];
+  if (!slip.length) return '';
+  const rows = slip.map((t) => `<div class="bs-row">
+      <div class="bs-k">${esc(t.label)}<small>${esc(t.desc)}</small></div>
+      <div class="bs-v num">${t.combos.map((c) =>
+        esc(c.map((x) => Number(x)).join('-'))).join(' / ')}</div>
+      <div class="bs-n">${t.n}点</div>
+    </div>`).join('');
+  return `<div class="section-label">買い目(印の並べ替え)</div>
+    <div class="card bs">${rows}</div>
+    <div class="bs-actions">
+      <button class="bs-copy" id="bsCopy">買い目をコピー</button>
+      <a class="bs-link" href="https://qrcode.jra.go.jp/" target="_blank"
+         rel="noopener noreferrer">JRA公式QR作成サイトを開く</a>
+    </div>
+    <p class="note bs-note">これは印を券種ごとに並べ替えたものです。
+      金額は扱いません。QRコードはJRA公式サイトでのみ作成できます
+      (形式が公開されていないため、このツールでは作りません)。
+      ◎の的中率は実測で約20%(1番人気は約33%)、回収率は長期では控除率に収束します。</p>`;
+}
+function bindBetSlip(p) {
+  const btn = $('#bsCopy');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    const text = (p.bet_slip || []).flatMap((t) =>
+      t.combos.map((c) => `${t.label} ${c.map((x) => Number(x)).join('-')}`)).join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      toast('買い目をコピーしました。JRA公式サイトに貼り付けてください。');
+    } catch (e) {
+      toast('コピーできませんでした。画面の一覧をご利用ください。');
+    }
+  });
+}
+
+/* ---------------------------------------- 回収率ランキング (表示期間) */
+/* 当日36レースでは最小レース数 (50) に届かないので、**表示期間の数千レース**で
+ * 集計したものを並べる。回収率は蓄積して初めて意味を持つ数値なので、
+ * 1日単位で競わせない。数値・順位・区間はすべてサーバ集計 (roi.py)。 */
+async function loadRoiRanking() {
+  const box = $('#roiRanking');
+  if (!box) return;
+  let d;
+  try { d = await getJSON('/api/roi_ranking'); } catch (err) {
+    box.innerHTML = err.status === 409
+      ? `<div class="section-label">回収率ランキング</div>
+         <div class="card"><p class="roi-row muted">
+         バックテスト用のデータが読み込まれていません
+         (起動時に期間を指定すると出ます)。</p></div>`
+      : '';
+    return;
+  }
+  // 全員が同順位 (区間が全部重なる) なら「1位」を並べても情報にならないので、
+  // 順位の代わりに「同順位」と出して、その事実を見出しで述べる。
+  const scored = (d.entries || []).filter((e) => !e.is_baseline && e.roi_rank);
+  const allTied = scored.length > 1 && scored.every((e) => e.roi_rank === 1);
+  const rows = (d.entries || []).map((e) => {
+    const s = e.roi_stats || {};
+    const rank = e.is_baseline ? '基準'
+      : (!e.roi_rank ? '—' : (allTied ? '同' : `${e.roi_rank}位`));
+    const right = s.enough
+      ? `<b class="num">${pct(s.roi)}</b>
+         <span class="roi-ci">幅 ${pct(s.ci[0])}〜${pct(s.ci[1])}</span>`
+      : `<span class="roi-ci">判定できません(${s.races}/${s.min_races})</span>`;
+    const tie = (!e.is_baseline && e.roi_rank && e.roi_rank !== 1
+                 && e.roi_tied_with_leader)
+      ? '<span class="roi-tie">首位との差は誤差の範囲</span>' : '';
+    return `<div class="rr-row${e.is_baseline ? ' baseline' : ''}">
+      <div class="rr-rank">${esc(rank)}</div>
+      <div class="rr-who"><div class="rr-name">${esc(e.name)}</div>
+        <div class="rr-sub">${e.races}レース · ◎的中 ${pct(e.hit_rate_win)}${tie}</div></div>
+      <div class="rr-v">${right}</div>
+    </div>`;
+  }).join('');
+  box.innerHTML = `<div class="section-label">回収率ランキング</div>
+    ${allTied ? `<div class="rr-tied">どのマイAIも回収率の差は誤差の範囲です`
+      + `(信頼区間が重なっています)。順位は付けられません。</div>` : ''}
+    <div class="card rr">${rows || '<p class="roi-row muted">マイAIがありません</p>'}</div>
+    <p class="note" style="margin-top:6px">
+      ${esc(ymd((d.period || [])[0] || ''))}以降の全レースに同じ設定を当てはめた集計です。
+      ${esc(d.roi_note || '')}</p>`;
 }

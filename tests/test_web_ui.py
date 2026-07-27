@@ -51,17 +51,38 @@ def test_web_files_exist_and_are_the_only_assets():
     assert not (WEB / "package.json").exists()
 
 
+# JRA 公式の QR 作成サイトだけは遷移先として許可する
+# (買い目は公式サイトで手入力する方針。QR データ形式は非公開なので
+#  このツールでは生成しない)。ページ自体はオフラインでも動く。
+ALLOWED_LINK_HOSTS = ("qrcode.jra.go.jp",)
+
+
 def test_no_external_resources():
-    """外部ホストへの参照ゼロ (Webフォント・CDN・アナリティクス)。
+    """外部ホストから読み込むものがゼロであること。
 
     デモ会場のネットワークに依存させないため、および §0 の「Webフォントを追加しない」。
+    **`<a href>` のリンク先は読み込みではない**ので対象外 (オフラインでも画面は動く)。
     """
     for name, text in ALL.items():
         assert "//fonts.googleapis" not in text, name
         assert "@import" not in text, name          # 外部CSS読み込み
         assert "@font-face" not in text, name       # Webフォント
-        # http(s) の外部参照 (コメント中の説明も含めて禁止して単純化する)
-        assert not re.search(r"https?://(?!127\.0\.0\.1|localhost)", text), name
+        # 読み込み位置の外部参照を禁止: src= / link href= / url() / fetch()
+        for pat in (r"src\s*=\s*[\"']https?://", r"<link[^>]+href\s*=\s*[\"']https?://",
+                    r"url\(\s*[\"']?https?://", r"fetch\(\s*[\"'`]https?://"):
+            got = re.search(pat, text)
+            assert not got, f"{name} に外部読み込み: {got.group(0)}"
+
+
+def test_only_the_official_jra_site_is_linked():
+    """外部リンクは JRA 公式の QR 作成サイトだけ、かつ安全な属性を付けること。"""
+    hosts = set(re.findall(r"https?://([^/\"'`\s)]+)", CODE["app.js"] + CODE["index.html"]))
+    hosts -= {"127.0.0.1", "localhost"}
+    assert hosts <= set(ALLOWED_LINK_HOSTS), f"許可外の外部ホスト: {hosts}"
+    if hosts:
+        # 新しいタブで開き、参照元を渡さない
+        assert 'target="_blank"' in CODE["app.js"]
+        assert 'rel="noopener noreferrer"' in CODE["app.js"]
 
 
 def test_no_framework_or_build_tooling():
@@ -140,18 +161,60 @@ def test_localstorage_is_not_the_source_of_truth():
     assert "/api/configs/" in JS
 
 
-def test_no_roi_or_recovery_rate_in_ui():
-    """§10 全体DON'T: 回収率・ROI をUIのどこにも出さない。
+def test_roi_is_never_shown_as_a_bare_point_estimate():
+    """回収率の表示は **不確かさを必ず伴う** こと (2026-07-27 の判断で表示に変更)。
 
-    検査はコメントを除いた実コード (規則を説明するコメントは正当)。
+    全面禁止をやめた代わりに、より強い構造要件をここで固定する。
+    1日36レースでは回収率は「◎に30倍が来たか」でほぼ決まるので、点推定を
+    単独で見せると運の差が実力の差に見える。
+
+    実測の根拠: 182,594候補で再現するエッジは0件、回収率で浮上した3件は
+    ◎勝率 2.6〜8.0% (1番人気は33〜35%) の大穴くじだった。
+    """
+    js = CODE["app.js"]
+    # 数値を出す前に enough を確認している (レース数のゲート)
+    assert "s.enough" in js, "最小レース数のゲートを通していない"
+    assert "s.min_races" in js, "不足時にレース数を出していない"
+    # 信頼区間を併記している
+    assert "s.ci" in js, "信頼区間を出していない"
+    # 首位との差が誤差の範囲なら明示する
+    assert "roi_tied_with_leader" in js and "誤差の範囲" in js
+    # 最大配当1本が支配している場合を開示する
+    assert "top_share" in js
+    # 控除率の上限を注記としてサーバから受け取り表示する
+    assert "roi_note" in js
+    # 数値はサーバ集計のみ (UI で回収率を計算しない)
+    for banned in ("/ 100", "reduce((s", "payout"):
+        assert banned not in js.split("function roiRow")[1].split("function betSlipBlock")[0], banned
+
+
+def test_roi_module_attaches_uncertainty_by_construction():
+    """roi.py が点推定だけを返せない形になっていること。"""
+    import numpy as np
+    from builder import roi
+    # 不足時は数値を出さない判定
+    few = roi.summarize(np.array([0.0] * 10 + [5.0]))
+    assert few["enough"] is False and few["ci"] is None
+    # 足りていれば信頼区間が付く
+    enough = roi.summarize(np.array([0.0] * 59 + [30.0]))
+    assert enough["enough"] is True and enough["ci"] is not None
+    # 最大配当1本の占有率が出る (1本で説明できるかを示す)
+    assert enough["top_share"] == 1.0
+    # 控除率の上限が必ず入る
+    assert enough["long_run_ceiling"] == 0.8
+    assert roi.MIN_RACES_FOR_ROI >= 50
+
+
+def test_no_profit_promising_vocabulary():
+    """回収率を出すようになっても「儲かる」方向の語彙は入れない。
+
+    設計書 v0.3 §1 DON'T は維持する (表示の解禁は数値の話であって、
+    煽り文言の解禁ではない)。
     """
     for name, text in CODE.items():
-        assert "ROI" not in text, name
-        assert "回収率" not in text, name
-        assert "払戻" not in text and "払い戻し" not in text, name
-    # API の値も参照しない (そもそも predict/backtest は ROI キーを持たない)
-    assert "roi" not in CODE["app.js"]
-    assert "payout" not in CODE["app.js"] and "tan" not in CODE["app.js"].split("const")[0]
+        for banned in ("儲か", "稼げ", "必勝", "勝てます", "確実", "おすすめの馬券",
+                       "推奨買い目"):
+            assert banned not in text, f"{name} に {banned!r}"
 
 
 def test_no_contest_or_hype_vocabulary():
