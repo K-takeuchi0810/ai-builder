@@ -1544,8 +1544,14 @@ function betEditor(p, types) {
   </div>`;
 }
 
+/* 馬番順に並べる。`p.marks` は **評価順** (◎○▲△×…) なので、そのまま出すと
+ * 「3 2 13 1 5 12 11 …」という並びになり、探すのに目で追う必要があった。
+ * 公式サイトの入力も出馬表も馬番順なので、そこに合わせる
+ * (順序なし券種の組を馬番順にしたのと同じ理由)。印はチップの中に残す。 */
 function horseChips(p) {
-  return (p.marks || []).map((m) => {
+  const rows = (p.marks || []).slice()
+    .sort((a, b) => Number(a.horse_num) - Number(b.horse_num));
+  return rows.map((m) => {
     const on = bet.horses.has(m.horse_num);
     const mk = m.mark ? `<span class="bc-m">${esc(m.mark)}</span>` : '';
     return `<button class="bchip${on ? ' on' : ''}" data-num="${esc(m.horse_num)}"

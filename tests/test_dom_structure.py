@@ -167,15 +167,22 @@ def _render_build(features: dict, tmp_path=None) -> dict:
     return json.loads(res.stdout)
 
 
-def _predict_fixture(n=12, finished=False) -> dict:
-    """実 API と同じ形の予想レスポンス (predict_service が返す形)。"""
+def _predict_fixture(n=12, finished=False, scramble=False) -> dict:
+    """実 API と同じ形の予想レスポンス (predict_service が返す形)。
+
+    `scramble=True` で **評価順と馬番順が食い違う**ようにする。既定の値割り当ては
+    特徴量の向き (斤量・着順はどちらも小さいほど良い) の都合で評価順が馬番順と
+    一致してしまい、「馬番順に並べているか」を検査できなかった。
+    """
     horses = []
     for k in range(1, n + 1):
+        # 馬番と評価の対応を崩す (7 は n と互いに素になりやすい選び方)
+        v = float((k * 7) % n + 1) if scramble else float(k)
         horses.append({
             "num": f"{k:02d}", "name": f"馬{k}", "waku": min(8, k),
             "order": (k if finished else 0), "odds": 2.0 + k, "pop": k,
             "n_past_runs": 6,
-            "x": {"burden_weight": float(k), "agg_avg_finish|lb=3|m=": float(k)},
+            "x": {"burden_weight": v, "agg_avg_finish|lb=3|m=": v},
         })
     race = {"race_id": "R1", "date": "20260726", "race_name": "テストレース",
             "race_num": "07", "start_time": "15:45", "seg": {}, "trusted": True,
@@ -531,12 +538,20 @@ def test_every_runner_can_be_picked_not_only_the_marked_ones(tmp_path):
     印は「選んだ項目での相対順位」でしかなく推奨ではない。5頭に制限すると
     印を権威として扱うことになる。既定では印の馬だけが ON。
     """
-    p = _predict_fixture(n=12)
+    p = _predict_fixture(n=12, scramble=True)
+    # このテストが空振りしないための前提: marks は馬番順になっていないこと。
+    # (値の割り当てを変えて評価順=馬番順になると、並べ替えの有無を検査できない)
+    ranked = [int(m["horse_num"]) for m in p["marks"]]
+    assert ranked != sorted(ranked), "fixture の評価順が馬番順と一致している"
     out = _render_build_free(p, tmp_path)
     t = Tree()
     t.feed(out["betSlip"])
     chips = [c for c in t.find("bchip") if c["attrs"].get("data-num")]
     assert len(chips) == len(p["marks"]), (len(chips), len(p["marks"]))
+    # **馬番順**に並べる。`marks` は評価順なので、そのまま出すと「3 2 13 1 5 …」に
+    # なって目で追う必要がある。公式サイトの入力も出馬表も馬番順
+    got = [int(c["attrs"]["data-num"]) for c in chips]
+    assert got == sorted(got), got
     on = [c for c in chips if "on" in c["cls"]]
     marked = [m for m in p["marks"] if m.get("mark")]
     assert len(on) == len(marked), (len(on), len(marked))
@@ -584,6 +599,8 @@ def test_axis_is_chosen_from_the_selected_horses(tmp_path):
     axis = [c for c in t.find("bchip") if c["attrs"].get("data-axis")]
     marked = {m["horse_num"] for m in p["marks"] if m.get("mark")}
     assert {c["attrs"]["data-axis"] for c in axis} == marked
+    nums = [int(c["attrs"]["data-axis"]) for c in axis]
+    assert nums == sorted(nums), nums          # こちらも馬番順
     on = [c for c in axis if "on" in c["cls"]]
     assert len(on) == 1, "既定の軸は◎の1頭"
 
