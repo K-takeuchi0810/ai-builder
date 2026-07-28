@@ -157,6 +157,7 @@ process.stdout.write(JSON.stringify({
   raceHead: el('#raceHead').innerHTML,
   predWarn: el('#predWarn').innerHTML,
   betSlip: el('#betSlip').innerHTML,
-  // 買い目の結果は #bsResult に描かれる (エディタとは別のノード)
+  // 買い目は組み立て中の1件 (#bsDraft) と追加済み (#bsResult) が別ノード
+  betDraft: el('#bsDraft').innerHTML,
   betResult: el('#bsResult').innerHTML,
 }));

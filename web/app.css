@@ -207,47 +207,81 @@ main{flex:1; padding:14px 14px 84px}
   border:none; border-radius:999px; cursor:pointer}
 .ai-pick b{color:#fff}
 /* 買い目エディタ (参加者が自分で組む)。
- * どの買い方が有利かは示さない — 点数だけを出す。 */
-.bed{padding:4px 14px 12px}
+ * 流れは公式サイトと同じ「券種 → 買い方 → 馬(枠)」。
+ * どの券種・買い方が有利かは示さない — 点数だけを出す。 */
+.bed{padding:4px 14px 14px}
 .bed-sec{padding:11px 0; border-bottom:1px solid var(--line-soft)}
-.bed-sec:last-child{border-bottom:none}
 .bed-h{display:flex; align-items:center; gap:4px; font-size:var(--fs-min);
   font-weight:700; letter-spacing:.08em; color:var(--ink-soft); margin-bottom:8px}
-.bed-n{font-size:var(--fs-min); font-weight:700; color:var(--turf-700)}
-.bed-reset{margin-left:auto; min-height:var(--tap); padding:4px 10px; font-family:inherit;
-  font-size:var(--fs-min); color:var(--turf-700); background:none;
-  border:1px solid var(--turf-500); border-radius:999px; cursor:pointer; white-space:nowrap}
-.bed-note{margin:7px 0 0; font-size:var(--fs-min); color:var(--ink-soft); line-height:1.7}
-.bed-empty{font-size:var(--fs-min); color:var(--ink-soft)}
+.bed-n{margin-left:auto; font-size:var(--fs-min); font-weight:700; color:var(--turf-700)}
+.bed-note{margin:8px 0 0; font-size:var(--fs-min); color:var(--ink-soft); line-height:1.75}
 .bed-chips{display:flex; flex-wrap:wrap; gap:6px}
-/* 馬番チップ。タップ標的は 44px を維持する */
+/* 券種は8つ並ぶので折り返す。押した券種が選択中 */
+.btype-row,.bmode-row{display:flex; flex-wrap:wrap; gap:6px}
+.btype{min-height:var(--tap); padding:0 13px; font-family:inherit; font-size:.86rem;
+  font-weight:700; cursor:pointer; border:1.5px solid var(--line);
+  border-radius:var(--r-md); background:#fff; color:var(--ink-soft); white-space:nowrap}
+.btype.on{background:var(--turf-700); border-color:var(--turf-700); color:#fff}
+.bmode{min-height:var(--tap); padding:0 12px; font-family:inherit;
+  font-size:var(--fs-min); cursor:pointer; border:1.5px solid var(--line);
+  border-radius:999px; background:#fff; color:var(--ink-soft); white-space:nowrap}
+.bmode.on{background:var(--turf-100); border-color:var(--turf-700);
+  color:var(--turf-700); font-weight:700}
+/* 馬番・枠番チップ。タップ標的は 44px を維持する */
 .bchip{display:inline-flex; align-items:center; gap:3px; min-width:var(--tap);
   min-height:var(--tap); padding:0 10px; font-family:inherit; cursor:pointer;
   border:1.5px solid var(--line); border-radius:var(--r-md); background:#fff;
   color:var(--ink-soft); white-space:nowrap}
 .bchip .num{font-size:.95rem; font-weight:700}
 .bchip.on{background:var(--turf-700); border-color:var(--turf-700); color:#fff}
-.bchip.axis.on{background:var(--turf-100); border-color:var(--turf-700); color:var(--turf-700)}
 .bc-m{font-size:var(--fs-min); font-weight:700; opacity:.85}
-/* 券種の行: ON/OFF + 組み方 + 説明 */
-.bed-types{display:flex; flex-direction:column}
-.bt-row{display:flex; align-items:center; gap:8px; padding:6px 0}
-.bt-on{flex:none; width:5em; min-height:var(--tap); font-family:inherit; font-size:.86rem;
-  font-weight:700; cursor:pointer; border:1.5px solid var(--line); border-radius:var(--r-md);
-  background:#fff; color:var(--ink-soft)}
-.bt-row.on .bt-on{background:var(--turf-700); border-color:var(--turf-700); color:#fff}
-.bt-mode{flex:1; min-width:0; min-height:var(--tap); font-family:inherit;
-  font-size:var(--fs-min); padding:0 8px; border:1.5px solid var(--line);
-  border-radius:var(--r-md); background:#fff; color:var(--ink)}
-.bt-mode:disabled{opacity:.45}
-.pinfo-sp{flex:none; min-width:var(--tap)}
-/* 合計点数と、組めなかった券種の理由 (黙って消さない) */
-.bs-total{padding:11px 0 4px; text-align:right; font-size:var(--fs-min);
-  color:var(--ink-soft); border-top:1px solid var(--line-soft)}
+.bed-add{width:100%; margin-top:14px; min-height:var(--tap); font-family:inherit;
+  font-size:.92rem; font-weight:700; cursor:pointer; border:none;
+  border-radius:var(--r-md); background:var(--turf-700); color:#fff}
+.bed-add:disabled{background:var(--line); color:var(--ink-faint); cursor:default}
+
+/* 追加済みの買い目1件。**何を選んだのか**を先に見せ、点の内訳は折りたたむ。
+ * 点の一覧だけだと、フォーメーションで「1着に誰を入れたか」が追えない。 */
+.bs-row{padding:12px 14px; border-bottom:1px solid var(--line-soft)}
+.bs-row:last-child{border-bottom:none}
+.bs-head{display:flex; align-items:center; gap:8px}
+.bs-k{font-size:.92rem; font-weight:700}
+.bs-mode{font-size:var(--fs-min); color:var(--turf-700); background:var(--turf-100);
+  border-radius:999px; padding:2px 9px; white-space:nowrap}
+.bs-n{margin-left:auto; font-size:var(--fs-min); font-weight:700; color:var(--ink-soft);
+  white-space:nowrap}
+.bs-del{flex:none; min-width:var(--tap); min-height:var(--tap); font-family:inherit;
+  font-size:var(--fs-min); cursor:pointer; background:none; border:none;
+  color:var(--ink-soft)}
+/* 段ごとの選択。見出しと番号を2列で並べる */
+.bs-picks{display:grid; grid-template-columns:auto 1fr; gap:3px 10px; margin:9px 0 0}
+.bs-picks dt{font-size:var(--fs-min); color:var(--ink-soft); white-space:nowrap}
+.bs-picks dd{margin:0; font-size:.92rem; font-weight:700; word-break:break-all}
+/* 点の内訳は既定で閉じる (手入力のときだけ開く) */
+.bs-pts{margin-top:8px}
+.bs-pts summary{font-size:var(--fs-min); color:var(--turf-700); cursor:pointer;
+  min-height:var(--tap); display:flex; align-items:center; list-style:none}
+.bs-pts summary::-webkit-details-marker{display:none}
+.bs-pts summary::before{content:'\25b8'; margin-right:5px}
+.bs-pts[open] summary::before{content:'\25be'}
+.bs-v{font-size:var(--fs-min); color:var(--ink-soft); line-height:1.8;
+  word-break:break-all}
+/* 合計と、まとめてのやり直し */
+.bs-total{display:flex; align-items:center; gap:8px; padding:11px 14px;
+  font-size:var(--fs-min); color:var(--ink-soft); border-top:1px solid var(--line-soft)}
 .bs-total b{font-size:1rem; color:var(--ink)}
-.bs-skip{margin:0 0 8px; padding:10px 12px; border-radius:var(--r-md);
-  background:var(--gold-soft); color:var(--gold-text); font-size:var(--fs-min);
-  line-height:1.7}
+.bs-clear,.bs-reset{min-height:var(--tap); padding:4px 11px; font-family:inherit;
+  font-size:var(--fs-min); cursor:pointer; background:none; border-radius:999px;
+  white-space:nowrap}
+.bs-clear{margin-left:auto; color:var(--ink-soft); border:1px solid var(--line)}
+.bs-reset{color:var(--turf-700); border:1px solid var(--turf-500)}
+.bs-empty-note{margin-top:10px}
+/* 組めなかった指定は黙って消さない */
+.bs-skip{display:flex; align-items:center; gap:8px; margin:0 0 8px; padding:10px 12px;
+  border-radius:var(--r-md); background:var(--gold-soft); color:var(--gold-text);
+  font-size:var(--fs-min); line-height:1.7}
+.bs-skip .bs-del{color:var(--gold-text); border:1px solid var(--gold);
+  border-radius:999px; padding:0 10px}
 
 /* 公式サイトへの引き渡し (STEP順の並べ替えと読み合わせ)。
  * 自動入力が入っても残す — 誤登録の最後の防波堤。 */
@@ -267,11 +301,15 @@ main{flex:1; padding:14px 14px 84px}
 .hb-check b{color:var(--gold-text)}
 .hb-list{margin:0 0 10px; padding:0; list-style:none;
   border-top:1px solid var(--line-soft)}
-.hb-item{display:flex; align-items:baseline; gap:9px; padding:9px 0;
-  border-bottom:1px solid var(--line-soft); font-size:var(--fs-min)}
-.hb-t{flex:none; width:4.2em; font-weight:700}
-.hb-c{flex:1; min-width:0; word-break:break-all}
-.hb-n{flex:none; color:var(--ink-soft)}
+.hb-item{padding:10px 0; border-bottom:1px solid var(--line-soft);
+  font-size:var(--fs-min)}
+.hb-item:last-child{border-bottom:none}
+.hb-top{display:flex; align-items:center; gap:8px}
+.hb-t{font-weight:700; font-size:.9rem}
+.hb-mode{font-size:var(--fs-min); color:var(--turf-700); background:var(--turf-100);
+  border-radius:999px; padding:2px 9px; white-space:nowrap}
+.hb-c{margin-top:7px; word-break:break-all; line-height:1.8}
+.hb-n{margin-left:auto; font-weight:700; color:var(--ink-soft); white-space:nowrap}
 
 /* E-1: 手動更新 (発走直前はオッズが動くので待たずに取り直せるように) */
 .refresh{min-height:var(--tap); padding:6px 12px; font-family:inherit;
@@ -371,14 +409,6 @@ main{flex:1; padding:14px 14px 84px}
 
 /* 買い目 (公式サイトへ手入力するための一覧) */
 .bs{padding:4px 14px}
-.bs-row{display:flex; align-items:flex-start; gap:10px; padding:11px 0;
-  border-bottom:1px solid var(--line-soft)}
-.bs-row:last-child{border-bottom:none}
-.bs-k{flex:none; width:5.2em; font-size:.85rem; font-weight:700}
-.bs-k small{display:block; font-size:var(--fs-min); font-weight:400;
-  color:var(--ink-soft); line-height:1.5; margin-top:2px}
-.bs-v{flex:1; font-size:.85rem; line-height:1.8; word-break:break-all}
-.bs-n{flex:none; font-size:var(--fs-min); color:var(--ink-faint)}
 .bs-actions{display:flex; gap:9px; margin-top:10px; flex-wrap:wrap}
 .bs-copy{flex:1; min-height:var(--tap); padding:11px; font-family:inherit;
   font-size:.85rem; font-weight:700; color:#fff; background:var(--turf-700);
@@ -492,7 +522,6 @@ main{flex:1; padding:14px 14px 84px}
 
 /* 成績カード (バックテスト結果) */
 .bt-result{margin-top:14px}
-.bt-grid{display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--line-soft)}
 .bt-cell{background:var(--card); padding:12px 14px}
 .bt-cell .k{font-size:var(--fs-min); color:var(--ink-faint)}
 .bt-cell .v{font-weight:800; font-size:1.2rem; margin-top:3px}

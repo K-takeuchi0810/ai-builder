@@ -175,6 +175,25 @@ def _json(handler: BaseHTTPRequestHandler, obj, status: int = 200) -> None:
     handler.wfile.write(body)
 
 
+def _bet_type_spec(t: dict) -> dict:
+    """券種1つ分の仕様。買い方ごとに **入力欄の並び** まで返す。
+
+    UI が段数や見出しを自前で決めると、フォーメーションの段数のような
+    構造の変更が2箇所に散る。ここが唯一の出どころ。
+    """
+    from . import labels as lbl
+    modes = []
+    for m in lbl.bet_modes(t["modes"]):
+        groups = [{"key": name,
+                   "label": bs.group_label(t, m["key"], name),
+                   "exact": need}
+                  for name, need in bs.group_specs(t, m["key"])]
+        modes.append({**m, "groups": groups})
+    return {"key": t["key"], "label": t["label"], "desc": t["desc"],
+            "size": t["size"], "unit": t["unit"],
+            "ordered": bool(t.get("ordered")), "modes": modes}
+
+
 def feature_catalog() -> dict:
     """UI が出す選択肢 (設計書 §4)。STEP2 は 9項目 × 条件4 × 期間11。"""
     from . import labels as lbl
@@ -237,13 +256,11 @@ def feature_catalog() -> dict:
                           for m in sp.MAIB_MATCHES],
         "step2_lookbacks": [{"value": lb, "label": lbl.lookback_label(lb)}
                             for lb in sp.MAIB_LOOKBACKS],
-        # 買い目の券種と組み方。**UI に文言を複製しない** (labels.py が単一辞書)
-        "bet_types": [{"key": t["key"], "label": t["label"], "desc": t["desc"],
-                       "size": t["size"], "ordered": bool(t.get("ordered")),
-                       "modes": lbl.bet_modes(t["modes"])}
-                      for t in bs.BET_TYPES],
-        "bet_max_axis": bs.MAX_AXIS,
+        # 買い目の券種・買い方・入力欄。**UI に文言も段数も持たせない**
+        # (labels.py が語彙の正本、betslip.py が構造の正本)
+        "bet_types": [_bet_type_spec(t) for t in bs.BET_TYPES],
         "bet_slip_note": lbl.BET_SLIP_NOTE,
+        "bet_zoro_note": lbl.ZORO_NOTE,
         "n_base_columns": len(sp.maib_step2_specs()),
         "notes": ["重みは事前学習済み (参加者は項目を選ぶだけ)",
                   "回収率はメイン指標ではありません",
@@ -368,8 +385,9 @@ def handle_betslip(payload: dict) -> tuple[dict, int]:
     馬単の「11→10」を UI 側で組み立て直して方向を落とした事故があったので、
     点数の計算もここに寄せている (数え間違いも同じ経路で防ぐ)。
 
-    出走していない馬番は組まない (400)。1券種の指定違いは全体を止めず、
-    `skipped` に理由を入れて他の券種は作る。
+    出走していない馬番・存在しない枠は組まない。1件の指定違いは全体を止めず、
+    `skipped` に理由と直し方を入れて他の買い目は作る
+    (何が起きたのか分からないまま買い目が消えるのを避ける)。
     """
     from . import labels as lbl
     race_id = str(payload.get("race_id") or "")
@@ -380,9 +398,10 @@ def handle_betslip(payload: dict) -> tuple[dict, int]:
     if race is None:
         return {"error": "race_not_found", "race_id": race_id}, 404
     runners = [h["num"] for h in race.get("horses", [])]
+    frames = bs.frames_of(race.get("horses", []))
     try:
-        slip, skipped = bs.build_custom(payload.get("selection") or {},
-                                        runners=runners)
+        slip, skipped = bs.build_custom(payload.get("selection") or [],
+                                        runners=runners, frames=frames)
     except bs.SelectionError as err:
         return {"error": "invalid_selection", "message": str(err)}, 400
     return {"race_id": race_id, "slip": slip, "skipped": skipped,

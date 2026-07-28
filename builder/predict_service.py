@@ -158,11 +158,10 @@ def _bet_slip(marks: list[dict]) -> list[dict]:
     return betslip.build(marks) if marks else []
 
 
-def _bet_selection(marks: list[dict]) -> dict:
-    """既定の選択 (◎を軸、他の印を相手)。参加者はここから変えていく。"""
+def _bet_selection(marks: list[dict]) -> list[dict]:
+    """既定の買い目 (◎を軸、他の印を相手)。参加者はここから足し引きする。"""
     from . import betslip
-    return betslip.default_selection(marks) if marks else {"horses": [], "axis": [],
-                                                           "modes": {}}
+    return betslip.default_selection(marks) if marks else []
 
 
 def _result_top3(race: dict) -> list[dict]:

@@ -1,9 +1,9 @@
-"""印から買い目 (券種と馬番の組) を組み立てる。
+"""買い目 (券種と馬番の組) を組み立てる。
 
 ## 何をして、何をしないか
 
-**する**: 参加者が選んだ「使う馬・軸・券種ごとの組み方」から馬番の組を作る。
-既定は印 (◎○▲△×) の並べ替えだが、**参加者が自分で決められる**。
+**する**: 参加者が「券種 → 買い方 → 馬(または枠)」を選んだものを、1点ずつの組に
+展開する。買い目は**追加していける**ので、1レースで複数券種を作れる。
 **しない**:
 
 - 金額は一切扱わない (何円買うかは組み立てない)
@@ -12,69 +12,109 @@
   作ると、読めないか **間違った馬券を実際のお金で登録する** 危険がある。
   (調査記録: `docs/SMAPPY_QR_PLAN.md`)
 - 「儲かる」方向の言葉を出さない (設計書 v0.3 §1 DON'T)
-- **どの買い方が有利かを示唆しない。** 点数だけを出す
+- **どの券種・どの買い方が有利かを示唆しない。** 点数だけを出す
+
+## 出力は「1点ずつの一覧」
+
+買い方 (ながし・ボックス・フォーメーション) は **点を作るための道具**でしかなく、
+出てくるのは個々の組。だから公式サイトで「通常」として1点ずつ入れても同じものが
+買える。方式が公式の選択肢と一致していなくても、買えない買い目にはならない。
 
 ## 前提
 
 印は「選んだ項目での相対順位」でしかない。実測で ◎ の的中率は約20%
 (1番人気は33%)、回収率は長期では 1−控除率 (約80%) が上限。買い目は
-**印の並べ替えであって推奨ではない** — この一文を UI が必ず添える (テストで固定)。
+**参加者が組むものであって推奨ではない** — この一文を UI が必ず添える。
 
-## 2つの不変条件
+## 3つの不変条件
 
-1. **表記の正本はここ。** 券種ごとの区切り (馬連は `-`、馬単は `→`) は
+1. **表記と点数の正本はここ。** 券種ごとの区切り (馬連は `-`、馬単は `→`) は
    `combo_text` だけが決める。UI 側で組み立て直すと、**手入力する当人が見る文字列**で
-   馬単の方向が消え、違う馬券を買うことになる (実際に一度そうなった)。
-2. **黙って別の買い目を作らない。** 指定が組めない券種は捨てるのではなく
-   `skipped` に理由を入れて返す。組めなかったことが画面から分かる必要がある。
+   順序指定が消え、違う馬券を買うことになる (実際に一度そうなった)。
+2. **黙って別の買い目を作らない。** 組めない指定は捨てるのではなく `skipped` に
+   理由と直し方を入れて返す。
+3. **出走していない馬番・存在しない枠は組まない。**
 """
 
 from __future__ import annotations
 
-from itertools import combinations, permutations
+from itertools import combinations, permutations, product
 
-# 券種の定義。
-#   size    … 1点に必要な頭数
-#   ordered … 着順が決まっているか (表記に矢印を使う)
-#   modes   … 選べる組み方 (先頭が既定)
+# ---------------------------------------------------------------------------
+# 券種
+# ---------------------------------------------------------------------------
+#   size    … 1点に必要な数
+#   unit    … "horse" は馬番で選ぶ / "frame" は枠番で選ぶ
+#   ordered … 着順が決まっているか (表記に矢印を使い、並べ替えない)
+#   modes   … 選べる買い方 (先頭が既定)
 BET_TYPES: tuple[dict, ...] = (
     {"key": "tan", "label": "単勝", "desc": "1着になる馬を1頭選ぶ",
-     "size": 1, "modes": ("jiku", "each")},
+     "size": 1, "unit": "horse", "modes": ("each",)},
     {"key": "fuku", "label": "複勝", "desc": "3着以内に入る馬を1頭選ぶ",
-     "size": 1, "modes": ("jiku", "each")},
+     "size": 1, "unit": "horse", "modes": ("each",)},
+    {"key": "wakuren", "label": "枠連", "desc": "1着と2着の枠の組(順序は問わない)",
+     "size": 2, "unit": "frame", "modes": ("nagashi", "box")},
     {"key": "umaren", "label": "馬連", "desc": "1着と2着の組(順序は問わない)",
-     "size": 2, "modes": ("nagashi", "box")},
+     "size": 2, "unit": "horse", "modes": ("nagashi", "box", "formation")},
     {"key": "wide", "label": "ワイド", "desc": "3着以内に2頭とも入る組",
-     "size": 2, "modes": ("nagashi", "box")},
+     "size": 2, "unit": "horse", "modes": ("nagashi", "box", "formation")},
     # C-3: 馬連「11-10」と馬単「11-10」が同じ文字列だと券種の違いを誤学習する。
     # 順序固定の券種は矢印で方向を示す (ordered=True)。
     {"key": "umatan", "label": "馬単", "desc": "1着と2着を順序どおりに当てる",
-     "ordered": True, "size": 2,
-     "modes": ("nagashi_1st", "nagashi_2nd", "nagashi_both", "box")},
+     "size": 2, "unit": "horse", "ordered": True,
+     "modes": ("nagashi_1st", "nagashi_2nd", "nagashi_both", "box", "formation")},
     {"key": "sanrenpuku", "label": "三連複", "desc": "3着までの3頭の組(順序は問わない)",
-     "size": 3, "modes": ("nagashi", "nagashi2", "box")},
+     "size": 3, "unit": "horse",
+     "modes": ("nagashi", "nagashi2", "box", "formation")},
+    {"key": "sanrentan", "label": "三連単", "desc": "1着から3着を順序どおりに当てる",
+     "size": 3, "unit": "horse", "ordered": True,
+     "modes": ("nagashi_1st", "nagashi_2nd", "nagashi_3rd", "box", "formation")},
 )
 BY_KEY = {t["key"]: t for t in BET_TYPES}
 
-# その組み方に必要な軸の頭数 (None = 軸を使わない)
-AXIS_SIZE: dict[str, int | None] = {
-    "jiku": 1, "each": None, "box": None, "nagashi": 1, "nagashi2": 2,
-    "nagashi_1st": 1, "nagashi_2nd": 1, "nagashi_both": 1,
+
+# ---------------------------------------------------------------------------
+# 買い方が必要とする「グループ」
+# ---------------------------------------------------------------------------
+# 参加者に見せる入力欄はこの定義から作る。**UI が独自に段数を決めない。**
+#   (キー, 必要数 or None=1つ以上)
+_AXIS = ("axis", 1)
+_PARTNER = ("partner", None)
+GROUP_SPECS: dict[str, tuple[tuple[str, int | None], ...]] = {
+    "each": (("pick", None),),
+    "box": (("pick", None),),
+    "nagashi": (_AXIS, _PARTNER),
+    "nagashi2": (("axis", 2), _PARTNER),
+    "nagashi_1st": (_AXIS, _PARTNER),
+    "nagashi_2nd": (_AXIS, _PARTNER),
+    "nagashi_3rd": (_AXIS, _PARTNER),
+    "nagashi_both": (_AXIS, _PARTNER),
 }
-# 軸に選べる上限 (三連複の軸2頭流しがあるため2)
-MAX_AXIS = 2
+# フォーメーションは券種の size で段数が変わる (2頭系は2段、3頭系は3段)
+_FORMATION = {2: (("p1", None), ("p2", None)),
+              3: (("p1", None), ("p2", None), ("p3", None))}
+
+
+def group_specs(bet_type: dict, mode: str) -> tuple[tuple[str, int | None], ...]:
+    """その券種・買い方が必要とするグループ (UI の入力欄と1対1)。"""
+    if mode == "formation":
+        return _FORMATION[bet_type["size"]]
+    return GROUP_SPECS[mode]
 
 
 class SelectionError(ValueError):
     """参加者の指定が組めない形のとき。**黙って別の買い目を作らない。**"""
 
 
+# ---------------------------------------------------------------------------
+# 表記
+# ---------------------------------------------------------------------------
 def combo_text(bet_type: dict, combo: list[str]) -> str:
     """1点の表記。順序固定の券種は「11→10」、それ以外は「2-11」。
 
-    順序が意味を持たない券種は **馬番順に並べる**。公式サイトの入力は馬番順の
-    マス目なので、「11-2」のように軸を先に出すと転記でずれる。
-    順序固定の券種 (馬単) は並べ替えない — 並び自体が着順の指定なので。
+    順序が意味を持たない券種は **馬番(枠番)順に並べる**。公式サイトの入力は
+    番号順のマス目なので、「11-2」のように軸を先に出すと転記でずれる。
+    順序固定の券種は並べ替えない — 並び自体が着順の指定なので。
     """
     if bet_type.get("ordered"):
         return "→".join(str(int(x)) for x in combo)
@@ -85,9 +125,9 @@ def _num(x) -> int:
     return int(str(x))
 
 
-def _ordered_nums(nums) -> list[str]:
-    """馬番順 (文字列のままだと "10" < "2" になる)。重複は落とす。"""
-    return sorted(dict.fromkeys(str(x) for x in nums), key=_num)
+def _uniq_sorted(items) -> list[str]:
+    """番号順・重複なし (文字列のままだと "10" < "2" になる)。"""
+    return sorted(dict.fromkeys(str(x) for x in items), key=_num)
 
 
 def _marked(marks: list[dict]) -> list[str]:
@@ -96,136 +136,246 @@ def _marked(marks: list[dict]) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# 既定の選択 (印の並べ替え) — 参加者が何も触らなければこれになる
+# 既定の買い目 (印の並べ替え) — 参加者が何も触らなければこれになる
 # ---------------------------------------------------------------------------
-def default_selection(marks: list[dict]) -> dict:
-    """◎を軸、○▲△×を相手にした素直な組み方。
+def default_selection(marks: list[dict]) -> list[dict]:
+    """◎を軸、他の印を相手にした素直な買い目を並べる。
 
-    返り値は `build_custom` にそのまま渡せる形。参加者はここから変えていく。
+    返り値は `build_custom` にそのまま渡せる形 (買い目の一覧)。
     """
     n = _marked(marks)
     if not n:
-        return {"horses": [], "axis": [], "modes": {}}
-    return {
-        "horses": _ordered_nums(n),
-        "axis": n[:1],                      # ◎
-        "modes": {t["key"]: t["modes"][0] for t in BET_TYPES},
-    }
+        return []
+    hon, rest = n[:1], _uniq_sorted(n[1:])
+    base = [{"type": "tan", "mode": "each", "groups": [hon]},
+            {"type": "fuku", "mode": "each", "groups": [hon]}]
+    if not rest:
+        return base
+    return base + [
+        {"type": "umaren", "mode": "nagashi", "groups": [hon, rest]},
+        {"type": "wide", "mode": "nagashi", "groups": [hon, rest]},
+        {"type": "umatan", "mode": "nagashi_1st", "groups": [hon, rest]},
+        {"type": "sanrenpuku", "mode": "nagashi", "groups": [hon, rest]},
+    ]
 
 
 # ---------------------------------------------------------------------------
 # 組み立て
 # ---------------------------------------------------------------------------
 def build(marks: list[dict]) -> list[dict]:
-    """印 → 券種ごとの買い目 (既定の組み方)。"""
+    """印 → 既定の買い目。"""
     slip, _ = build_custom(default_selection(marks))
     return slip
 
 
-def build_custom(selection: dict,
-                 *, runners: list[str] | None = None) -> tuple[list[dict], list[dict]]:
-    """参加者の指定 → (買い目, 組めなかった券種と理由)。
+def build_custom(selection: list[dict], *, runners: list[str] | None = None,
+                 frames: dict[str, int] | None = None
+                 ) -> tuple[list[dict], list[dict]]:
+    """買い目の指定 → (組めた買い目, 組めなかったものと理由)。
 
-    selection = {
-      "horses": ["10","11",...],   # 使う馬 (軸を含む)
-      "axis":   ["11"],            # 軸 (三連複の軸2頭流しは2頭)
-      "modes":  {"umaren": "nagashi", "umatan": "box", "wide": None, ...}
-    }
-    `modes` の値が None / 未指定の券種は作らない (OFF)。
+    selection は買い目の一覧。1件は
+        {"type": "sanrenpuku", "mode": "formation",
+         "groups": [["01","02"], ["03"], ["04","05"]]}
 
-    `runners` を渡すと **出走していない馬番を弾く**。これは全体の誤りなので例外。
-    券種ごとの不整合 (軸の頭数が足りない等) は例外にせず `skipped` に入れる
-    — 1券種の指定違いで他の券種まで消えると、何が起きたのか分からなくなる。
+    `runners` / `frames` を渡すと **出走していない馬番・存在しない枠を弾く**。
+    1件の指定違いで全体を止めない — 何が起きたのか分からないまま買い目が
+    消えるのを避けるため、その1件だけ `skipped` に理由と直し方を入れる。
     """
-    horses = _ordered_nums(selection.get("horses") or [])
-    axis = [str(x) for x in (selection.get("axis") or [])]
-    modes = selection.get("modes") or {}
-
-    if runners is not None:
-        allowed = {str(x) for x in runners}
-        bad = sorted({x for x in horses + axis if x not in allowed}, key=_num)
-        if bad:
-            raise SelectionError(
-                "出走していない馬番が指定されています: "
-                + "・".join(str(_num(x)) for x in bad))
-    outside = [a for a in axis if a not in horses]
-    if outside:
-        raise SelectionError(
-            "軸の馬が「使う馬」に入っていません: "
-            + "・".join(str(_num(x)) for x in outside))
-    if len(axis) > MAX_AXIS:
-        raise SelectionError(f"軸は{MAX_AXIS}頭までです(いまは{len(axis)}頭)")
-
+    if isinstance(selection, dict) or not isinstance(selection, (list, tuple)):
+        # 形が違う指定で 500 にしない (API の入力なので壊れた形も来る)
+        raise SelectionError("買い目の指定は一覧 (配列) で渡してください")
     slip: list[dict] = []
     skipped: list[dict] = []
-    for t in BET_TYPES:
-        mode = modes.get(t["key"])
-        if not mode:
-            continue
-        if mode not in t["modes"]:
-            skipped.append({"key": t["key"], "label": t["label"], "mode": mode,
-                            "reason": f"{t['label']}に「{mode}」という組み方はありません"})
-            continue
+    for i, entry in enumerate(selection or []):
         try:
-            combos = _combos(t, mode, horses, axis)
+            if not isinstance(entry, dict):
+                raise SelectionError("買い目1件の形が正しくありません")
+            slip.append(_build_one(entry, runners=runners, frames=frames))
         except SelectionError as err:
-            skipped.append({"key": t["key"], "label": t["label"], "mode": mode,
+            # entry が dict でないこともある (壊れた入力) ので getattr で読む
+            key = entry.get("type") if isinstance(entry, dict) else None
+            t = BY_KEY.get(str(key))
+            skipped.append({"index": i, "key": key,
+                            "label": t["label"] if t else (str(key) if key else "買い目"),
+                            "mode": entry.get("mode") if isinstance(entry, dict) else None,
                             "reason": str(err)})
-            continue
-        if not combos:
-            skipped.append({"key": t["key"], "label": t["label"], "mode": mode,
-                            "reason": f"{t['label']}には使う馬が{t['size']}頭以上必要です"})
-            continue
-        if not t.get("ordered"):
-            # 表記と同じ並びにする (読み合わせで目が滑らないように)
-            combos = [sorted(c, key=_num) for c in combos]
-        slip.append({**{k: v for k, v in t.items() if k != "modes"},
-                     "mode": mode,
-                     "combos": combos,
-                     "n": len(combos),
-                     "texts": [combo_text(t, c) for c in combos]})
     return slip, skipped
 
 
-def _combos(t: dict, mode: str, horses: list[str], axis: list[str]) -> list[list[str]]:
-    """1券種ぶんの組。軸の頭数が合わなければ SelectionError。"""
-    need = AXIS_SIZE.get(mode)
-    if need is not None and len(axis) != need:
-        return _axis_error(t, mode, need, len(axis))
-    partners = [x for x in horses if x not in axis]
-    size = t["size"]
+def _build_one(entry: dict, *, runners=None, frames=None) -> dict:
+    t = BY_KEY.get(str(entry.get("type")))
+    if t is None:
+        raise SelectionError(f"「{entry.get('type')}」という券種はありません")
+    mode = str(entry.get("mode") or "")
+    if mode not in t["modes"]:
+        raise SelectionError(f"{t['label']}に「{mode}」という買い方はありません")
 
-    if mode == "jiku":
-        return [[axis[0]]]
+    specs = group_specs(t, mode)
+    raw = entry.get("groups") or []
+    if len(raw) != len(specs):
+        raise SelectionError(
+            f"{t['label']}の「{mode_label(mode)}」は{len(specs)}組の指定が必要です"
+            f"(いま{len(raw)}組)")
+    groups = [_uniq_sorted(g) for g in raw]
+
+    allowed = _allowed(t, runners, frames)
+    if allowed is not None:
+        bad = _uniq_sorted({x for g in groups for x in g if x not in allowed})
+        if bad:
+            what = "枠" if t["unit"] == "frame" else "馬番"
+            raise SelectionError(
+                f"このレースに無い{what}が指定されています: "
+                + "・".join(str(_num(x)) for x in bad))
+
+    unit = "枠" if t["unit"] == "frame" else "頭"
+    for g, (name, need) in zip(groups, specs):
+        if not g:
+            raise SelectionError(f"「{group_label(t, mode, name)}」を選んでください")
+        if need is not None and len(g) != need:
+            raise SelectionError(
+                f"「{group_label(t, mode, name)}」は{need}{unit}"
+                f"にしてください(いま{len(g)}{unit})")
+
+    combos = _combos(t, mode, groups, frames)
+    if not combos:
+        raise SelectionError(_why_empty(t, mode, groups))
+    if not t.get("ordered"):
+        combos = [sorted(c, key=_num) for c in combos]
+    combos = _dedup(combos)
+    return {"key": t["key"], "label": t["label"], "desc": t["desc"],
+            "size": t["size"], "unit": t["unit"],
+            "ordered": bool(t.get("ordered")), "mode": mode,
+            "mode_label": mode_label(mode),
+            "groups": groups,
+            # **何を選んだのか**を段ごとに読める形で返す。点の一覧だけだと
+            # 「1着に誰を入れたか」がフォーメーションで追えない。
+            "picks": _picks(t, mode, specs, groups),
+            "combos": combos, "n": len(combos),
+            "texts": [combo_text(t, c) for c in combos]}
+
+
+def _picks(t: dict, mode: str, specs, groups: list[list[str]]) -> list[dict]:
+    """段ごとの選択内容 (見出し + 番号)。表示の体裁もサーバが決める。"""
+    out = []
+    for (name, _need), g in zip(specs, groups):
+        out.append({"key": name,
+                    "label": group_label(t, mode, name),
+                    "nums": [_num(x) for x in g],
+                    "text": PICK_SEP.join(str(_num(x)) for x in g)})
+    return out
+
+
+# 段の中の区切り。組の区切り (`-` / `→`) と混ざらない記号を使う。
+PICK_SEP = "・"
+
+
+def _allowed(t: dict, runners, frames) -> set[str] | None:
+    if t["unit"] == "frame":
+        return None if frames is None else {str(k) for k in frames}
+    return None if runners is None else {str(x) for x in runners}
+
+
+def _dedup(combos: list[list[str]]) -> list[list[str]]:
+    """同じ組を1点にまとめ、番号順に並べる (フォーメーションで重複が出る)。"""
+    seen, out = set(), []
+    for c in combos:
+        key = tuple(c)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(c)
+    return sorted(out, key=lambda c: [_num(x) for x in c])
+
+
+def _combos(t: dict, mode: str, groups: list[list[str]],
+            frames: dict[str, int] | None) -> list[list[str]]:
     if mode == "each":
-        return [[x] for x in horses]
+        return [[x] for x in groups[0]]
     if mode == "box":
-        if len(horses) < size:
-            return []
-        gen = permutations if t.get("ordered") else combinations
-        return [list(c) for c in gen(horses, size)]
-    if mode == "nagashi":
-        if size == 2:
-            return [[axis[0], x] for x in partners]
-        return [[axis[0], a, b] for a, b in combinations(partners, 2)]
-    if mode == "nagashi2":
-        return [[axis[0], axis[1], x] for x in partners]
+        return _box(t, groups[0], frames)
+    if mode == "formation":
+        return _formation(groups)
+    # ながし系
+    axis = groups[0]
+    partners = [x for x in groups[1] if x not in axis]
+    if not partners:
+        return []
+    if t["size"] == 2:
+        return _nagashi2(t, mode, axis, partners, frames)
+    return _nagashi3(mode, axis, partners)
+
+
+def _box(t: dict, picks: list[str], frames) -> list[list[str]]:
+    size = t["size"]
+    gen = permutations if t.get("ordered") else combinations
+    out = [list(c) for c in gen(picks, size)] if len(picks) >= size else []
+    if t["unit"] == "frame":
+        out += _zoro(picks, frames)
+    return out
+
+
+def _zoro(picks: list[str], frames) -> list[list[str]]:
+    """枠連のゾロ目 (同じ枠の2頭)。**その枠に2頭以上いるときだけ**成立する。"""
+    if not frames:
+        return []
+    return [[f, f] for f in picks if int(frames.get(str(f), 0)) >= 2]
+
+
+def _nagashi2(t: dict, mode: str, axis: list[str], partners: list[str],
+              frames) -> list[list[str]]:
+    a = axis[0]
+    if mode == "nagashi":                       # 順序なし (枠連・馬連・ワイド)
+        out = [[a, p] for p in partners]
+        if t["unit"] == "frame":
+            out += _zoro([a], frames)           # 軸枠のゾロ目も流しに含める
+        return out
     if mode == "nagashi_1st":
-        return [[axis[0], x] for x in partners]
+        return [[a, p] for p in partners]
     if mode == "nagashi_2nd":
-        return [[x, axis[0]] for x in partners]
+        return [[p, a] for p in partners]
     if mode == "nagashi_both":
-        return ([[axis[0], x] for x in partners]
-                + [[x, axis[0]] for x in partners])
-    raise SelectionError(f"未知の組み方: {mode}")
+        return [[a, p] for p in partners] + [[p, a] for p in partners]
+    raise SelectionError(f"未知の買い方: {mode}")
 
 
-def _axis_error(t: dict, mode: str, need: int, got: int):
-    """軸の頭数が合わないとき。**直し方まで書く** — 理由だけだと手が止まる。"""
-    from . import labels as lbl
-    raise SelectionError(
-        f"{t['label']}の「{lbl.bet_mode_label(mode)}」は軸{need}頭が必要です"
-        f"(いま{got}頭)。軸を{need}頭にするか、組み方を変えてください")
+def _nagashi3(mode: str, axis: list[str], partners: list[str]) -> list[list[str]]:
+    if mode == "nagashi":                       # 三連複 軸1頭
+        return [[axis[0], a, b] for a, b in combinations(partners, 2)]
+    if mode == "nagashi2":                      # 三連複 軸2頭
+        return [[axis[0], axis[1], p] for p in partners]
+    # 三連単 着順を固定して流す
+    slot = {"nagashi_1st": 0, "nagashi_2nd": 1, "nagashi_3rd": 2}.get(mode)
+    if slot is None:
+        raise SelectionError(f"未知の買い方: {mode}")
+    out = []
+    for a, b in permutations(partners, 2):
+        c = [a, b]
+        c.insert(slot, axis[0])
+        out.append(c)
+    return out
+
+
+def _formation(groups: list[list[str]]) -> list[list[str]]:
+    """各段から1つずつ取る。同じ馬(枠)が重なる組は成立しないので落とす。"""
+    out = []
+    for c in product(*groups):
+        if len(set(c)) != len(c):
+            continue
+        out.append(list(c))
+    return out
+
+
+def _why_empty(t: dict, mode: str, groups: list[list[str]]) -> str:
+    """0点になった理由。**直し方まで書く** — 理由だけだと手が止まる。"""
+    unit = "枠" if t["unit"] == "frame" else "頭"
+    if mode == "box":
+        return (f"{t['label']}のボックスには{t['size']}{unit}以上必要です"
+                f"(いま{len(groups[0])}{unit})")
+    if mode == "formation":
+        return (f"{t['label']}のフォーメーションは、各段から重ならない組を"
+                f"作れる必要があります。段の中身を見直してください")
+    return (f"{t['label']}の「{mode_label(mode)}」は相手を1{unit}以上"
+            f"選んでください(軸と同じものだけでは組めません)")
 
 
 def total_points(slip: list[dict]) -> int:
@@ -236,10 +386,37 @@ def as_text(slip: list[dict]) -> str:
     """公式サイトへ手入力するための平文。金額は含めない。
 
     表記は `combo_text` を通す。ここで `-` を直接 join すると、
-    **手入力する当人が見る文字列**で馬単の方向が消える。
+    **手入力する当人が見る文字列**で順序指定が消える。
     """
     lines = []
     for t in slip:
+        bt = BY_KEY[t["key"]]
         for c in t["combos"]:
-            lines.append(f"{t['label']} {combo_text(t, c)}")
+            lines.append(f"{t['label']} {combo_text(bt, c)}")
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# ラベル (labels.py が正本。循環 import を避けるため関数越しに引く)
+# ---------------------------------------------------------------------------
+def mode_label(mode: str) -> str:
+    from . import labels as lbl
+    return lbl.bet_mode_label(mode)
+
+
+def group_label(t: dict, mode: str, name: str) -> str:
+    from . import labels as lbl
+    return lbl.bet_group_label(name, size=t["size"],
+                               ordered=bool(t.get("ordered")),
+                               unit=t["unit"])
+
+
+def frames_of(horses: list[dict]) -> dict[str, int]:
+    """出走馬 → 枠番ごとの頭数。枠連の候補とゾロ目の判定に使う。"""
+    out: dict[str, int] = {}
+    for h in horses:
+        w = h.get("waku")
+        if w in (None, "", 0):
+            continue
+        out[str(int(w))] = out.get(str(int(w)), 0) + 1
+    return out

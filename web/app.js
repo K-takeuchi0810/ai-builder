@@ -318,10 +318,14 @@ function selectRace(raceId) {
 
 /* ------------------------------------------------ 画面2: マイAIをつくる */
 const sel = { step1: new Set(), step2: new Map() };
-/* 買い目の選択。**レースごとに持つ** — オッズ更新で予想を取り直しても
- * 参加者が組んだ買い目を消さないため (30秒ごとに再取得している)。 */
-const bet = { raceId: null, horses: new Set(), axis: [], modes: {},
-              dirty: false, slip: null, skipped: [], total: 0, text: '' };  // step2: metric → {matches,lookbacks}
+/* 買い目。**レースごとに持つ** — オッズ更新で予想を取り直しても参加者が組んだ
+ * 買い目を消さないため (30秒ごとに再取得している)。
+ *   entries … 追加済みの買い目 [{type, mode, groups}]
+ *   draft   … いま組んでいる1件 (券種・買い方・段ごとの選択)
+ * 組み合わせと点数は **サーバが作る** (slip/total/text)。 */
+const bet = { raceId: null, entries: [], dirty: false,
+              draft: { type: null, mode: null, groups: [] },
+              slip: [], skipped: [], total: 0, text: '' };  // step2: metric → {matches,lookbacks}
 
 async function loadFeatures() {
   try {
@@ -946,9 +950,8 @@ function renderPredict(p, prev) {
 
   initBet(p);
   $('#betSlip').innerHTML = betSlipBlock(p);
-  bindBetEditor(p);
-  renderBetResult(p);
-  // 参加者が組み替えた状態で予想を取り直したら、その組み方で作り直す
+  renderBet(p);
+  // 参加者が組み替えた状態で予想を取り直したら、その指定で作り直す
   if (bet.dirty) refreshBet(p);
 
   $$('#markList .row').forEach((row) => {
@@ -1490,69 +1493,108 @@ function roiRow(e) {
  * 読めないか間違った馬券を実際のお金で登録する危険がある。
  * 調査記録と自動入力の計画: docs/SMAPPY_QR_PLAN.md
  *
- * **組み合わせと点数は UI で作らない。** サーバ (/api/betslip) が正本。
+ * 流れは公式サイトとマークカードと同じ順序:
+ *   券種を選ぶ → 買い方を選ぶ → 馬(枠)を選ぶ → 買い目に追加
+ * 追加した買い目は溜まっていく (1レースで複数券種を買うのが普通)。
+ *
+ * **段数・見出し・組み合わせ・点数はすべてサーバが決める。** UI は
+ * `/api/features` の券種仕様と `/api/betslip` の結果を出すだけ。
  * 馬単の「11→10」を UI 側で組み立て直して方向を落とした事故があり、
- * それは公式サイトへ手入力する経路そのものだった。数え間違いも同じ経路で防ぐ。
+ * それは公式サイトへ手入力する経路そのものだった。数え間違いも同じ経路。
  * 金額は扱わない (公式画面で参加者が入れる)。 */
 
-/* 予想を描くたびに呼ぶ。同じレースなら参加者の選択を維持する。 */
+/* 予想を描くたびに呼ぶ。同じレースなら参加者が組んだものを維持する。 */
 function initBet(p) {
   if (bet.raceId === p.race_id) return;      // オッズ更新では作り直さない
-  const d = p.bet_selection || { horses: [], axis: [], modes: {} };
   bet.raceId = p.race_id;
-  bet.horses = new Set(d.horses || []);
-  bet.axis = (d.axis || []).slice();
-  bet.modes = { ...(d.modes || {}) };
+  bet.entries = JSON.parse(JSON.stringify(p.bet_selection || []));
   bet.dirty = false;
   bet.slip = p.bet_slip || [];
   bet.skipped = [];
   bet.total = bet.slip.reduce((a, t) => a + t.n, 0);
   bet.text = '';
+  resetDraft();
+}
+
+function betTypeSpec(key) {
+  return ((state.features || {}).bet_types || []).find((x) => x.key === key) || null;
+}
+function draftModeSpec() {
+  const t = betTypeSpec(bet.draft.type);
+  if (!t) return null;
+  return t.modes.find((m) => m.key === bet.draft.mode) || t.modes[0];
+}
+
+/* 券種を選び直したら買い方と選択を作り直す (段数が変わるので持ち越せない) */
+function resetDraft(typeKey) {
+  const types = (state.features || {}).bet_types || [];
+  const t = typeKey ? betTypeSpec(typeKey) : (betTypeSpec(bet.draft.type) || types[0]);
+  if (!t) { bet.draft = { type: null, mode: null, groups: [] }; return; }
+  setDraftMode(t, t.modes[0].key);
+}
+function setDraftMode(t, modeKey) {
+  const m = t.modes.find((x) => x.key === modeKey) || t.modes[0];
+  bet.draft = { type: t.key, mode: m.key, groups: m.groups.map(() => []) };
 }
 
 function betSlipBlock(p) {
   if (!(p.marks || []).length) return '';
-  const f = state.features || {};
-  const types = f.bet_types || [];
-  if (!types.length) return '';
+  if (!((state.features || {}).bet_types || []).length) return '';
   return `<div class="section-label">買い目</div>
-    ${betEditor(p, types)}
+    <div id="bsDraft"></div>
     <div id="bsResult"></div>`;
 }
 
-/* 使う馬 → 軸 → 券種と組み方 の3段。既定は印どおり (◎を軸)。 */
-function betEditor(p, types) {
-  const nAxis = bet.axis.length;
+/* ---- 組み立て中の1件 ------------------------------------------------- */
+function draftBlock(p) {
+  const f = state.features || {};
+  const types = f.bet_types || [];
+  const t = betTypeSpec(bet.draft.type);
+  if (!t) return '';
+  const m = draftModeSpec();
+  const tabs = types.map((x) => `<button class="btype${x.key === t.key ? ' on' : ''}"
+      data-btype="${esc(x.key)}" aria-pressed="${x.key === t.key}">${esc(x.label)}</button>`).join('');
+  const modes = t.modes.map((x) => `<button class="bmode${x.key === m.key ? ' on' : ''}"
+      data-bmode="${esc(x.key)}" aria-pressed="${x.key === m.key}">${esc(x.label)}</button>`).join('');
+  const groups = m.groups.map((g, i) => groupBlock(p, t, g, i)).join('');
+  const n = bet.draft.groups.reduce((a, g) => a + g.length, 0);
   return `<div class="card bed">
     <div class="bed-sec">
-      <div class="bed-h">使う馬<button class="pinfo" data-term="mark"
-        aria-label="印の説明">ⓘ</button>
-        <button class="bed-reset" id="bedReset">印どおりに戻す</button></div>
-      <div class="bed-chips" id="bedHorses">${horseChips(p)}</div>
+      <div class="bed-h">券種</div>
+      <div class="btype-row">${tabs}</div>
     </div>
     <div class="bed-sec">
-      <div class="bed-h">軸<button class="pinfo" data-term="jiku"
-        aria-label="軸の説明">ⓘ</button>
-        <span class="bed-n">${nAxis}頭</span></div>
-      <div class="bed-chips" id="bedAxis">${axisChips()}</div>
-      <p class="bed-note">流す買い方で中心にする馬です。ボックスでは使いません。</p>
+      <div class="bed-h">買い方${m.term ? `<button class="pinfo" data-term="${esc(m.term)}"
+        aria-label="${esc(m.label)}の説明">ⓘ</button>` : ''}</div>
+      <div class="bmode-row">${modes}</div>
+      <p class="bed-note">${esc(m.desc || '')}
+        ${t.unit === 'frame' ? esc(f.bet_zoro_note || '') : ''}</p>
     </div>
-    <div class="bed-sec">
-      <div class="bed-h">券種と組み方</div>
-      <div class="bed-types">${types.map(typeRow).join('')}</div>
-    </div>
+    ${groups}
+    <button class="bed-add" id="bedAdd"${n ? '' : ' disabled'}>この買い目を追加</button>
+  </div>`;
+}
+
+/* 段ごとの選択欄。**馬番(枠番)順に並べる** — 出馬表も公式の入力も番号順。 */
+function groupBlock(p, t, g, i) {
+  const picked = bet.draft.groups[i] || [];
+  const chips = t.unit === 'frame' ? frameChips(p, picked) : horseChips(p, picked);
+  const need = g.exact ? `<span class="bed-n">${g.exact}${t.unit === 'frame' ? '枠' : '頭'}</span>`
+    : `<span class="bed-n">${picked.length}${t.unit === 'frame' ? '枠' : '頭'}</span>`;
+  return `<div class="bed-sec">
+    <div class="bed-h">${esc(g.label)}${need}</div>
+    <div class="bed-chips" data-group="${i}">${chips}</div>
   </div>`;
 }
 
 /* 馬番順に並べる。`p.marks` は **評価順** (◎○▲△×…) なので、そのまま出すと
  * 「3 2 13 1 5 12 11 …」という並びになり、探すのに目で追う必要があった。
- * 公式サイトの入力も出馬表も馬番順なので、そこに合わせる
- * (順序なし券種の組を馬番順にしたのと同じ理由)。印はチップの中に残す。 */
-function horseChips(p) {
+ * 公式サイトの入力も出馬表も馬番順なので、そこに合わせる。印は数字の横に残す。 */
+function horseChips(p, picked) {
   const rows = (p.marks || []).slice()
     .sort((a, b) => Number(a.horse_num) - Number(b.horse_num));
   return rows.map((m) => {
-    const on = bet.horses.has(m.horse_num);
+    const on = picked.includes(m.horse_num);
     const mk = m.mark ? `<span class="bc-m">${esc(m.mark)}</span>` : '';
     return `<button class="bchip${on ? ' on' : ''}" data-num="${esc(m.horse_num)}"
       aria-pressed="${on}"
@@ -1561,64 +1603,66 @@ function horseChips(p) {
   }).join('');
 }
 
-function axisChips() {
-  const nums = Array.from(bet.horses).sort((a, b) => Number(a) - Number(b));
-  if (!nums.length) return '<span class="bed-empty">使う馬を選ぶと軸が選べます</span>';
-  return nums.map((n) => {
-    const on = bet.axis.includes(n);
-    return `<button class="bchip axis${on ? ' on' : ''}" data-axis="${esc(n)}"
-      aria-pressed="${on}"><b class="num">${Number(n)}</b></button>`;
+/* 枠連は枠で選ぶ。枠ごとの頭数を添える (2頭以上ならゾロ目が成立する)。 */
+function frameChips(p, picked) {
+  const counts = new Map();
+  (p.marks || []).forEach((m) => {
+    if (!m.waku) return;
+    counts.set(String(m.waku), (counts.get(String(m.waku)) || 0) + 1);
+  });
+  return Array.from(counts.keys()).sort((a, b) => Number(a) - Number(b)).map((w) => {
+    const on = picked.includes(w);
+    return `<button class="bchip${on ? ' on' : ''}" data-num="${esc(w)}"
+      aria-pressed="${on}" aria-label="${Number(w)}枠 ${counts.get(w)}頭">
+      <b class="num">${Number(w)}</b><span class="bc-m">${counts.get(w)}頭</span></button>`;
   }).join('');
 }
 
-function typeRow(t) {
-  const on = !!bet.modes[t.key];
-  const mode = bet.modes[t.key] || t.modes[0].key;
-  const opts = t.modes.map((m) =>
-    `<option value="${esc(m.key)}"${m.key === mode ? ' selected' : ''}>${esc(m.label)}</option>`
-  ).join('');
-  const cur = t.modes.find((m) => m.key === mode) || t.modes[0];
-  return `<div class="bt-row${on ? ' on' : ''}" data-type="${esc(t.key)}">
-    <button class="bt-on" data-type="${esc(t.key)}" aria-pressed="${on}">
-      ${esc(t.label)}</button>
-    <select class="bt-mode" data-type="${esc(t.key)}"
-      aria-label="${esc(t.label)}の組み方"${on ? '' : ' disabled'}>${opts}</select>
-    ${cur.term ? `<button class="pinfo" data-term="${esc(cur.term)}"
-      aria-label="${esc(cur.label)}の説明">ⓘ</button>` : '<span class="pinfo-sp"></span>'}
-  </div>`;
-}
-
-/* 結果 (点数・一覧・読み合わせ)。サーバが返した texts だけを出す。 */
+/* ---- 追加済みの買い目 ------------------------------------------------ */
 function betResultBlock(p) {
   const f = state.features || {};
   const slip = bet.slip || [];
-  if (!slip.length && !(bet.skipped || []).length) {
-    return `<p class="note bs-note">${esc(f.bet_slip_note || '')}</p>`;
-  }
-  const rows = slip.map((t) => `<div class="bs-row">
-      <div class="bs-k">${esc(t.label)}<small>${esc(modeLabel(f, t))}</small></div>
-      <div class="bs-v num">${(t.texts || []).map(esc).join(' / ')}</div>
-      <div class="bs-n">${t.n}点</div>
-    </div>`).join('');
   const skipped = (bet.skipped || []).map((x) =>
-    `<div class="bs-skip">${esc(x.label)}は組めませんでした — ${esc(x.reason)}</div>`).join('');
+    `<div class="bs-skip">${esc(x.label)}は組めませんでした — ${esc(x.reason)}
+      <button class="bs-del" data-drop="${x.index}">取り消す</button></div>`).join('');
+  if (!slip.length) {
+    return `${skipped}
+      <p class="note bs-empty-note">買い目がありません。上で券種と馬を選んで追加してください。</p>
+      <p class="note bs-note">${esc(f.bet_slip_note || '')}</p>`;
+  }
+  const rows = slip.map((t, i) => `<div class="bs-row">
+      <div class="bs-head">
+        <span class="bs-k">${esc(t.label)}</span>
+        <span class="bs-mode">${esc(t.mode_label)}</span>
+        <span class="bs-n">${t.n}点</span>
+        <button class="bs-del" data-remove="${i}"
+          aria-label="${esc(t.label)}の買い目を削除">✕</button>
+      </div>
+      ${picksBlock(t)}
+      <details class="bs-pts"><summary>${t.n}点の内訳</summary>
+        <div class="bs-v num">${(t.texts || []).map(esc).join(' / ')}</div>
+      </details>
+    </div>`).join('');
   return `${skipped}
-    ${slip.length ? `<div class="card bs">${rows}
-      <div class="bs-total">合計 <b>${bet.total}点</b></div></div>` : ''}
-    ${slip.length ? handoffBlock(p, slip, bet.total) : ''}
+    <div class="card bs">${rows}
+      <div class="bs-total">合計 <b>${bet.total}点</b>
+        <button class="bs-clear" id="bsClear">すべて削除</button>
+        <button class="bs-reset" id="bsReset">印どおりに戻す</button></div></div>
+    ${handoffBlock(p, slip, bet.total)}
     <div class="bs-actions">
-      <button class="bs-copy" id="bsCopy"${slip.length ? '' : ' disabled'}>買い目をコピー</button>
+      <button class="bs-copy" id="bsCopy">買い目をコピー</button>
       <a class="bs-link" href="https://qrcode.jra.go.jp/" target="_blank"
          rel="noopener noreferrer">JRA公式QR作成サイトを開く</a>
     </div>
     <p class="note bs-note">${esc(f.bet_slip_note || '')}</p>`;
 }
-function modeLabel(f, t) {
-  const got = (f.bet_types || []).find((x) => x.key === t.key);
-  const m = got && got.modes.find((x) => x.key === t.mode);
-  return m ? m.label : (t.desc || '');
-}
 
+/* ---- 描画と結線 ------------------------------------------------------ */
+function renderBet(p) {
+  const d = $('#bsDraft');
+  if (d) { d.innerHTML = draftBlock(p); bindDraft(p); }
+  renderBetResult(p);
+}
 function renderBetResult(p) {
   const box = $('#bsResult');
   if (!box) return;
@@ -1627,85 +1671,64 @@ function renderBetResult(p) {
   bindTerms();
 }
 
-/* 選択が変わったらサーバに組ませ直す。UI は組み合わせを作らない。 */
-async function refreshBet(p) {
-  const selection = { horses: Array.from(bet.horses), axis: bet.axis.slice(),
-                      modes: bet.modes };
-  let got;
-  try {
-    got = await postJSON('/api/betslip', { race_id: p.race_id, selection });
-  } catch (err) {
-    // 組めなかった理由は捏造しない。取れなかったことを出す
-    bet.slip = []; bet.skipped = [{ label: '買い目', reason: '組み直せませんでした' }];
-    bet.total = 0; bet.text = '';
-    renderBetResult(p);
-    return;
-  }
-  bet.slip = got.slip || [];
-  bet.skipped = got.skipped || [];
-  bet.total = got.total || 0;
-  bet.text = got.text || '';
-  renderBetResult(p);
-}
-
-function bindBetEditor(p) {
-  $$('#bedHorses .bchip').forEach((el) => el.addEventListener('click', () => {
-    const n = el.dataset.num;
-    if (bet.horses.has(n)) {
-      bet.horses.delete(n);
-      bet.axis = bet.axis.filter((x) => x !== n);   // 軸から外れた馬は軸でもなくなる
-    } else bet.horses.add(n);
-    bet.dirty = true;
-    redrawBetEditor(p);
+function bindDraft(p) {
+  $$('#bsDraft .btype').forEach((el) => el.addEventListener('click', () => {
+    resetDraft(el.dataset.btype);
+    renderBet(p);
   }));
-  $$('#bedAxis .bchip').forEach((el) => el.addEventListener('click', () => {
-    const n = el.dataset.axis;
-    if (bet.axis.includes(n)) bet.axis = bet.axis.filter((x) => x !== n);
-    else if (bet.axis.length >= (state.features.bet_max_axis || 2)) {
-      toast(`軸は${state.features.bet_max_axis || 2}頭までです`);
-      return;
-    } else bet.axis.push(n);
-    bet.dirty = true;
-    redrawBetEditor(p);
+  $$('#bsDraft .bmode').forEach((el) => el.addEventListener('click', () => {
+    setDraftMode(betTypeSpec(bet.draft.type), el.dataset.bmode);
+    renderBet(p);
   }));
-  $$('.bt-on').forEach((el) => el.addEventListener('click', () => {
-    const key = el.dataset.type;
-    const t = (state.features.bet_types || []).find((x) => x.key === key);
-    bet.modes[key] = bet.modes[key] ? null : t.modes[0].key;
-    bet.dirty = true;
-    redrawBetEditor(p);
-  }));
-  $$('.bt-mode').forEach((el) => el.addEventListener('change', () => {
-    bet.modes[el.dataset.type] = el.value;
-    bet.dirty = true;
-    redrawBetEditor(p);
-  }));
-  const reset = $('#bedReset');
-  if (reset) reset.addEventListener('click', () => {
-    const d = (state.lastPredict || {}).bet_selection || {};
-    bet.horses = new Set(d.horses || []);
-    bet.axis = (d.axis || []).slice();
-    bet.modes = { ...(d.modes || {}) };
-    bet.dirty = true;
-    redrawBetEditor(p);
-    toast('印どおりの買い目に戻しました');
+  $$('#bsDraft .bed-chips').forEach((box) => {
+    const i = Number(box.dataset.group);
+    box.querySelectorAll('.bchip').forEach((el) => el.addEventListener('click', () => {
+      const g = bet.draft.groups[i];
+      const n = el.dataset.num;
+      const at = g.indexOf(n);
+      if (at >= 0) g.splice(at, 1); else g.push(n);
+      renderBet(p);
+    }));
   });
-}
-
-function redrawBetEditor(p) {
-  const host = $('#betSlip');
-  if (!host) return;
-  const card = host.querySelector('.bed');
-  if (card) card.outerHTML = betEditor(p, state.features.bet_types || []);
-  bindBetEditor(p);
+  const add = $('#bedAdd');
+  if (add) add.addEventListener('click', () => {
+    bet.entries.push({ type: bet.draft.type, mode: bet.draft.mode,
+                       groups: bet.draft.groups.map((g) => g.slice()) });
+    bet.dirty = true;
+    resetDraft(bet.draft.type);       // 同じ券種で続けて組めるように選択だけ空にする
+    renderBet(p);
+    refreshBet(p);
+  });
   bindTerms();
-  refreshBet(p);
 }
 
 function bindBetActions(p) {
-  const btn = $('#bsCopy');
-  if (!btn) return;
-  btn.addEventListener('click', async () => {
+  $$('#bsResult [data-remove]').forEach((el) => el.addEventListener('click', () => {
+    // 表示は「組めた買い目」の並び。指定の並びと対応づけて消す
+    const idx = liveIndexes()[Number(el.dataset.remove)];
+    if (idx == null) return;
+    bet.entries.splice(idx, 1);
+    bet.dirty = true;
+    refreshBet(p);
+  }));
+  $$('#bsResult [data-drop]').forEach((el) => el.addEventListener('click', () => {
+    bet.entries.splice(Number(el.dataset.drop), 1);
+    bet.dirty = true;
+    refreshBet(p);
+  }));
+  const clear = $('#bsClear');
+  if (clear) clear.addEventListener('click', () => {
+    bet.entries = []; bet.dirty = true; refreshBet(p);
+  });
+  const reset = $('#bsReset');
+  if (reset) reset.addEventListener('click', () => {
+    bet.entries = JSON.parse(JSON.stringify((state.lastPredict || {}).bet_selection || []));
+    bet.dirty = true;
+    refreshBet(p);
+    toast('印どおりの買い目に戻しました');
+  });
+  const copy = $('#bsCopy');
+  if (copy) copy.addEventListener('click', async () => {
     // C-3: 表記の正本はサーバ (betslip.combo_text)。ここで結合し直すと
     // 馬単が馬連と同じ「11-10」になる。**公式サイトへ手入力する経路そのもの**なので、
     // 方向が消えると誤った馬券を買うことになる。UI は文字列を組み立て直さない。
@@ -1720,6 +1743,46 @@ function bindBetActions(p) {
   });
 }
 
+/* 組めた買い目の表示位置 → 指定の位置。組めなかった分だけずれる。 */
+function liveIndexes() {
+  const bad = new Set((bet.skipped || []).map((x) => x.index));
+  const out = [];
+  bet.entries.forEach((_, i) => { if (!bad.has(i)) out.push(i); });
+  return out;
+}
+
+/* 選択が変わったらサーバに組ませ直す。UI は組み合わせを作らない。 */
+async function refreshBet(p) {
+  let got;
+  try {
+    got = await postJSON('/api/betslip',
+                         { race_id: p.race_id, selection: bet.entries });
+  } catch (err) {
+    // 組めなかった理由は捏造しない。取れなかったことを出す
+    bet.slip = []; bet.skipped = [];
+    bet.total = 0; bet.text = '';
+    renderBetResult(p);
+    toast('買い目を組み直せませんでした');
+    return;
+  }
+  bet.slip = got.slip || [];
+  bet.skipped = got.skipped || [];
+  bet.total = got.total || 0;
+  bet.text = got.text || '';
+  renderBetResult(p);
+}
+
+/* 段ごとに **何を選んだのか** を見せる。
+ * 点の一覧だけだと、フォーメーションで「1着に誰を入れたか」が追えない
+ * (11→3→2 と 11→10→6 が並んでいても、2着候補が何だったのか読み取れない)。
+ * 見出しと番号の並べ方はサーバが決める (`picks`)。 */
+function picksBlock(t) {
+  const picks = t.picks || [];
+  if (!picks.length) return '';
+  return `<dl class="bs-picks">${picks.map((g) => `
+    <dt>${esc(g.label)}</dt><dd class="num">${esc(g.text)}</dd>`).join('')}</dl>`;
+}
+
 /* 公式サイトへの引き渡し。**誤登録の最後の防波堤**なので、自動入力が入っても残す。
  *
  * 公式の入力は STEP1〜9 の画面操作しかなく、外部から買い目を渡す口が無い
@@ -1729,9 +1792,13 @@ function bindBetActions(p) {
  * の2点だけをやる。金額はここでは扱わない (公式画面で人が入れる)。 */
 function handoffBlock(p, slip, total) {
   const rows = slip.map((t) => `<li class="hb-item">
-      <span class="hb-t">${esc(t.label)}</span>
-      <span class="hb-c num">${(t.texts || []).map(esc).join(' / ')}</span>
-      <span class="hb-n">${t.n}点</span>
+      <div class="hb-top">
+        <span class="hb-t">${esc(t.label)}</span>
+        <span class="hb-mode">${esc(t.mode_label)}</span>
+        <span class="hb-n">${t.n}点</span>
+      </div>
+      ${picksBlock(t)}
+      <div class="hb-c num">${(t.texts || []).map(esc).join(' / ')}</div>
     </li>`).join('');
   return `<details class="hb">
     <summary class="hb-head">公式サイトへの入れ方と読み合わせ
@@ -1739,7 +1806,7 @@ function handoffBlock(p, slip, total) {
     <div class="hb-body">
       <p class="hb-step">① レースを選ぶ — <b>${esc(raceIdentity(p))}</b></p>
       <p class="hb-step">② 式別と馬番を、下の順に入れる
-        (<b>矢印の向きは順序の指定</b>です。馬単は1着→2着)</p>
+        (<b>矢印の向きは順序の指定</b>です。馬単・三連単は着順)</p>
       <ol class="hb-list">${rows}</ol>
       <p class="hb-step">③ 金額を入れて確認画面へ進む (金額はこのツールでは扱いません)</p>
       <p class="hb-step hb-check">④ <b>公式の確認画面を見ながら</b>、上の表と

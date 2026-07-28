@@ -698,3 +698,38 @@ def test_bet_text_keeps_the_direction_for_ordered_types():
     text = betslip.as_text(slip)
     assert "馬単 5→2" in text, text
     assert "馬単 5-2" not in text, text
+
+
+# ---------------------------------------------------------------------------
+# CSS の重複定義 (同じセレクタを2回書くと、後の方が黙って勝つ)
+# ---------------------------------------------------------------------------
+def test_no_selector_is_defined_twice():
+    """同じセレクタを2箇所で定義しないこと。
+
+    一括編集で範囲を取り違えて 150 行ほど複製し、`.bs-k{width:5.2em}` が
+    後方から `.bs-k{font-weight:700}` を上書きしていた。**画面は崩れるが
+    エラーは出ない**ので、機械的に閉じる。
+    (`:hover` などの疑似クラスや複合セレクタは対象外 — 意図的に複数書く)
+    """
+    sels = re.findall(r"^(\.[a-z0-9-]+)\{", CSS, re.M)
+    dups = sorted({x for x in sels if sels.count(x) > 1})
+    assert dups == [], f"重複しているセレクタ: {dups}"
+
+
+def test_no_orphan_class_in_the_css():
+    """使われていないクラスを残さないこと (死んだ規則が判断を狂わせる)。
+
+    JS のテンプレートと HTML の両方を見て、どこからも参照されないクラス名を探す。
+    レイアウト用の一般クラスは除外する。
+    """
+    used = CODE["app.js"] + CODE["index.html"]
+    # 汎用のレイアウトクラスと、**JS が動的に組み立てる名前** は文字列検索で
+    # 見つからないので除外する (枠色は `w${waku}` で作る)。
+    skip = {"screen", "active", "hidden", "on", "num", "card", "note", "cta"}
+    dynamic = re.compile(r"^w[1-8]$")
+    orphans = []
+    for sel in sorted(set(re.findall(r"^\.([a-z][a-z0-9-]+)", CSS, re.M))):
+        if sel in skip or sel in used or dynamic.match(sel):
+            continue
+        orphans.append(sel)
+    assert orphans == [], f"どこからも使われていないクラス: {orphans}"

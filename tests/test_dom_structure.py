@@ -530,83 +530,100 @@ def test_handoff_has_no_nested_interactive_elements(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# 買い目エディタ (参加者が自分で組む)
+# 買い目エディタ (券種 → 買い方 → 馬(枠))
 # ---------------------------------------------------------------------------
-def test_every_runner_can_be_picked_not_only_the_marked_ones(tmp_path):
-    """印が付いていない馬も選べること。
+def test_all_bet_types_are_offered_as_buttons(tmp_path):
+    """8券種すべてがボタンとして並ぶこと (選択肢を隠さない)。"""
+    cat = api.feature_catalog()
+    out = _render_build_free(_predict_fixture(n=12), tmp_path)
+    t = Tree()
+    t.feed(out["betDraft"])
+    btns = t.find("btype")
+    assert [b["attrs"]["data-btype"] for b in btns] == [x["key"] for x in cat["bet_types"]]
+    assert len(btns) == 8, len(btns)
+    on = [b for b in btns if "on" in b["cls"]]
+    assert len(on) == 1, "選択中の券種は1つ"
+
+
+def test_the_modes_of_the_selected_type_are_offered(tmp_path):
+    """選択中の券種が持つ買い方がすべて出ること。文言は API 経由。"""
+    cat = api.feature_catalog()
+    first = cat["bet_types"][0]
+    out = _render_build_free(_predict_fixture(n=12), tmp_path)
+    t = Tree()
+    t.feed(out["betDraft"])
+    modes = t.find("bmode")
+    assert [m["attrs"]["data-bmode"] for m in modes] == [x["key"] for x in first["modes"]]
+    assert [t.all_text(m).strip() for m in modes] == [x["label"] for x in first["modes"]]
+
+
+def test_the_input_rows_come_from_the_server(tmp_path):
+    """入力欄の数と見出しはサーバの仕様どおりであること。
+
+    段数を UI が決めると、フォーメーションの段数が2箇所に散る。
+    """
+    cat = api.feature_catalog()
+    first = cat["bet_types"][0]
+    mode = first["modes"][0]
+    out = _render_build_free(_predict_fixture(n=12), tmp_path)
+    t = Tree()
+    t.feed(out["betDraft"])
+    boxes = [x for x in t.find("bed-chips")]
+    assert len(boxes) == len(mode["groups"]), (len(boxes), len(mode["groups"]))
+    txt = t.all_text(t.root)
+    for g in mode["groups"]:
+        assert g["label"] in txt, g["label"]
+
+
+def test_every_runner_can_be_picked_and_is_in_number_order(tmp_path):
+    """印が付いていない馬も選べること。並びは馬番順。
 
     印は「選んだ項目での相対順位」でしかなく推奨ではない。5頭に制限すると
-    印を権威として扱うことになる。既定では印の馬だけが ON。
+    印を権威として扱うことになる。`marks` は評価順なので並べ替えが必要。
     """
     p = _predict_fixture(n=12, scramble=True)
-    # このテストが空振りしないための前提: marks は馬番順になっていないこと。
-    # (値の割り当てを変えて評価順=馬番順になると、並べ替えの有無を検査できない)
+    # このテストが空振りしないための前提: marks は馬番順になっていないこと
     ranked = [int(m["horse_num"]) for m in p["marks"]]
     assert ranked != sorted(ranked), "fixture の評価順が馬番順と一致している"
     out = _render_build_free(p, tmp_path)
     t = Tree()
-    t.feed(out["betSlip"])
+    t.feed(out["betDraft"])
     chips = [c for c in t.find("bchip") if c["attrs"].get("data-num")]
     assert len(chips) == len(p["marks"]), (len(chips), len(p["marks"]))
-    # **馬番順**に並べる。`marks` は評価順なので、そのまま出すと「3 2 13 1 5 …」に
-    # なって目で追う必要がある。公式サイトの入力も出馬表も馬番順
     got = [int(c["attrs"]["data-num"]) for c in chips]
     assert got == sorted(got), got
-    on = [c for c in chips if "on" in c["cls"]]
-    marked = [m for m in p["marks"] if m.get("mark")]
-    assert len(on) == len(marked), (len(on), len(marked))
     # 押した状態は aria-pressed で伝える
     assert all(c["attrs"].get("aria-pressed") in ("true", "false") for c in chips)
+    # 既定では何も選ばれていない (券種を選んでから馬を選ぶ流れ)
+    assert not any("on" in c["cls"] for c in chips)
 
 
-def test_each_bet_type_has_an_on_off_and_a_mode(tmp_path):
-    """券種ごとに ON/OFF と組み方の選択肢があること。"""
-    cat = api.feature_catalog()
-    out = _render_build_free(_predict_fixture(n=12), tmp_path)
+def test_marks_are_shown_on_the_chips(tmp_path):
+    """印はチップの中に残す (◎がどれか分かること)。"""
+    p = _predict_fixture(n=12)
+    out = _render_build_free(p, tmp_path)
     t = Tree()
-    t.feed(out["betSlip"])
-    rows = t.find("bt-row")
-    assert len(rows) == len(cat["bet_types"]), (len(rows), len(cat["bet_types"]))
-    for row, spec in zip(rows, cat["bet_types"]):
-        assert row["attrs"].get("data-type") == spec["key"]
-        assert t.find("bt-on", row), spec["key"]
-        selects = t.find_tag("select", row)
-        assert len(selects) == 1, spec["key"]
-        opts = t.find_tag("option", selects[0])
-        assert len(opts) == len(spec["modes"]), spec["key"]
-        # 選択肢の文言は API 経由 (UI にハードコードしない)
-        got = [o["text"].strip() for o in opts]
-        assert got == [m["label"] for m in spec["modes"]], spec["key"]
+    t.feed(out["betDraft"])
+    txt = t.all_text(t.root)
+    for m in p["marks"]:
+        if m.get("mark"):
+            assert m["mark"] in txt, m["mark"]
 
 
 def test_bet_editor_has_no_nested_interactive_elements(tmp_path):
     """チップや行の中に button / select / input を入れ子で置かないこと。"""
     out = _render_build_free(_predict_fixture(n=12), tmp_path)
-    t = Tree()
-    t.feed(out["betSlip"])
-    assert t.max_button_depth <= 1, "買い目エディタで button が入れ子になっている"
-    for tag in ("input", "select"):
-        for node in t.find_tag(tag):
-            assert not any(a["tag"] == "button" for a in t.ancestors(node)), tag
+    for name in ("betDraft", "betResult"):
+        t = Tree()
+        t.feed(out[name])
+        assert t.max_button_depth <= 1, f"{name} で button が入れ子になっている"
+        for tag in ("input", "select"):
+            for node in t.find_tag(tag):
+                assert not any(a["tag"] == "button" for a in t.ancestors(node)), (name, tag)
 
 
-def test_axis_is_chosen_from_the_selected_horses(tmp_path):
-    """軸の候補は「使う馬」に選んだ馬だけ。"""
-    p = _predict_fixture(n=12)
-    out = _render_build_free(p, tmp_path)
-    t = Tree()
-    t.feed(out["betSlip"])
-    axis = [c for c in t.find("bchip") if c["attrs"].get("data-axis")]
-    marked = {m["horse_num"] for m in p["marks"] if m.get("mark")}
-    assert {c["attrs"]["data-axis"] for c in axis} == marked
-    nums = [int(c["attrs"]["data-axis"]) for c in axis]
-    assert nums == sorted(nums), nums          # こちらも馬番順
-    on = [c for c in axis if "on" in c["cls"]]
-    assert len(on) == 1, "既定の軸は◎の1頭"
-
-
-def test_the_ui_does_not_compute_point_counts(tmp_path):
-    """点数はサーバが返した値を出すこと (UI で数え直さない)。
+def test_the_ui_does_not_compute_combinations_or_counts(tmp_path):
+    """組み合わせと点数はサーバが返した値を出すこと。
 
     表記を UI で組み立て直して馬単の方向を落とした事故があったので、
     同じ経路で数え間違いも起きないように点数もサーバに寄せている。
@@ -614,6 +631,60 @@ def test_the_ui_does_not_compute_point_counts(tmp_path):
     js = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
     assert "got.total" in js, "点数をサーバの値から取っていない"
     assert ".combos" not in js, "UI が combos を読んでいる"
-    # 組み合わせを作る道具を UI に持たせない
-    for bad in ("permutations", "combinations"):
+    for bad in ("permutations", "combinations", "formationOf", "product("):
         assert bad not in js, bad
+
+
+def test_the_slip_shows_what_was_selected_per_row(tmp_path):
+    """買い目1件ごとに「どの段に何を選んだか」が出ること。
+
+    点の一覧だけだと、フォーメーションで1着候補が何だったのか読み取れない。
+    見出しと番号はサーバの `picks` をそのまま出す。
+    """
+    p = _predict_fixture(n=12)
+    out = _render_build_free(p, tmp_path)
+    t = Tree()
+    t.feed(out["betResult"])
+    # `.bs-picks` は買い目リストと読み合わせの両方に出るので、行の中に限る
+    dls = [x for x in t.find("bs-picks")
+           if any("bs-row" in a["cls"] for a in t.ancestors(x))]
+    assert len(dls) == len(p["bet_slip"]), (len(dls), len(p["bet_slip"]))
+    for entry, dl in zip(p["bet_slip"], dls):
+        dts = [x for x in dl["children"] if x["tag"] == "dt"]
+        dds = [x for x in dl["children"] if x["tag"] == "dd"]
+        assert len(dts) == len(entry["picks"]) == len(dds), entry["key"]
+        for pk, dt, dd in zip(entry["picks"], dts, dds):
+            assert t.all_text(dt).strip() == pk["label"]
+            assert t.all_text(dd).strip() == pk["text"]
+
+
+def test_the_point_list_is_collapsed_but_present(tmp_path):
+    """点の内訳は畳んでおく。**消してはいけない** (手入力に必要)。"""
+    out = _render_build_free(_predict_fixture(n=12), tmp_path)
+    t = Tree()
+    t.feed(out["betResult"])
+    pts = t.find("bs-pts")
+    assert pts, "点の内訳が無い"
+    for d in pts:
+        assert d["tag"] == "details", d["tag"]
+        assert "open" not in d["attrs"], "既定で開いていると縦に伸びる"
+        assert t.find("bs-v", d), "内訳の中身が無い"
+
+
+def test_the_handoff_also_shows_what_was_selected(tmp_path):
+    """読み合わせの各件にも段ごとの選択を添えること。
+
+    公式画面と突き合わせるとき、点だけでなく「1着候補に誰を入れたか」を
+    確かめられる必要がある。
+    """
+    p = _predict_fixture(n=12)
+    out = _render_build_free(p, tmp_path)
+    t = Tree()
+    t.feed(out["betResult"])
+    items = t.find("hb-item")
+    assert items
+    for entry, li in zip(p["bet_slip"], items):
+        dls = t.find("bs-picks", li)
+        assert dls, entry["key"]
+        got = [x["text"].strip() for x in dls[0]["children"] if x["tag"] == "dt"]
+        assert got == [pk["label"] for pk in entry["picks"]], entry["key"]
