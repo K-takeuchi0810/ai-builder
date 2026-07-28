@@ -1486,8 +1486,10 @@ function betSlipBlock(p) {
       <div class="bs-v num">${(t.texts || []).map(esc).join(' / ')}</div>
       <div class="bs-n">${t.n}点</div>
     </div>`).join('');
+  const total = slip.reduce((a, t) => a + t.n, 0);
   return `<div class="section-label">買い目(印の並べ替え)</div>
     <div class="card bs">${rows}</div>
+    ${handoffBlock(p, slip, total)}
     <div class="bs-actions">
       <button class="bs-copy" id="bsCopy">買い目をコピー</button>
       <a class="bs-link" href="https://qrcode.jra.go.jp/" target="_blank"
@@ -1498,12 +1500,55 @@ function betSlipBlock(p) {
       (形式が公開されていないため、このツールでは作りません)。
       ◎の的中率は実測で約20%(1番人気は約33%)です。</p>`;
 }
+
+/* 公式サイトへの引き渡し。**誤登録の最後の防波堤**なので、自動入力が入っても残す。
+ *
+ * 公式の入力は STEP1〜9 の画面操作しかなく、外部から買い目を渡す口が無い
+ * (調査記録: docs/SMAPPY_QR_PLAN.md)。人が手で入れるしかないので、
+ *   1. 公式と同じ順序 (レース → 式別 → 馬番) で並べる
+ *   2. 入れ終わったあと **画面から読み直して** 突き合わせる表を出す
+ * の2点だけをやる。金額はここでは扱わない (公式画面で人が入れる)。 */
+/* 引き渡しに使うレースの同定。競馬場名は予想レスポンスではなく一覧側にあるので、
+ * そこから引く。**取れないときは書かない** (誤った会場名を出すより無い方が安全)。 */
+function raceIdentity(p) {
+  const r0 = state.races.find((x) => x.race_id === p.race_id) || {};
+  const num = Number(p.race_num || r0.race_num || 0);
+  const parts = [];
+  if (r0.track_label) parts.push(r0.track_label);
+  if (num) parts.push(`${num}R`);
+  if (p.start_time) parts.push(`発走 ${p.start_time}`);
+  return parts.join(' ') || 'このレース';
+}
+function handoffBlock(p, slip, total) {
+  const rows = slip.map((t) => `<li class="hb-item">
+      <span class="hb-t">${esc(t.label)}</span>
+      <span class="hb-c num">${(t.texts || []).map(esc).join(' / ')}</span>
+      <span class="hb-n">${t.n}点</span>
+    </li>`).join('');
+  return `<details class="hb">
+    <summary class="hb-head">公式サイトへの入れ方と読み合わせ
+      <span class="hb-total">全${total}点</span></summary>
+    <div class="hb-body">
+      <p class="hb-step">① レースを選ぶ — <b>${esc(raceIdentity(p))}</b></p>
+      <p class="hb-step">② 式別と馬番を、下の順に入れる
+        (<b>矢印の向きは順序の指定</b>です。馬単は1着→2着)</p>
+      <ol class="hb-list">${rows}</ol>
+      <p class="hb-step">③ 金額を入れて確認画面へ進む (金額はこのツールでは扱いません)</p>
+      <p class="hb-step hb-check">④ <b>公式の確認画面を見ながら</b>、上の表と
+        式別・馬番・点数・レースが一致しているか読み合わせる。
+        <b>全${total}点</b>あります。1つでも違えば作り直してください。</p>
+    </div>
+  </details>`;
+}
 function bindBetSlip(p) {
   const btn = $('#bsCopy');
   if (!btn) return;
   btn.addEventListener('click', async () => {
+    // C-3: 表記の正本はサーバの texts (betslip.combo_text)。ここで結合し直すと
+    // 馬単が馬連と同じ「11-10」になる。**公式サイトへ手入力する経路そのもの**なので、
+    // 方向が消えると誤った馬券を買うことになる。UI は文字列を組み立て直さない。
     const text = (p.bet_slip || []).flatMap((t) =>
-      t.combos.map((c) => `${t.label} ${c.map((x) => Number(x)).join('-')}`)).join('\n');
+      (t.texts || []).map((x) => `${t.label} ${x}`)).join('\n');
     try {
       await navigator.clipboard.writeText(text);
       toast('買い目をコピーしました。JRA公式サイトに貼り付けてください。');

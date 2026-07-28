@@ -156,4 +156,5 @@ process.stdout.write(JSON.stringify({
   markLegend: el('#markLegend').innerHTML,
   raceHead: el('#raceHead').innerHTML,
   predWarn: el('#predWarn').innerHTML,
+  betSlip: el('#betSlip').innerHTML,
 }));

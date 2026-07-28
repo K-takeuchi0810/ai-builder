@@ -206,6 +206,30 @@ main{flex:1; padding:14px 14px 84px}
   font-size:var(--fs-min); color:#BFD2C6; background:rgba(255,255,255,.12);
   border:none; border-radius:999px; cursor:pointer}
 .ai-pick b{color:#fff}
+/* 公式サイトへの引き渡し (STEP順の並べ替えと読み合わせ)。
+ * 自動入力が入っても残す — 誤登録の最後の防波堤。 */
+.hb{margin-top:10px; border:1.5px solid var(--line); border-radius:var(--r-md); background:#fff}
+.hb-head{display:flex; align-items:center; gap:8px; padding:13px 14px; min-height:var(--tap);
+  font-size:.86rem; font-weight:700; cursor:pointer; list-style:none}
+.hb-head::-webkit-details-marker{display:none}
+.hb-head::after{content:'\25be'; margin-left:auto; color:var(--ink-soft)}
+.hb[open] .hb-head::after{content:'\25b4'}
+.hb-total{font-size:var(--fs-min); font-weight:700; color:var(--turf-700);
+  background:var(--turf-100); border-radius:999px; padding:2px 9px; white-space:nowrap}
+.hb-body{padding:0 14px 14px}
+.hb-step{margin:0 0 9px; font-size:var(--fs-min); color:var(--ink-soft); line-height:1.8}
+.hb-step b{color:var(--ink)}
+.hb-check{padding:10px 12px; border-radius:var(--r-md); background:var(--gold-soft);
+  color:var(--gold-text)}
+.hb-check b{color:var(--gold-text)}
+.hb-list{margin:0 0 10px; padding:0; list-style:none;
+  border-top:1px solid var(--line-soft)}
+.hb-item{display:flex; align-items:baseline; gap:9px; padding:9px 0;
+  border-bottom:1px solid var(--line-soft); font-size:var(--fs-min)}
+.hb-t{flex:none; width:4.2em; font-weight:700}
+.hb-c{flex:1; min-width:0; word-break:break-all}
+.hb-n{flex:none; color:var(--ink-soft)}
+
 /* E-1: 手動更新 (発走直前はオッズが動くので待たずに取り直せるように) */
 .refresh{min-height:var(--tap); padding:6px 12px; font-family:inherit;
   font-size:var(--fs-min); font-weight:700; color:#BFD2C6;

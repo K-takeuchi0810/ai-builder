@@ -144,6 +144,11 @@ def _render(predict: dict, features: dict | None = None, tmp_path=None) -> dict:
     return json.loads(res.stdout)
 
 
+def _render_build_free(predict: dict, tmp_path=None) -> dict:
+    """予想画面を描画して買い目ブロックも取り出す (features は本番カタログ)。"""
+    return _render(predict, api.feature_catalog(), tmp_path)
+
+
 def _render_build(features: dict, tmp_path=None) -> dict:
     """作成画面 (STEP1 + 詳細設定) を実際に描画する。
 
@@ -465,3 +470,53 @@ def test_cell_count_is_visible(tmp_path):
     js = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
     assert "通りの組み合わせ" in js, "セル数の文言が無い"
     assert "function totalCells" in js
+
+
+# ---------------------------------------------------------------------------
+# 公式サイトへの引き渡し (誤登録の最後の防波堤)
+# ---------------------------------------------------------------------------
+def test_handoff_lists_every_bet_type_with_its_count(tmp_path):
+    """券種ごとの行と点数、および合計点が出ていること。
+
+    QR は JRA 公式サイトでしか作れず、外部から買い目を渡す口も無い
+    (調査記録: docs/SMAPPY_QR_PLAN.md)。人が手で入れるしかないので、
+    **入れ終わったあとに突き合わせる材料**が必ず画面に無いといけない。
+    """
+    p = _predict_fixture(n=12)
+    assert p["bet_slip"], "買い目が生成されていない"
+    out = _render_build_free(p, tmp_path)
+    t = Tree()
+    t.feed(out["betSlip"])
+    items = t.find("hb-item")
+    assert len(items) == len(p["bet_slip"]), (len(items), len(p["bet_slip"]))
+    total = sum(x["n"] for x in p["bet_slip"])
+    txt = t.all_text(t.root)
+    assert f"全{total}点" in txt, txt[:200]
+    # 読み合わせの指示があること (突き合わせずに買わせない)
+    assert t.find("hb-check"), "読み合わせの案内が無い"
+    assert "読み合わせ" in txt
+
+
+def test_handoff_keeps_the_direction_of_ordered_bets(tmp_path):
+    """引き渡しの一覧でも馬単の向きが残ること (`-` に潰れない)。"""
+    out = _render_build_free(_predict_fixture(n=12), tmp_path)
+    t = Tree()
+    t.feed(out["betSlip"])
+    rows = {}
+    for li in t.find("hb-item"):
+        label = t.all_text(t.find("hb-t", li)[0]).strip()
+        rows[label] = t.all_text(t.find("hb-c", li)[0]).strip()
+    assert "→" in rows["馬単"], rows["馬単"]
+    assert "→" not in rows["馬連"], rows["馬連"]
+    # 同じ2頭が馬連と馬単で違う文字列になること (券種の違いが読める)
+    assert rows["馬連"] != rows["馬単"]
+
+
+def test_handoff_has_no_nested_interactive_elements(tmp_path):
+    """<details>/<summary> の中に button を入れ子で置かないこと。"""
+    out = _render_build_free(_predict_fixture(n=12), tmp_path)
+    t = Tree()
+    t.feed(out["betSlip"])
+    assert t.max_button_depth <= 1, "買い目ブロックで button が入れ子になっている"
+    for node in t.find_tag("input"):
+        assert not any(a["tag"] == "button" for a in t.ancestors(node))

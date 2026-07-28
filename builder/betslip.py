@@ -89,9 +89,13 @@ def _trios(n: list[str]) -> list[list[str]]:
 
 
 def as_text(slip: list[dict]) -> str:
-    """公式サイトへ手入力するための平文。金額は含めない。"""
+    """公式サイトへ手入力するための平文。金額は含めない。
+
+    表記は `combo_text` を通す。ここで `-` を直接 join すると、
+    **手入力する当人が見る文字列**で馬単の方向が消える。
+    """
     lines = []
     for t in slip:
         for c in t["combos"]:
-            lines.append(f"{t['label']} {'-'.join(str(int(x)) for x in c)}")
+            lines.append(f"{t['label']} {combo_text(t, c)}")
     return "\n".join(lines)

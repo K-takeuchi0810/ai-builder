@@ -664,3 +664,34 @@ def test_tab_bar_uses_labels_only():
     assert 'class="ic"' not in nav, nav
     for ch in ("日", "作", "比"):
         assert f">{ch}<" not in nav, ch
+
+
+# ---------------------------------------------------------------------------
+# C-3 (再発): 買い目の表記を UI が組み立て直さない
+# ---------------------------------------------------------------------------
+def test_the_ui_never_builds_bet_text_itself():
+    """UI は `combos` を読まず、サーバの `texts` だけを表示・コピーすること。
+
+    表示だけ直してコピー経路を直し忘れ、コピーすると馬単が馬連と同じ
+    「11-10」になっていた。**公式サイトへ手入力する経路そのもの**なので、
+    方向が落ちると違う馬券を買うことになる。
+    `combos` を UI から一切参照させないことで、両方の経路を1つの規則で閉じる。
+    """
+    js = CODE["app.js"]
+    assert ".combos" not in js, "UI が combos を読んでいる (表記を組み立て直す危険)"
+    assert js.count("t.texts") >= 2, "表示とコピーの両方が texts を使っていない"
+
+
+def test_bet_text_keeps_the_direction_for_ordered_types():
+    """順序固定の券種は矢印を保つこと (サーバ側の正本を直接検査)。"""
+    from builder import betslip
+    marks = [{"mark": m, "horse_num": n}
+             for m, n in zip(["◎", "○", "▲"], ["05", "11", "02"])]
+    slip = betslip.build(marks)
+    by = {t["label"]: t for t in slip}
+    assert by["馬単"]["texts"] == ["5→11", "5→2"], by["馬単"]["texts"]
+    assert by["馬連"]["texts"] == ["5-11", "5-2"], by["馬連"]["texts"]
+    # 手入力用の平文でも方向が残る
+    text = betslip.as_text(slip)
+    assert "馬単 5→11" in text, text
+    assert "馬単 5-11" not in text, text
