@@ -486,7 +486,7 @@ def test_handoff_lists_every_bet_type_with_its_count(tmp_path):
     assert p["bet_slip"], "買い目が生成されていない"
     out = _render_build_free(p, tmp_path)
     t = Tree()
-    t.feed(out["betSlip"])
+    t.feed(out["betSlip"] + out["betResult"])
     items = t.find("hb-item")
     assert len(items) == len(p["bet_slip"]), (len(items), len(p["bet_slip"]))
     total = sum(x["n"] for x in p["bet_slip"])
@@ -501,7 +501,7 @@ def test_handoff_keeps_the_direction_of_ordered_bets(tmp_path):
     """引き渡しの一覧でも馬単の向きが残ること (`-` に潰れない)。"""
     out = _render_build_free(_predict_fixture(n=12), tmp_path)
     t = Tree()
-    t.feed(out["betSlip"])
+    t.feed(out["betSlip"] + out["betResult"])
     rows = {}
     for li in t.find("hb-item"):
         label = t.all_text(t.find("hb-t", li)[0]).strip()
@@ -516,7 +516,87 @@ def test_handoff_has_no_nested_interactive_elements(tmp_path):
     """<details>/<summary> の中に button を入れ子で置かないこと。"""
     out = _render_build_free(_predict_fixture(n=12), tmp_path)
     t = Tree()
-    t.feed(out["betSlip"])
+    t.feed(out["betSlip"] + out["betResult"])
     assert t.max_button_depth <= 1, "買い目ブロックで button が入れ子になっている"
     for node in t.find_tag("input"):
         assert not any(a["tag"] == "button" for a in t.ancestors(node))
+
+
+# ---------------------------------------------------------------------------
+# 買い目エディタ (参加者が自分で組む)
+# ---------------------------------------------------------------------------
+def test_every_runner_can_be_picked_not_only_the_marked_ones(tmp_path):
+    """印が付いていない馬も選べること。
+
+    印は「選んだ項目での相対順位」でしかなく推奨ではない。5頭に制限すると
+    印を権威として扱うことになる。既定では印の馬だけが ON。
+    """
+    p = _predict_fixture(n=12)
+    out = _render_build_free(p, tmp_path)
+    t = Tree()
+    t.feed(out["betSlip"])
+    chips = [c for c in t.find("bchip") if c["attrs"].get("data-num")]
+    assert len(chips) == len(p["marks"]), (len(chips), len(p["marks"]))
+    on = [c for c in chips if "on" in c["cls"]]
+    marked = [m for m in p["marks"] if m.get("mark")]
+    assert len(on) == len(marked), (len(on), len(marked))
+    # 押した状態は aria-pressed で伝える
+    assert all(c["attrs"].get("aria-pressed") in ("true", "false") for c in chips)
+
+
+def test_each_bet_type_has_an_on_off_and_a_mode(tmp_path):
+    """券種ごとに ON/OFF と組み方の選択肢があること。"""
+    cat = api.feature_catalog()
+    out = _render_build_free(_predict_fixture(n=12), tmp_path)
+    t = Tree()
+    t.feed(out["betSlip"])
+    rows = t.find("bt-row")
+    assert len(rows) == len(cat["bet_types"]), (len(rows), len(cat["bet_types"]))
+    for row, spec in zip(rows, cat["bet_types"]):
+        assert row["attrs"].get("data-type") == spec["key"]
+        assert t.find("bt-on", row), spec["key"]
+        selects = t.find_tag("select", row)
+        assert len(selects) == 1, spec["key"]
+        opts = t.find_tag("option", selects[0])
+        assert len(opts) == len(spec["modes"]), spec["key"]
+        # 選択肢の文言は API 経由 (UI にハードコードしない)
+        got = [o["text"].strip() for o in opts]
+        assert got == [m["label"] for m in spec["modes"]], spec["key"]
+
+
+def test_bet_editor_has_no_nested_interactive_elements(tmp_path):
+    """チップや行の中に button / select / input を入れ子で置かないこと。"""
+    out = _render_build_free(_predict_fixture(n=12), tmp_path)
+    t = Tree()
+    t.feed(out["betSlip"])
+    assert t.max_button_depth <= 1, "買い目エディタで button が入れ子になっている"
+    for tag in ("input", "select"):
+        for node in t.find_tag(tag):
+            assert not any(a["tag"] == "button" for a in t.ancestors(node)), tag
+
+
+def test_axis_is_chosen_from_the_selected_horses(tmp_path):
+    """軸の候補は「使う馬」に選んだ馬だけ。"""
+    p = _predict_fixture(n=12)
+    out = _render_build_free(p, tmp_path)
+    t = Tree()
+    t.feed(out["betSlip"])
+    axis = [c for c in t.find("bchip") if c["attrs"].get("data-axis")]
+    marked = {m["horse_num"] for m in p["marks"] if m.get("mark")}
+    assert {c["attrs"]["data-axis"] for c in axis} == marked
+    on = [c for c in axis if "on" in c["cls"]]
+    assert len(on) == 1, "既定の軸は◎の1頭"
+
+
+def test_the_ui_does_not_compute_point_counts(tmp_path):
+    """点数はサーバが返した値を出すこと (UI で数え直さない)。
+
+    表記を UI で組み立て直して馬単の方向を落とした事故があったので、
+    同じ経路で数え間違いも起きないように点数もサーバに寄せている。
+    """
+    js = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
+    assert "got.total" in js, "点数をサーバの値から取っていない"
+    assert ".combos" not in js, "UI が combos を読んでいる"
+    # 組み合わせを作る道具を UI に持たせない
+    for bad in ("permutations", "combinations"):
+        assert bad not in js, bad

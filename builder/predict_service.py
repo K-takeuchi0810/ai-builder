@@ -147,6 +147,8 @@ def predict_race(race: dict, user_config: dict, preset: dict) -> dict:
         # スマッピー投票の QR データ形式は非公開なので、公式サイトへ手入力する
         # ための一覧として出す (builder/betslip.py)。
         "bet_slip": _bet_slip(marks),
+        # 参加者が自分で組み替える起点。UI はここから編集を始める
+        "bet_selection": _bet_selection(marks),
     }
 
 
@@ -154,6 +156,13 @@ def _bet_slip(marks: list[dict]) -> list[dict]:
     """印から買い目を組む。印が無ければ空 (印を出さないレースでは買い目も出さない)。"""
     from . import betslip
     return betslip.build(marks) if marks else []
+
+
+def _bet_selection(marks: list[dict]) -> dict:
+    """既定の選択 (◎を軸、他の印を相手)。参加者はここから変えていく。"""
+    from . import betslip
+    return betslip.default_selection(marks) if marks else {"horses": [], "axis": [],
+                                                           "modes": {}}
 
 
 def _result_top3(race: dict) -> list[dict]:

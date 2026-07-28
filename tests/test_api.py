@@ -9,7 +9,8 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from builder import api, configs as cf, config as cfgmod, matrix as mx   # noqa: E402
+from builder import api
+from builder import betslip as bslip, configs as cf, config as cfgmod, matrix as mx   # noqa: E402
 from builder import model, predict_service as svc, specs as sp           # noqa: E402
 
 USER_CFG = {
@@ -1009,3 +1010,94 @@ def test_config_list_rename_and_duplicate(tmp_path, monkeypatch):
     assert cf.get_config(a["id"])["name"] == "改名"
     assert cf.rename_config("nope", "x") is None
     assert cf.duplicate_config("nope") is None
+
+
+# ---------------------------------------------------------------------------
+# POST /api/betslip — 参加者が組んだ買い目
+# ---------------------------------------------------------------------------
+def test_betslip_builds_what_the_participant_asked_for(monkeypatch):
+    monkeypatch.setitem(api._STATE, "daily", {"races": [_race("R1")]})
+    race = api._STATE["daily"]["races"][0]
+    nums = [h["num"] for h in race["horses"]][:3]
+    got, status = api.handle_betslip(
+        {"race_id": "R1",
+         "selection": {"horses": nums, "axis": nums[:1],
+                       "modes": {"umaren": "box", "umatan": "nagashi_both"}}})
+    assert status == 200, got
+    by = {t["key"]: t for t in got["slip"]}
+    assert set(by) == {"umaren", "umatan"}
+    assert by["umaren"]["n"] == 3                 # C(3,2)
+    assert by["umatan"]["n"] == 4                 # 軸の1着2着 × 相手2頭
+    assert got["total"] == 7
+    # 表記の正本はサーバ。矢印がここで確定する
+    assert all("→" in x for x in by["umatan"]["texts"])
+    assert all("→" not in x for x in by["umaren"]["texts"])
+    # 手入力用の平文も同じ本数
+    assert len(got["text"].splitlines()) == got["total"]
+    assert got["note"]
+
+
+def test_betslip_rejects_horses_not_in_the_race(monkeypatch):
+    """出走していない馬番は組まない。**誤った馬券を作らせない最後の門。**"""
+    monkeypatch.setitem(api._STATE, "daily", {"races": [_race("R1")]})
+    got, status = api.handle_betslip(
+        {"race_id": "R1",
+         "selection": {"horses": ["99"], "axis": ["99"], "modes": {"tan": "jiku"}}})
+    assert status == 400, got
+    assert got["error"] == "invalid_selection"
+    assert "99" in got["message"]
+
+
+def test_betslip_reports_the_type_it_could_not_build(monkeypatch):
+    """1券種の指定違いで他の券種まで消さない。理由を返す。"""
+    monkeypatch.setitem(api._STATE, "daily", {"races": [_race("R1")]})
+    nums = [h["num"] for h in api._STATE["daily"]["races"][0]["horses"]][:4]
+    got, status = api.handle_betslip(
+        {"race_id": "R1",
+         "selection": {"horses": nums, "axis": nums[:2],
+                       "modes": {"umaren": "nagashi", "wide": "box"}}})
+    assert status == 200, got
+    assert [t["key"] for t in got["slip"]] == ["wide"]
+    assert [x["key"] for x in got["skipped"]] == ["umaren"]
+    assert got["skipped"][0]["reason"]
+
+
+def test_betslip_needs_a_known_race(monkeypatch):
+    monkeypatch.setitem(api._STATE, "daily", {"races": [_race("R1")]})
+    got, status = api.handle_betslip({"race_id": "nope", "selection": {}})
+    assert status == 404 and got["error"] == "race_not_found"
+
+
+def test_betslip_needs_the_daily_matrix(monkeypatch):
+    monkeypatch.delitem(api._STATE, "daily", raising=False)
+    got, status = api.handle_betslip({"race_id": "R1", "selection": {}})
+    assert status == 409 and got["error"] == "daily_matrix_not_built"
+
+
+def test_catalog_serves_the_bet_types_and_modes():
+    """券種と組み方の語彙は labels.py が正本。UI に複製させない。"""
+    from builder import labels as lbl
+    cat = api.feature_catalog()
+    keys = [t["key"] for t in cat["bet_types"]]
+    assert keys == [t["key"] for t in bslip.BET_TYPES]
+    for t in cat["bet_types"]:
+        assert t["modes"], t["key"]
+        for m in t["modes"]:
+            assert m["label"] and m["desc"]
+            assert m["label"] == lbl.bet_mode_label(m["key"])
+    assert cat["bet_max_axis"] == bslip.MAX_AXIS
+    assert cat["bet_slip_note"] == lbl.BET_SLIP_NOTE
+
+
+def test_predict_returns_a_starting_selection(monkeypatch):
+    """UI が編集を始める起点をサーバが与えること (UI で既定を作らない)。"""
+    monkeypatch.setitem(api._STATE, "daily", {"races": [_race("R1")]})
+    monkeypatch.setitem(api._STATE, "preset", PRESET)
+    got, status = api.handle_predict({"race_id": "R1", "config": USER_CFG})
+    assert status == 200
+    d = got["bet_selection"]
+    assert d["axis"] and d["horses"] and d["modes"]
+    # 既定で組んだ結果が bet_slip と一致する
+    slip, skipped = bslip.build_custom(d)
+    assert skipped == []
+    assert [t["n"] for t in slip] == [t["n"] for t in got["bet_slip"]]

@@ -3,6 +3,7 @@
     GET  /api/races/today[?date=YYYYMMDD]   当日レース一覧 + 分析可否 (馬体重待ち/ゲート未通過)
     GET  /api/features                      選べる項目 (STEP1 / STEP2 の選択肢)
     POST /api/predict                       {race_id, config} → 印 + 寄与分解 + カバレッジ
+    POST /api/betslip                       {race_id, selection} → 買い目 (参加者が組む)
     POST /api/backtest                      {config, period?} → 的中率系 + 人気ベースライン
     POST /api/configs                       設定の保存 (マイAI v1 → v2)
     GET  /api/configs/{id}                  設定の取得
@@ -31,6 +32,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
+from . import betslip as bs
 from . import config as cfgmod
 from . import configs as cf
 from . import matrix as mxmod
@@ -235,6 +237,13 @@ def feature_catalog() -> dict:
                           for m in sp.MAIB_MATCHES],
         "step2_lookbacks": [{"value": lb, "label": lbl.lookback_label(lb)}
                             for lb in sp.MAIB_LOOKBACKS],
+        # 買い目の券種と組み方。**UI に文言を複製しない** (labels.py が単一辞書)
+        "bet_types": [{"key": t["key"], "label": t["label"], "desc": t["desc"],
+                       "size": t["size"], "ordered": bool(t.get("ordered")),
+                       "modes": lbl.bet_modes(t["modes"])}
+                      for t in bs.BET_TYPES],
+        "bet_max_axis": bs.MAX_AXIS,
+        "bet_slip_note": lbl.BET_SLIP_NOTE,
         "n_base_columns": len(sp.maib_step2_specs()),
         "notes": ["重みは事前学習済み (参加者は項目を選ぶだけ)",
                   "回収率はメイン指標ではありません",
@@ -352,6 +361,35 @@ def handle_roi_ranking() -> tuple[dict, int]:
     }, 200
 
 
+def handle_betslip(payload: dict) -> tuple[dict, int]:
+    """参加者が指定した買い目を組む。
+
+    **表記と点数の正本をサーバに置く**ため、UI は組み合わせを自分で作らない。
+    馬単の「11→10」を UI 側で組み立て直して方向を落とした事故があったので、
+    点数の計算もここに寄せている (数え間違いも同じ経路で防ぐ)。
+
+    出走していない馬番は組まない (400)。1券種の指定違いは全体を止めず、
+    `skipped` に理由を入れて他の券種は作る。
+    """
+    from . import labels as lbl
+    race_id = str(payload.get("race_id") or "")
+    daily = _STATE.get("daily")
+    if not daily:
+        return {"error": "daily_matrix_not_built"}, 409
+    race = next((r for r in daily["races"] if r["race_id"] == race_id), None)
+    if race is None:
+        return {"error": "race_not_found", "race_id": race_id}, 404
+    runners = [h["num"] for h in race.get("horses", [])]
+    try:
+        slip, skipped = bs.build_custom(payload.get("selection") or {},
+                                        runners=runners)
+    except bs.SelectionError as err:
+        return {"error": "invalid_selection", "message": str(err)}, 400
+    return {"race_id": race_id, "slip": slip, "skipped": skipped,
+            "total": bs.total_points(slip), "text": bs.as_text(slip),
+            "note": lbl.BET_SLIP_NOTE}, 200
+
+
 def handle_backtest(payload: dict) -> tuple[dict, int]:
     user_cfg = payload.get("config") or {}
     period = payload.get("period") or {}
@@ -427,10 +465,21 @@ class Handler(BaseHTTPRequestHandler):
         return _json(self, {"error": "not_found", "path": path}, 404)
 
     def do_POST(self):  # noqa: N802
+        try:
+            return self._post()
+        except Exception:
+            # 未処理例外で接続が黙って切れると、UI からは「サーバが落ちている」と
+            # 区別できない (実際に /api/betslip の NameError でそうなった)。
+            logging.exception("POST %s で例外", self.path)
+            return _json(self, {"error": "server_error", "path": self.path}, 500)
+
+    def _post(self):
         path = urlparse(self.path).path.rstrip("/")
         payload = self._body()
         if path == "/api/predict":
             return _json(self, *handle_predict(payload))
+        if path == "/api/betslip":
+            return _json(self, *handle_betslip(payload))
         if path == "/api/backtest":
             return _json(self, *handle_backtest(payload))
         if path == "/api/leaderboard":

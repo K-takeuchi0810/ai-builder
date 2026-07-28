@@ -689,9 +689,12 @@ def test_bet_text_keeps_the_direction_for_ordered_types():
              for m, n in zip(["◎", "○", "▲"], ["05", "11", "02"])]
     slip = betslip.build(marks)
     by = {t["label"]: t for t in slip}
-    assert by["馬単"]["texts"] == ["5→11", "5→2"], by["馬単"]["texts"]
-    assert by["馬連"]["texts"] == ["5-11", "5-2"], by["馬連"]["texts"]
+    # 順序なしの券種は **組の中も並びも馬番順**。公式サイトの入力は馬番順のマス目で、
+    # 「5-2」のように軸を先に出すと転記でずれる
+    assert by["馬連"]["texts"] == ["2-5", "5-11"], by["馬連"]["texts"]
+    # 馬単は並べ替えない — 並び自体が着順の指定
+    assert by["馬単"]["texts"] == ["5→2", "5→11"], by["馬単"]["texts"]
     # 手入力用の平文でも方向が残る
     text = betslip.as_text(slip)
-    assert "馬単 5→11" in text, text
-    assert "馬単 5-11" not in text, text
+    assert "馬単 5→2" in text, text
+    assert "馬単 5-2" not in text, text
