@@ -17,6 +17,7 @@ serve.bat           # サーバ起動 → http://127.0.0.1:8780/
 
 → **使い方: [docs/USAGE.md](docs/USAGE.md)**
 / 設計: [docs/MAIBUILDER_DESIGN_v0.3.md](docs/MAIBUILDER_DESIGN_v0.3.md)
+/ 共有公開: [docs/SHARED_OPERATIONS.md](docs/SHARED_OPERATIONS.md)
 / 判断の根拠: [docs/evidence/20260726_FINDINGS_preset_weights.md](docs/evidence/20260726_FINDINGS_preset_weights.md)
 
 > **回収率商品ではない。** 35,036 + 119,069 + 63,525 候補を探索して単勝市場を上回る

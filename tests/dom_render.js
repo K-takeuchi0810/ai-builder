@@ -120,6 +120,40 @@ const src = fs.readFileSync(
 const ctx = vm.createContext(sandbox);
 vm.runInContext(src, ctx, { filename: 'app.js' });
 
+if (process.argv[2] === '--allocation') {
+  sandbox.__budget = Number(process.argv[3]);
+  sandbox.__slip = JSON.parse(process.argv[4]);
+  process.stdout.write(JSON.stringify(
+    vm.runInContext('oddsBudgetAllocation(__budget, __slip)', ctx)));
+  return;
+}
+
+if (process.argv[2] === '--equal-allocation') {
+  sandbox.__budget = Number(process.argv[3]);
+  sandbox.__slip = JSON.parse(process.argv[4]);
+  process.stdout.write(JSON.stringify(
+    vm.runInContext('equalBudgetAllocation(__budget, __slip)', ctx)));
+  return;
+}
+
+if (process.argv[2] === '--point-edit') {
+  sandbox.__entries = JSON.parse(process.argv[3]);
+  sandbox.__slip = JSON.parse(process.argv[4]);
+  sandbox.__slipIndex = Number(process.argv[5]);
+  sandbox.__pointIndex = Number(process.argv[6]);
+  sandbox.__amount = Number(process.argv[7]);
+  process.stdout.write(JSON.stringify(vm.runInContext(
+    'bet.entries=__entries; bet.slip=__slip;'
+    + '({ok:applyPointAmountEdit(__slipIndex,__pointIndex,__amount),entries:bet.entries})', ctx)));
+  return;
+}
+
+if (process.argv[2] === '--result-review') {
+  sandbox.__review = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
+  process.stdout.write(vm.runInContext('resultItemReviewHtml(__review)', ctx));
+  return;
+}
+
 const BUILD = process.argv[2] === '--build';
 if (BUILD) {
   const features = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
@@ -150,6 +184,15 @@ if (features) {
 }
 sandbox.__p = predict;
 vm.runInContext('renderPredict(__p, null);', ctx);
+const initialBetResult = el('#bsResult').innerHTML;
+// 既存の買い目詳細テストは「印から買い目を作る」を押した後の状態を検査する。
+// 初期状態は別フィールドで保持し、プリセット表示へ戻さないことも検査できるようにする。
+vm.runInContext(
+  'bet.entries = JSON.parse(JSON.stringify(__p.bet_selection || []));'
+  + 'bet.slip = __p.bet_slip || [];'
+  + 'bet.total = bet.slip.reduce((a,t) => a + t.n, 0);'
+  + 'bet.totalYen = bet.slip.reduce((a,t) => a + (t.subtotal_yen || 0), 0);'
+  + 'renderBetResult(__p);', ctx);
 
 process.stdout.write(JSON.stringify({
   markList: el('#markList').innerHTML,
@@ -160,4 +203,5 @@ process.stdout.write(JSON.stringify({
   // 買い目は組み立て中の1件 (#bsDraft) と追加済み (#bsResult) が別ノード
   betDraft: el('#bsDraft').innerHTML,
   betResult: el('#bsResult').innerHTML,
+  initialBetResult,
 }));

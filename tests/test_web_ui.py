@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 import re
 import sys
 
@@ -41,6 +42,14 @@ def _strip_comments(text: str) -> str:
 
 
 CODE = {name: _strip_comments(t) for name, t in ALL.items()}
+
+
+def test_official_race_changes_are_visible_and_explain_recalculation():
+    """TC/CC must not silently alter only the backend state."""
+    assert "発走変更" in JS
+    assert "コース変更" in JS
+    assert "締切と結果取得も変更後の時刻" in JS
+    assert "AI評価は変更後の条件で再計算" in JS
 
 
 def test_web_files_exist_and_are_the_only_assets():
@@ -236,7 +245,7 @@ def test_no_contest_or_hype_vocabulary():
     # 「見どころ」のような煽り語彙も置換済みであること
     assert "見どころ" not in CODE["index.html"]
     # 置換後の語彙が入っていること
-    assert "本日の成績比較" in CODE["index.html"]
+    assert "今日の成績" in CODE["index.html"]
     assert "基準" in CODE["index.html"]
 
 
@@ -287,7 +296,7 @@ def test_marks_are_suppressed_by_default_on_unknown_warnings():
     harmless = re.findall(r"'([a-z_]+)'", m.group(1))
     # 印を出して良いのは「開示のみ」の警告だけ
     assert set(harmless) == {"low_sample_columns", "excluded_columns_dropped",
-                             "columns_skipped_in_race"}, harmless
+                             "columns_skipped_in_race", "limited_history"}, harmless
     # 判定は「HARMLESS 以外があれば止める」向きであること
     assert "!HARMLESS.includes" in js
     # 個別コードの直接列挙で塞いでいないこと (漏れの原因)
@@ -403,18 +412,31 @@ def test_race_id_is_carried_in_the_url():
     assert "#predict/${" in js or "`#predict/" in js, "URL にレースを載せていない"
     assert "parseHash" in js
     assert "state.selectedRaceId = h.raceId" in js or "if (h.raceId)" in js
+    assert "state.listDate = state.selectedRaceDate" in js
+    assert "initialRaceLoad" in js, "履歴データを待たずに結果画面を描画している"
 
 
 def test_race_list_has_jump_affordances():
-    """F4: 会場チップと sticky 見出しで長い一覧を移動できること。"""
+    """F4: 直近レースを優先し、残りは競馬場→レースの2タップで開けること。"""
     js, css = CODE["app.js"], CSS
-    assert "venue-chips" in js and "vchip" in js
-    assert "scrollToNextRace" in js
-    block = _rule_block(css, ".track-head")
-    assert block and "sticky" in block, "会場見出しが sticky でない"
-    # チップもタップ標的の下限を守る
-    vb = _rule_block(css, ".vchip")
-    assert vb and "min-height" in vb
+    assert "proximity" in js and "upcoming.slice(0, 3)" in js
+    assert "raceButtonPicker" in js and "data-result-track" in js
+    assert "result-race-button" in js and "bindRaceButtonPicker" in js
+    assert ".result-race-grid[hidden]" in css
+    assert "track-patch" in js and ".track-patch" in css
+    assert "本日のレース" in js and "前回開催" in js
+    assert "raceDateSelect" in js and "/api/race-dates" in js
+    assert "date: state.selectedRaceDate" in js
+    block = _rule_block(css, ".result-race-button")
+    assert block and "min-height" in block
+
+
+def test_context_trend_prioritizes_yesterday_without_hiding_long_term_sample():
+    js = CODE["app.js"]
+    assert "前日の傾向" in js
+    assert "中長期の傾向" in js
+    assert "前日＋中長期傾向でこのレースを予想" in js
+    assert "recent.items" in js
 
 
 def test_provisional_chip_means_weight_not_announced():
@@ -546,7 +568,8 @@ def test_static_serving_returns_index_and_assets():
 def test_all_api_endpoints_are_wired_in_the_ui():
     """UI が §8 の5経路すべてを使っていること (未配線の画面を残さない)。"""
     for path in ("/api/races/today", "/api/features", "/api/leaderboard",
-                 "/api/predict", "/api/backtest", "/api/configs"):
+                 "/api/predict", "/api/backtest", "/api/configs",
+                 "/api/smappy/qr", "/api/result-item-review"):
         assert path in JS, path
 
 # ---------------------------------------------------------------------------
@@ -648,6 +671,14 @@ def test_odds_are_refetched_when_the_snapshot_time_changes():
     assert 'id="refreshBtn"' in js, "手動更新ボタンが無い"
 
 
+def test_live_revision_refreshes_prediction_and_date_rolls_over():
+    js = CODE["app.js"]
+    assert "r.live_revision !== before.live_revision" in js
+    assert "weightPublished || oddsChanged || revisionChanged" in js
+    assert "日付が変わりました。本日のレース一覧へ切り替えました。" in js
+    assert "速報確認" in js
+
+
 def test_first_run_routes_to_creation():
     """マイAI 0件を検出したら、レースを選ばせる前に作成へ誘導すること。"""
     js, html = CODE["app.js"], CODE["index.html"]
@@ -655,6 +686,16 @@ def test_first_run_routes_to_creation():
     assert "maybeInviteFirstRun" in js
     # 一覧の描画より前に判定を走らせる (レース選択後に空を告げない)
     assert js.index("maybeInviteFirstRun()") < js.index("function maybeInviteFirstRun")
+
+
+def test_my_ai_builder_is_closed_when_there_are_no_races_today():
+    """非開催日に設定だけ作れてしまう導線を残さないこと。"""
+    js, css = CODE["app.js"], CODE["app.css"]
+    assert "todayRaceCount" in js
+    assert "key === 'build' && state.todayRaceCount === 0" in js
+    assert "本日の開催レースがないため、マイAIの作成・編集は開催日に利用できます。" in js
+    assert "syncBuildAvailability()" in js
+    assert "nav.tabs button:disabled" in css
 
 
 def test_tab_bar_uses_labels_only():
@@ -698,6 +739,145 @@ def test_bet_text_keeps_the_direction_for_ordered_types():
     text = betslip.as_text(slip)
     assert "馬単 5→2" in text, text
     assert "馬単 5-2" not in text, text
+
+
+def test_shared_access_expiry_and_mobile_admin_flow_are_visible():
+    js = CODE["app.js"]
+    assert "scheduleAuthExpiry(status.server_now)" in js
+    assert "利用期限が終了しました" in js
+    assert "管理者ログイン" in js
+    assert "MAIBuilderを使う" in js
+    assert "この画面をスマホで開いたまま" in js
+    assert "招待URLを共有" in js
+    assert "effective_status" in js
+    assert "再招待が必要です" in js
+
+
+def test_board_shows_only_used_ai_and_manages_saved_ai_history():
+    js = CODE["app.js"]
+    assert "config_id: state.config && state.config.id" in js
+    assert "if (!d.n_races_finished)" in js
+    assert "レース結果が確定すると、使用したAI・項目の分析を表示します" in js
+    assert "/api/user-leaderboard?range=" in js
+    assert "data-performance-range" in CODE["index.html"]
+    assert "前回開催" in CODE["index.html"]
+    assert "直近7日" in CODE["index.html"]
+    assert "利用者別" in js
+    assert "購入確認済み" in js
+    assert "未確認" in js
+    assert "あなたの購入記録（1記録ごとの内訳）" in js
+    assert "発走前QR登録のレース別内訳" in js
+    assert "最新・要確認" in js and "購入未確認" in js
+    assert "${visible}/${rows.length}件表示" in js
+    assert "不的中" in js and "settlement-breakdown" in js
+    assert "data-filter=\"focus\"" in js
+    assert "track-patch" in js and "start_time" in js
+    assert "そのほかのAI" in js
+    assert "if (h.key === 'board') go('board', false)" in js
+    assert "h.key !== 'races' && h.key !== 'board'" in js
+    assert "if (d.range === 'today' && d.date) $('#hdrDate').textContent = formatDate(d.date)" in js
+    assert "clearStale('#boardWarn');" in js
+    assert "if (purchaseOk && usersOk) clearStale('#boardWarn');" in js
+    assert 'id="userLeaderboard"' in CODE["index.html"]
+    assert "使用したAI・項目の分析" in CODE["index.html"]
+    assert "/api/configs?include_archived=1" in js
+    assert "/api/configs/archive" in js
+    assert "名前変更" in js and "保管済み" in js
+    # 0/50 の同じ文言を各AIカードに繰り返さない。
+    roi_start = js.index("function roiRow(e)")
+    roi_end = js.index("function initBet", roi_start)
+    assert "判定できません" not in js[roi_start:roi_end]
+
+
+def test_finished_race_result_does_not_require_my_ai():
+    """終了レースはAI作成画面へ送らず、結果専用リクエストで開く。"""
+    js = CODE["app.js"]
+    assert "async function loadRaceResult()" in js
+    assert "result_only: true" in js
+    assert "if (noAi && !noRace)" in js
+    assert "確定結果・払戻" in js
+    assert "終了レースの結果を見る" in js
+    assert "race_not_finished" in Path("builder/api.py").read_text(encoding="utf-8")
+
+
+def test_finished_race_allows_manual_purchase_record_and_history_delete():
+    """締切後はJRA送信せず、購入記録の追加・本人による削除ができる。"""
+    js = CODE["app.js"]
+    api_source = Path("builder/api.py").read_text(encoding="utf-8")
+    assert "購入した買い目を後から記録" in js
+    assert "'/api/purchases/record'" in js
+    assert "'/api/purchases/delete'" in js
+    assert "購入済みの買い目として保存" in js
+    assert "data-purchase-delete" in js
+    assert 'path == "/api/purchases/record"' in api_source
+    assert 'path == "/api/purchases/delete"' in api_source
+
+
+def test_unknown_going_is_presented_as_waiting_for_announcement():
+    js = CODE["app.js"]
+    assert "r.condition_label === '不明'" in js
+    assert "馬場発表待ち" in js
+
+
+def test_context_trend_button_stays_inside_mobile_card():
+    css = Path("web/app.css").read_text(encoding="utf-8")
+    # .cta is declared later with width:100%, so the scoped selector must be more
+    # specific or the horizontal margins make this button overflow the card.
+    assert ".trend-card .trend-apply{width:calc(100% - 24px)" in css
+
+
+def test_prediction_ai_switcher_does_not_expand_every_saved_ai_by_default():
+    js = CODE["app.js"]
+    css = Path("web/app.css").read_text(encoding="utf-8")
+    assert 'id="aiSwitchSelect"' in js
+    assert 'id="aiSwitchApply"' in js
+    assert "現在使用中" in js and "ほかのマイAIに切り替える" in js
+    assert '<details class="ai-manage-details">' in js
+    assert "名前変更・保管" in js
+    assert ".ai-current-card" in css and ".ai-switcher" in css
+
+
+def test_started_races_are_not_shown_as_predictable_and_live_screens_refresh():
+    js = CODE["app.js"]
+    assert "if (r.started) return '<span class=\"chip wait\">結果取込待ち</span>'" in js
+    assert "!r.finished && !r.started" in js
+    assert "発走済みです。確定結果の取込後に開けるようになります。" in js
+    assert "startScreenPolling('board')" in js
+    assert "startScreenPolling('races')" in js
+    assert "document.addEventListener('visibilitychange'" in js
+    assert "const latest = await getJSON('/api/races/today')" in js
+    assert "if (analysis && analysis.open) await loadLeaderboardContent()" in js
+    assert "if (aiAnalysis.open) loadLeaderboardContent()" in js
+
+
+def test_all_race_item_review_is_mobile_compact_and_shows_conditions():
+    """36レースを個別遷移せず、馬場・距離と代表項目を一覧できる。"""
+    js = CODE["app.js"]
+    css = Path("web/app.css").read_text(encoding="utf-8")
+    assert "/api/result-item-review?date=" in js
+    assert "buildResultItemReviewFromPredictions" in js
+    assert "Math.min(4" in js and "result_only: true" in js
+    assert "の項目別振り返り" in js
+    assert "r.surface_label" in js and "r.distance" in js
+    assert "マイAIで選ぶ項目" in js and "この組み合わせで評価" in js
+    assert "複数項目を組み合わせた振り返り用マイAI" in js
+    assert '<details class="review-race">' in js
+    assert "data-review-track" in js
+    assert ".review-winner" in css and "text-overflow:ellipsis" in css
+    # 旧サービスへのフォールバック中は、新APIの404で大きな再起動通知を重ねない。
+    assert "!path.startsWith('/api/result-item-review')" in js
+    assert "項目別振り返りは現在利用できます" in js
+    assert "allFinished ? '本日の結果'" in js
+    assert "全${state.races.length}レース終了" in js
+
+
+def test_live_scratches_are_visible_and_removed_from_betting():
+    js = CODE["app.js"]
+    assert "取消・除外を反映しました" in js
+    assert "AI評価・買い目・スマッピーQRの対象から外れています" in js
+    assert "r.n_scratched" in js and "取消・除外 ${Number(r.n_scratched)}頭" in js
+    assert "開催変更情報が90秒以内に確認できるまで" in js
+    assert "p.live_source_checked_at || p.live_updated_at" in js
 
 
 # ---------------------------------------------------------------------------

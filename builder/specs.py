@@ -113,8 +113,33 @@ def maib_all_specs() -> list[dict]:
 #     (tests/test_presets.py::test_per_column_fit_is_independent_of_other_columns)
 PARTICIPANT_EXCLUDED_KEYS: frozenset[str] = frozenset({"popularity"})
 
+# 2025-07-05〜2026-07-25 の未学習期間3,702レースで全425列を単独再生した監査結果。
+# 基底列はキャッシュ互換のため残すが、参加者には選ばせない。
+#
+# - recent_4corner_*: 学習重み0・検証期間でも使用可能レース0
+# - agg_gain_first_to_last: 44セルすべてが一様予想以下
+# - days_since_last / draw_position: 検証期間で一様予想を僅かに下回り、重みも極小
+#
+# 「選ぶと印が動く」だけでなく、未学習期間でも予測方向が再現した項目だけを公開する。
+PARTICIPANT_RETIRED_KEYS: frozenset[str] = frozenset({
+    "recent_4corner_avg_position",
+    "recent_4corner_position_change",
+    "agg_gain_first_to_last",
+    "days_since_last",
+    "draw_position",
+})
+
+PARTICIPANT_UNAVAILABLE_KEYS: frozenset[str] = (
+    PARTICIPANT_EXCLUDED_KEYS | PARTICIPANT_RETIRED_KEYS
+)
+
 
 def maib_participant_step1_specs() -> list[dict]:
-    """参加者が選べる STEP1 (判断A の除外を適用済み)。"""
+    """参加者が選べる STEP1 (人気除外・未学習期間監査を適用済み)。"""
     return [s for s in maib_step1_specs()
-            if s["key"] not in PARTICIPANT_EXCLUDED_KEYS]
+            if s["key"] not in PARTICIPANT_UNAVAILABLE_KEYS]
+
+
+def maib_participant_step2_metrics() -> tuple[str, ...]:
+    """参加者が選べる STEP2 集計対象。基底列定義自体は変更しない。"""
+    return tuple(k for k in MAIB_STEP2_METRICS if k not in PARTICIPANT_UNAVAILABLE_KEYS)

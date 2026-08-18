@@ -137,6 +137,31 @@ def build_index(rebuild: bool = False) -> dict:
     return out
 
 
+def _scan_date(date: str) -> dict[str, dict]:
+    """索引作成後に届いた開催日のRAだけを増分走査する。"""
+    out: dict[str, dict] = {}
+    if len(date) != 8 or not date.isdigit():
+        return out
+    # ファイル名には対象開催日が入る。全履歴2817ファイルを毎回読む必要はない。
+    for path in sorted(_raw_dir().glob(f"RA*{date}*.jvd")):
+        try:
+            data = path.read_bytes()
+        except OSError:
+            continue
+        i = 0
+        while i < len(data) - 3:
+            if data[i:i + 2] == b"RA" and data[i + 2:i + 3].isdigit():
+                rec = data[i:i + 1273]
+                got = parse_conditions(rec)
+                if got and got.get("class_code"):
+                    key = rec[RACE_KEY_SLICE].decode("ascii", "replace")
+                    out[key] = {"class_code": got["class_code"], "grade": got["grade"]}
+                i += 1273
+            else:
+                i += 1
+    return out
+
+
 _CACHE: dict | None = None
 
 
@@ -152,4 +177,18 @@ def lookup(race: dict) -> dict:
     key = (f"{race.get('race_year')}{race.get('race_month_day')}"
            f"{race.get('track_code')}{race.get('kaiji')}"
            f"{race.get('nichiji')}{race.get('race_num')}")
+    got = _CACHE.get(key)
+    if got:
+        return got
+
+    # 月曜などに作った索引には次開催のRAがまだ無い。当日のレースだけを
+    # その場で追記し、新馬・未勝利・1勝クラスを空欄にしない。
+    added = _scan_date(key[:8])
+    if added:
+        _CACHE.update(added)
+        p = index_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_suffix(p.suffix + ".tmp")
+        tmp.write_text(json.dumps(_CACHE, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(p)
     return _CACHE.get(key, {})

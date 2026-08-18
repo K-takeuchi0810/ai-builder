@@ -4,13 +4,11 @@
 
 **する**: 参加者が「券種 → 買い方 → 馬(または枠)」を選んだものを、1点ずつの組に
 展開する。買い目は**追加していける**ので、1レースで複数券種を作れる。
+金額は1点あたり100円単位で保持する。QRの投票データはここでは作らず、
+`smappy.py` が買い目と金額をJRA公式サイトへ送り、JRAが返したデータを使う。
 **しない**:
 
-- 金額は一切扱わない (何円買うかは組み立てない)
-- QR コードを生成しない。**スマッピー投票の QR データ形式は非公開**で、
-  JRA 公式の生成サイト (qrcode.jra.go.jp) だけが正規の経路。形式を推測して
-  作ると、読めないか **間違った馬券を実際のお金で登録する** 危険がある。
-  (調査記録: `docs/SMAPPY_QR_PLAN.md`)
+- JRAの非公開な投票用QRデータを推測して作らない
 - 「儲かる」方向の言葉を出さない (設計書 v0.3 §1 DON'T)
 - **どの券種・どの買い方が有利かを示唆しない。** 点数だけを出す
 
@@ -29,7 +27,7 @@
 ## 3つの不変条件
 
 1. **表記と点数の正本はここ。** 券種ごとの区切り (馬連は `-`、馬単は `→`) は
-   `combo_text` だけが決める。UI 側で組み立て直すと、**手入力する当人が見る文字列**で
+   `combo_text` だけが決める。UI 側で組み立て直すと、**利用者が確認する文字列**で
    順序指定が消え、違う馬券を買うことになる (実際に一度そうなった)。
 2. **黙って別の買い目を作らない。** 組めない指定は捨てるのではなく `skipped` に
    理由と直し方を入れて返す。
@@ -71,6 +69,8 @@ BET_TYPES: tuple[dict, ...] = (
      "modes": ("nagashi_1st", "nagashi_2nd", "nagashi_3rd", "box", "formation")},
 )
 BY_KEY = {t["key"]: t for t in BET_TYPES}
+DEFAULT_AMOUNT_YEN = 100
+MAX_AMOUNT_PER_POINT_YEN = 999_900
 
 
 # ---------------------------------------------------------------------------
@@ -242,6 +242,15 @@ def _build_one(entry: dict, *, runners=None, frames=None) -> dict:
     if not t.get("ordered"):
         combos = [sorted(c, key=_num) for c in combos]
     combos = _dedup(combos)
+    raw_amounts = entry.get("amounts_yen")
+    if raw_amounts is None:
+        amount_yen = _amount_yen(entry.get("amount_yen", DEFAULT_AMOUNT_YEN))
+        amounts_yen = [amount_yen] * len(combos)
+    else:
+        if not isinstance(raw_amounts, list) or len(raw_amounts) != len(combos):
+            raise SelectionError("点別金額は買い目の点数と同じ件数で指定してください")
+        amounts_yen = [_amount_yen(raw) for raw in raw_amounts]
+        amount_yen = amounts_yen[0] if len(set(amounts_yen)) == 1 else None
     return {"key": t["key"], "label": t["label"], "desc": t["desc"],
             "size": t["size"], "unit": t["unit"],
             "ordered": bool(t.get("ordered")), "mode": mode,
@@ -250,8 +259,24 @@ def _build_one(entry: dict, *, runners=None, frames=None) -> dict:
             # **何を選んだのか**を段ごとに読める形で返す。点の一覧だけだと
             # 「1着に誰を入れたか」がフォーメーションで追えない。
             "picks": _picks(t, mode, specs, groups),
-            "combos": combos, "n": len(combos),
+            "combos": combos, "n": len(combos), "amount_yen": amount_yen,
+            "amounts_yen": amounts_yen,
+            "subtotal_yen": sum(amounts_yen),
             "texts": [combo_text(t, c) for c in combos]}
+
+
+def _amount_yen(raw) -> int:
+    """1点あたりの金額。スマッピーと同じ100円単位で検査する。"""
+    if isinstance(raw, bool) or (isinstance(raw, float) and not raw.is_integer()):
+        raise SelectionError("金額は100円単位の数字で入力してください")
+    try:
+        amount = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise SelectionError("金額は100円単位の数字で入力してください") from exc
+    if amount < 100 or amount > MAX_AMOUNT_PER_POINT_YEN or amount % 100:
+        raise SelectionError(
+            f"金額は100円から{MAX_AMOUNT_PER_POINT_YEN:,}円まで、100円単位で入力してください")
+    return amount
 
 
 def _picks(t: dict, mode: str, specs, groups: list[list[str]]) -> list[dict]:
@@ -382,11 +407,15 @@ def total_points(slip: list[dict]) -> int:
     return sum(t["n"] for t in slip)
 
 
+def total_yen(slip: list[dict]) -> int:
+    return sum(t["subtotal_yen"] for t in slip)
+
+
 def as_text(slip: list[dict]) -> str:
-    """公式サイトへ手入力するための平文。金額は含めない。
+    """コピー・照合用の平文。金額は含めない。
 
     表記は `combo_text` を通す。ここで `-` を直接 join すると、
-    **手入力する当人が見る文字列**で順序指定が消える。
+    **利用者が確認する文字列**で順序指定が消える。
     """
     lines = []
     for t in slip:

@@ -10,18 +10,21 @@ API 層 (builder/api.py) はここを呼ぶだけにして、ロジックをテ�
 
 from __future__ import annotations
 
+from itertools import combinations
+
 from . import configs as cf
 from . import config as cfgmod
 from . import matrix as mx
 from . import model
 from . import presets as ps
 from . import roi as _roi
+from . import specs as sp
 
 MARKS = ["◎", "○", "▲", "△", "×"]
 
 
 def _rows_from_race(race: dict) -> dict[str, dict]:
-    return {h["num"]: h["x"] for h in race.get("horses", [])}
+    return {h["num"]: h["x"] for h in race.get("horses", []) if not h.get("scratched")}
 
 
 def predict_race(race: dict, user_config: dict, preset: dict) -> dict:
@@ -41,10 +44,15 @@ def predict_race(race: dict, user_config: dict, preset: dict) -> dict:
     # 「選んだのに効いていない」ことに気づけないので必ず知らせる。
     dropped = cf.excluded_in_config(user_config)
     if dropped:
+        only_popularity = set(dropped) == {"popularity"}
         warnings.append({
             "code": "excluded_columns_dropped",
-            "message": "「人気(市場)」は予想に使わない項目になったため、この設定から外しました",
-            "hint": "市場人気は基準の「1番人気AI」専用です。マイAIは選んだ項目だけで印を決めます。",
+            "message": ("「人気(市場)」は予想に使わない項目になったため、この設定から外しました"
+                        if only_popularity else
+                        f"保存済みAIから、現在は使用を停止している{len(dropped)}項目を外しました"),
+            "hint": ("市場人気は基準の「1番人気AI」専用です。マイAIは選んだ項目だけで印を決めます。"
+                     if only_popularity else
+                     "未学習期間の検証で効果を確認できなかった項目は、印に使用しません。"),
             "columns": [{"label": model.FEATURES[k].label} for k in dropped
                         if k in model.FEATURES],
         })
@@ -79,10 +87,17 @@ def predict_race(race: dict, user_config: dict, preset: dict) -> dict:
         warnings.append({
             "code": "all_columns_gated_out",
             "message": "選択された全項目がカバレッジ不足でこのレースでは使えません",
-            "hint": "項目を増やすか、直近走の少ない馬が多いレースを避けてください",
+            "hint": "AI印は出せませんが、出走馬から買い目を手動で選択できます",
         })
     _annotate_low_sample(res, preset, warnings)
     _warn_skipped_columns(columns, weights, res, warnings)
+    reliability = _history_reliability(race, used, len(columns))
+    if reliability["profile"] != "standard":
+        warnings.append({
+            "code": "limited_history",
+            "message": reliability["message"],
+            "hint": reliability["hint"],
+        })
     _annotate_plain_values(res)
     # 自信度は **尺度不変な差** で判定する。生の差は選んだ項目数と重みの大きさに
     # 比例するので、425列で決めた閾値を数項目の設定に当てると常に「混戦」になる。
@@ -122,30 +137,73 @@ def predict_race(race: dict, user_config: dict, preset: dict) -> dict:
             "coverage": cov,
             "contributions": contribs,
         })
+    confidence = _confidence(gap, raw_gap, thresholds, used, len(columns))
+    _cap_confidence_for_history(confidence, reliability)
+    finished = any(h.get("order") == 1 for h in race["horses"])
+    result = _result_top3(race)
+    # 結果画面の「何を選べばこの馬を拾えたか」は、寄与が正だった項目の列挙では
+    # 答えにならない。参加者が選べる項目を1つずつ追加して発走前データを再採点し、
+    # 実際に印圏内 (上位5頭) へ入るかを順位で比較する。
+    pickup_analysis = (_result_pickup_analysis(
+        rows, user_config, preset, res, used, result)
+        if finished and result else None)
+    # 個別の結果画面では「現在のAIに何を1項目足すか」だけでなく、そもそも
+    # このレースならどの項目セットでAIを組めば上位馬を拾えたかを示す。
+    # 現在の設定を起点にすると上位3頭が既に印圏内の場合に候補が空になるため、
+    # 未選択状態を起点に発走前特徴量だけで候補を作り、組合せを再採点する。
+    review_pickup = (_result_pickup_analysis(
+        rows, {}, preset, res, 0, result)
+        if finished and result else None)
+    review_ai = (result_review_ai(race, preset, result, review_pickup)
+                 if review_pickup else None)
     return {
         "race_id": race.get("race_id"),
         "race_name": race.get("race_name"),
         "date": race.get("date"),
         "marks": marks,
+        # 印を出せないレースでも、買い目作成まで塞がない。marks は評価順なので
+        # 代用せず、出走馬の基本情報を別フィールドで返す。
+        "runners": _runner_list(race),
         "columns": res["columns"],
-        "confidence": _confidence(gap, raw_gap, thresholds, used, len(columns)),
+        "confidence": confidence,
+        "history_reliability": reliability,
         "weight_announced": race.get("weight_announced"),
         "config_hash": cf.config_hash(user_config),
         "warnings": warnings,
         "n_columns_used": used,
         # 予想画面を一覧レスポンスに依存させないためのヘッダ情報
         "race_num": race.get("race_num"),
+        "race_title": race.get("race_title"),
+        "race_class": race.get("race_class"),
         "start_time": race.get("start_time"),
+        "start_time_changed": bool(race.get("start_time_changed")),
+        "original_start_time": race.get("original_start_time"),
+        "start_time_change_as_of": race.get("start_time_change_as_of"),
+        "course_changed": bool(race.get("course_changed")),
+        "course_change": race.get("course_change"),
+        "surface": (race.get("seg") or {}).get("surface"),
+        "condition": (race.get("seg") or {}).get("condition"),
+        "condition_as_of": race.get("condition_as_of"),
         "odds_as_of": race.get("odds_as_of"),
         "odds_trusted": race.get("trusted"),
+        "live_revision": race.get("live_revision"),
+        "live_updated_at": race.get("live_updated_at"),
+        "scratched_horses": race.get("scratched_horses") or [
+            {"horse_num": h.get("num"), "horse_name": h.get("name"),
+             "label": h.get("scratch_status") or "取消・除外"}
+            for h in race.get("horses", []) if h.get("scratched")
+        ],
         "n_columns_selected": len(columns),
         # 発走済みなら着順を返す。印は発走前のレースにだけ意味があるので、
         # UI は終了レースでは印の代わりに結果を出す。
-        "finished": any(h.get("order") == 1 for h in race["horses"]),
-        "result": _result_top3(race),
-        # 買い目 (印の並べ替え)。金額は扱わず、QR も生成しない。
-        # スマッピー投票の QR データ形式は非公開なので、公式サイトへ手入力する
-        # ための一覧として出す (builder/betslip.py)。
+        "finished": finished,
+        "result": result,
+        "result_pickup_analysis": pickup_analysis,
+        "result_review_ai": review_ai,
+        "payouts": race.get("payouts") or [],
+        # 買い目 (印の並べ替え)。既定金額100円を持たせる。
+        # QRはこの予想処理では作らず、利用者の確認操作後に /api/smappy/qr が
+        # JRA公式サイトへ送信して作る (builder/betslip.py, builder/smappy.py)。
         "bet_slip": _bet_slip(marks),
         # 参加者が自分で組み替える起点。UI はここから編集を始める
         "bet_selection": _bet_selection(marks),
@@ -164,6 +222,19 @@ def _bet_selection(marks: list[dict]) -> list[dict]:
     return betslip.default_selection(marks) if marks else []
 
 
+def _runner_list(race: dict) -> list[dict]:
+    """予想可否と切り離した出走馬一覧。買い目の手動選択に使う。"""
+    return [{
+        "horse_num": h.get("num"), "waku": h.get("waku"),
+        "horse_name": h.get("name"), "popularity": h.get("pop"),
+        "odds": h.get("odds"), "jockey": h.get("jockey"),
+        "burden_weight": h.get("burden_weight"), "trainer": h.get("trainer"),
+        "sex_age": h.get("sex_age"), "horse_weight": h.get("horse_weight"),
+        "horse_weight_change": h.get("horse_weight_change"),
+        "n_past_runs": h.get("n_past_runs"), "mark": "",
+    } for h in race.get("horses", []) if not h.get("scratched")]
+
+
 def _result_top3(race: dict) -> list[dict]:
     """確定していれば上位3頭 (着順・馬番・馬名)。未確定なら空。"""
     got = [h for h in race.get("horses", [])
@@ -174,6 +245,279 @@ def _result_top3(race: dict) -> list[dict]:
 
 
 MIN_PAST_RUNS = 3          # これ未満は「参照できた過去走が少ない」として開示する
+
+
+def _history_reliability(race: dict, used: int, selected: int) -> dict:
+    """レース区分と馬自身の戦歴量から、印の読み方を返す。
+
+    新馬を通常レースと同じ自信度で表示すると、騎手・血統だけで付けた印にも
+    「鉄板級」が出る。未勝利も全馬の戦歴が薄いときは同じ問題が起きるため、
+    スコア順位は維持しつつ信頼度だけを明示的に制限する。
+    """
+    horses = race.get("horses") or []
+    counts = [h.get("n_past_runs") for h in horses]
+    known = [n for n in counts if isinstance(n, int) and n >= 0]
+    runners = len(horses)
+    no_history = sum(1 for n in known if n == 0)
+    low_history = sum(1 for n in known if n < MIN_PAST_RUNS)
+    cls = str(race.get("race_class") or "")
+    is_debut = cls in ("新馬", "未出走") or (known and no_history == len(known))
+    low_majority = bool(known and low_history * 2 >= len(known))
+
+    base = {
+        "race_class": cls or None,
+        "n_runners": runners,
+        "no_history_horses": no_history,
+        "low_history_horses": low_history,
+        "min_past_runs": MIN_PAST_RUNS,
+        "used_items": used,
+        "selected_items": selected,
+    }
+    if is_debut:
+        return {
+            **base,
+            "profile": "debut",
+            "label": "参考評価",
+            "recommended_preset": "debut",
+            "message": "新馬・初出走が中心のため、馬自身の戦歴を使った評価はできません",
+            "hint": "騎手・調教師・血統など発走前に確認できる情報だけの参考評価です。",
+            "confidence_cap": "reference",
+        }
+    if low_majority:
+        return {
+            **base,
+            "profile": "limited",
+            "label": "戦歴少なめ",
+            "recommended_preset": "maiden" if cls == "未勝利" else None,
+            "message": f"過去{MIN_PAST_RUNS}走未満の馬が {low_history}/{len(known)}頭います",
+            "hint": "少ない戦歴による順位なので、自信度を混戦までに制限しています。",
+            "confidence_cap": "mixed",
+        }
+    return {
+        **base,
+        "profile": "standard",
+        "label": "通常評価",
+        "recommended_preset": "maiden" if cls == "未勝利" else "standard",
+        "message": "",
+        "hint": "",
+        "confidence_cap": None,
+    }
+
+
+def _result_pickup_analysis(rows: dict[str, dict], user_config: dict,
+                            preset: dict, base_res: dict, base_used: int,
+                            result: list[dict]) -> dict:
+    """好走馬を拾えた「追加1項目」を、発走前特徴量だけで反実仮想比較する。
+
+    着順は分析対象の馬を決めるためだけに使い、候補の採点には ``rows`` と学習済み
+    ``preset`` しか渡さない。候補自身の寄与が正で、かつ現在より順位が上がった項目
+    だけを「拾う候補」とする。選択項目が使えなかった場合は候補単独の順位を返す。
+    """
+    cutoff = len(MARKS)
+    target_nums = [str(r.get("horse_num")) for r in result if r.get("horse_num") is not None]
+    base_ranks = ({str(num): i + 1 for i, (num, _score) in enumerate(base_res["ranked"])}
+                  if base_used else {})
+    horses: dict[str, dict] = {}
+    needs_candidates = set()
+    for num in target_nums:
+        base_rank = base_ranks.get(num)
+        if base_rank is not None and base_rank <= cutoff:
+            horses[num] = {"status": "already_marked", "base_rank": base_rank,
+                           "candidates": []}
+        else:
+            horses[num] = {"status": "none", "base_rank": base_rank,
+                           "candidates": []}
+            needs_candidates.add(num)
+
+    if not needs_candidates:
+        return {"mark_cutoff": cutoff, "basis": "pre_race_features",
+                "mode": "add_one_item", "horses": horses}
+
+    normalized = cf.normalize_config(user_config)
+    base_ids = {c["id"] for c in cf.selected_columns(normalized)}
+    step1_keys = {s["key"] for s in sp.maib_participant_step1_specs()}
+    candidate_specs = list(sp.maib_participant_step1_specs())
+    candidate_specs.extend(
+        s for s in sp.maib_step2_specs()
+        if s["key"] in sp.maib_participant_step2_metrics())
+    preset_weights = preset.get("weights") or {}
+    found: dict[str, list[dict]] = {num: [] for num in needs_candidates}
+
+    for spec in candidate_specs:
+        candidate_col = mx._columns([spec])[0]
+        cid = candidate_col["id"]
+        if cid in base_ids or not preset_weights.get(cid):
+            continue
+        trial = {
+            "name": normalized.get("name") or "",
+            "step1": list(normalized.get("step1") or []),
+            "step2": [dict(cell) for cell in (normalized.get("step2") or [])],
+        }
+        if spec["key"] in step1_keys:
+            trial["step1"].append(spec["key"])
+        else:
+            trial["step2"].append({
+                "metric": spec["key"], "match": list(spec.get("match") or []),
+                "lookback": spec.get("lookback"),
+            })
+        trial_columns = cf.selected_columns(trial)
+        trial_weights = cf.column_weights(trial, preset_weights)
+        scored = model.score_columns_detailed(rows, trial_columns, trial_weights)
+        candidate_state = next((c for c in scored["columns"] if c["id"] == cid), None)
+        if not candidate_state or candidate_state.get("decision") != "used":
+            continue
+        trial_ranks = {str(num): i + 1
+                       for i, (num, _score) in enumerate(scored["ranked"])}
+        contributions = scored.get("contributions") or {}
+        for num in needs_candidates:
+            own = next((c for c in contributions.get(num, []) if c.get("id") == cid), None)
+            # 候補自身がこの馬を正に評価していない場合、他馬の減点だけで順位が
+            # 上がっても「この項目で拾えた」とは表現しない。
+            if not own or not own.get("available") or float(own.get("contribution") or 0) <= 0:
+                continue
+            to_rank = trial_ranks.get(num)
+            base_rank = base_ranks.get(num)
+            if to_rank is None or (base_rank is not None and to_rank >= base_rank):
+                continue
+            found[num].append({
+                "id": cid,
+                "key": spec["key"],
+                "label": candidate_col.get("label") or cid,
+                "from_rank": base_rank,
+                "to_rank": to_rank,
+                "improvement": (base_rank - to_rank) if base_rank is not None else None,
+                "reaches_marks": to_rank <= cutoff,
+            })
+
+    for num in needs_candidates:
+        choices = found[num]
+        choices.sort(key=lambda c: (
+            not c["reaches_marks"], c["to_rank"],
+            -(c["improvement"] if c["improvement"] is not None else 0),
+            c["label"],
+        ))
+        # 同じ集計対象の期間違いだけで3枠を埋めると、利用者には実質同じ提案が
+        # 並んで見える。まず異なる項目を1件ずつ採り、選択肢の幅を見せる。
+        selected = []
+        selected_keys = set()
+        for choice in choices:
+            if choice["key"] in selected_keys:
+                continue
+            selected.append(choice)
+            selected_keys.add(choice["key"])
+            if len(selected) == 3:
+                break
+        horses[num]["candidates"] = selected
+        if any(c["reaches_marks"] for c in selected):
+            horses[num]["status"] = "into_marks"
+        elif selected:
+            horses[num]["status"] = "improved"
+
+    return {"mark_cutoff": cutoff, "basis": "pre_race_features",
+            "mode": "add_one_item", "horses": horses}
+
+
+def result_review_ai(race: dict, preset: dict, result: list[dict],
+                     pickup_analysis: dict | None, *, max_items: int = 5) -> dict | None:
+    """好走馬を拾うための、複数項目による振り返り用マイAI選択例を返す。
+
+    単独項目の上位候補を小さな候補集合に絞った後、最大5項目の組合せを全探索する。
+    実際のマイAIと同じ ``column_weights`` で再採点し、馬券内頭数→1着馬を拾えたか→
+    上位3頭の評価順位の順に選ぶ。結果を知った後の説明用で、未来の推奨ではない。
+    """
+    rows = _rows_from_race(race)
+    if not rows or not result or not pickup_analysis:
+        return None
+    analyses = pickup_analysis.get("horses") or {}
+    pool_ids = []
+    for candidate_index in range(3):
+        for placed in result:
+            candidates = (analyses.get(str(placed.get("horse_num"))) or {}).get("candidates") or []
+            if candidate_index < len(candidates):
+                cid = candidates[candidate_index].get("id")
+                if cid and cid not in pool_ids:
+                    pool_ids.append(cid)
+    if not pool_ids:
+        return None
+
+    specs = list(sp.maib_participant_step1_specs())
+    specs.extend(s for s in sp.maib_step2_specs()
+                 if s["key"] in sp.maib_participant_step2_metrics())
+    spec_by_id = {mx._columns([spec])[0]["id"]: spec for spec in specs}
+    pool = [spec_by_id[cid] for cid in pool_ids if cid in spec_by_id][:9]
+    if not pool:
+        return None
+
+    placed_nums = [str(x.get("horse_num")) for x in result]
+    min_items = 2 if len(pool) >= 2 else 1
+    best = None
+    for size in range(min_items, min(max_items, len(pool)) + 1):
+        for chosen in combinations(pool, size):
+            config = _config_from_specs(chosen, "振り返りAI")
+            columns = cf.selected_columns(config)
+            weights = cf.column_weights(config, preset.get("weights") or {})
+            scored = model.score_columns_detailed(rows, columns, weights)
+            if not any(c.get("decision") == "used" for c in scored.get("columns") or []):
+                continue
+            ranks = {str(num): i + 1 for i, (num, _score) in enumerate(scored["ranked"])}
+            placed_ranks = [ranks.get(num, len(rows) + 1) for num in placed_nums]
+            hits = sum(rank <= len(MARKS) for rank in placed_ranks)
+            winner_hit = bool(placed_ranks and placed_ranks[0] <= len(MARKS))
+            weighted_rank = sum(rank * weight for rank, weight in
+                                zip(placed_ranks, (3, 2, 1), strict=False))
+            objective = (hits, winner_hit, -weighted_rank, -size)
+            if best is None or objective > best[0]:
+                best = (objective, chosen, config, placed_ranks)
+    if best is None:
+        return None
+
+    _objective, chosen, config, placed_ranks = best
+    items = []
+    for spec in chosen:
+        column = mx._columns([spec])[0]
+        items.append({
+            "id": column["id"], "key": spec["key"], "label": column["label"],
+            "section": "基本項目" if "|lb=" not in column["id"] else "詳細設定",
+            "match": list(spec.get("match") or []), "lookback": spec.get("lookback"),
+        })
+    placed = []
+    for source, rank in zip(result, placed_ranks, strict=False):
+        placed.append({**source, "ai_rank": rank,
+                       "ai_mark": MARKS[rank - 1] if rank <= len(MARKS) else "",
+                       "in_marks": rank <= len(MARKS)})
+    return {
+        "mode": "retrospective_ai", "config": config, "items": items,
+        "placed": placed, "placed_in_marks": sum(x["in_marks"] for x in placed),
+        "n_placed": len(placed),
+    }
+
+
+def _config_from_specs(specs: tuple[dict, ...] | list[dict], name: str) -> dict:
+    step1_keys = {s["key"] for s in sp.maib_participant_step1_specs()}
+    step1 = []
+    step2 = []
+    for spec in specs:
+        if spec["key"] in step1_keys:
+            step1.append(spec["key"])
+        else:
+            step2.append({"metric": spec["key"], "match": list(spec.get("match") or []),
+                          "lookback": spec.get("lookback")})
+    return {"name": name, "step1": step1, "step2": step2}
+
+
+def _cap_confidence_for_history(confidence: dict, reliability: dict) -> None:
+    """戦歴量を無視した強い自信度ラベルを出さない。"""
+    cap = reliability.get("confidence_cap")
+    if cap == "reference":
+        confidence["label"] = "参考"
+    elif cap == "mixed" and confidence.get("label") in ("鉄板級", "有力"):
+        confidence["label"] = "混戦"
+    else:
+        return
+    confidence["downgraded"] = True
+    reason = reliability.get("hint") or reliability.get("message")
+    previous = confidence.get("downgrade_reason")
+    confidence["downgrade_reason"] = " / ".join(x for x in (previous, reason) if x)
 
 
 def _decisive_sentence(contribs: list, mark: str, rank: int = 1,

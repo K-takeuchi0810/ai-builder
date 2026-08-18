@@ -208,3 +208,8 @@ def test_starter_preset_is_offered(monkeypatch):
     assert sp_preset["step1"] and len(sp_preset["step1"]) == 3
     assert "popularity" not in sp_preset["step1"]     # 判断A
     assert sp_preset["label"] and sp_preset["desc"]
+    presets = api.feature_catalog()["starter_presets"]
+    assert {p["key"] for p in presets} == {"standard", "debut", "maiden"}
+    debut = next(p for p in presets if p["key"] == "debut")
+    assert "recent_avg_finish" not in debut["step1"]
+    assert all(k not in sp.PARTICIPANT_UNAVAILABLE_KEYS for k in debut["step1"])

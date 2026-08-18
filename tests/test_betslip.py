@@ -363,16 +363,51 @@ def test_formation_row_count_follows_the_size():
 # ---------------------------------------------------------------------------
 # 金額と QR は扱わない (設計の境界)
 # ---------------------------------------------------------------------------
-def test_no_amount_and_no_qr_anywhere():
+def test_amount_defaults_to_100_yen_and_subtotal_matches_points():
     """金額と QR 生成に踏み込まないこと。
 
     QR の payload 形式は非公開で、推測して作れば **間違った馬券を実際のお金で
     登録する**。調査記録は docs/SMAPPY_QR_PLAN.md。
     """
     slip = bs.build(_marks(["11", "10", "03"]))
+    assert slip
     for t in slip:
-        assert "amount" not in t and "yen" not in t and "kingaku" not in t
-        assert "qr" not in " ".join(t.keys()).lower()
+        assert t["amount_yen"] == 100
+        assert t["amounts_yen"] == [100] * t["n"]
+        assert t["subtotal_yen"] == t["n"] * 100
+    assert bs.total_yen(slip) == sum(t["n"] * 100 for t in slip)
+
+
+@pytest.mark.parametrize("bad", [0, 99, 101, 100.5, True, "abc", 1_000_000])
+def test_amount_rejects_values_outside_the_100_yen_rules(bad):
+    selection = [{"type": "tan", "mode": "each", "groups": [["01"]],
+                  "amount_yen": bad}]
+    _slip, skipped = bs.build_custom(selection)
+    assert skipped and skipped[0]["reason"]
+
+
+def test_each_expanded_point_can_have_a_different_amount():
+    selection = [{"type": "umaren", "mode": "box",
+                  "groups": [["01", "02", "03"]],
+                  "amounts_yen": [100, 200, 300]}]
+    slip, skipped = bs.build_custom(selection)
+    assert skipped == []
+    assert slip[0]["amount_yen"] is None
+    assert slip[0]["amounts_yen"] == [100, 200, 300]
+    assert slip[0]["subtotal_yen"] == 600
+
+
+@pytest.mark.parametrize("amounts", [[100, 200], [100, 200, 301], "100,200,300"])
+def test_point_amounts_must_match_the_points_and_100_yen_rules(amounts):
+    selection = [{"type": "umaren", "mode": "box",
+                  "groups": [["01", "02", "03"]],
+                  "amounts_yen": amounts}]
+    slip, skipped = bs.build_custom(selection)
+    assert slip == []
+    assert skipped and skipped[0]["reason"]
+
+
+def test_betslip_does_not_invent_the_official_qr_payload():
     src = open(bs.__file__, encoding="utf-8").read()
     for bad in ("qrcode.make", "import qrcode", "toDataURL", "segno"):
         assert bad not in src, bad

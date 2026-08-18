@@ -114,6 +114,23 @@ def test_unfinished_races_are_excluded():
     assert by["AI-A"]["show_rate"] is None        # 0% と誤読させない
 
 
+def test_empty_applied_map_does_not_show_unused_saved_ais():
+    daily = _daily([_race("R1", winner="3")])
+    got = lb.build_leaderboard(daily, PRESET, configs=_configs(), applied={})
+    mine = [e for e in got["entries"] if not e["is_baseline"]]
+    assert mine == []
+    assert got["scoped_to_applied"] is True
+
+
+def test_only_the_ai_actually_applied_to_each_race_is_shown():
+    daily = _daily([_race("R1", winner="3"), _race("R2", winner="3")])
+    got = lb.build_leaderboard(daily, PRESET, configs=_configs(),
+                               applied={"R1": "a"})
+    mine = [e for e in got["entries"] if not e["is_baseline"]]
+    assert [e["config_id"] for e in mine] == ["a"]
+    assert mine[0]["races"] == 1
+
+
 def test_show_rate_and_no_roi_key():
     daily = _daily([_race(f"R{i}", winner="3") for i in range(4)])
     got = lb.build_leaderboard(daily, PRESET, configs=_configs())

@@ -1,6 +1,11 @@
-# ai-builder 本体は標準ライブラリのみで動く (runtime 依存ゼロ)。
-# keiba-yosou を兄弟ディレクトリとして import するため、keiba-yosou 側の依存
-# (lightgbm 等) はそちらの環境に従う。
+# QRの投票データはJRA側で生成し、画像化だけをこのライブラリで行う。
+qrcode[pil]>=8.2
+
+# 共有運用時にMAIBuilderをWindowsサービスとして常駐させる。
+pywin32>=311; sys_platform == "win32"
+
+# 予想・集計部分は標準ライブラリのみ。keiba-yosou を兄弟ディレクトリとして
+# import するため、数値計算側の依存 (lightgbm 等) はそちらの環境に従う。
 
 # 開発用
 pytest>=7.0

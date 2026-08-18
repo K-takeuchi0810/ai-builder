@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -66,7 +67,7 @@ def test_normalize_dedupes_and_sorts():
 def test_config_hash_ignores_name_and_order():
     a = {"name": "A", "step1": ["burden_weight"], "step2": []}
     b = {"name": "B", "step1": ["burden_weight"], "step2": []}
-    c = {"name": "A", "step1": ["burden_weight", "draw_position"], "step2": []}
+    c = {"name": "A", "step1": ["burden_weight", "jockey_win_rate"], "step2": []}
     assert cf.config_hash(a) == cf.config_hash(b)        # 名前は無関係
     assert cf.config_hash(a) != cf.config_hash(c)
 
@@ -97,6 +98,43 @@ def test_save_get_history_versions(tmp_path, monkeypatch):
     assert cf.get_config(v1["id"])["version"] == 2        # 既定は最新
     assert cf.get_config(v1["id"], version=1)["version"] == 1
     assert cf.get_config("nope") is None
+
+
+def test_configs_are_isolated_by_owner_in_shared_mode(tmp_path, monkeypatch):
+    monkeypatch.setattr(cfgmod, "PRESET_WEIGHTS_PATH", tmp_path / "preset.json")
+    a = cf.save_config({**USER_CFG, "name": "A"}, owner_id="user-a")
+    b = cf.save_config({**USER_CFG, "name": "B"}, owner_id="user-b")
+    assert a["id"] != b["id"]
+    assert [x["id"] for x in cf.list_configs(owner_id="user-a")] == [a["id"]]
+    assert cf.get_config(a["id"], owner_id="user-b") is None
+    assert cf.rename_config(a["id"], "横取り", owner_id="user-b") is None
+
+
+def test_leaderboard_cannot_read_another_owners_configs(tmp_path, monkeypatch):
+    from builder import leaderboard as lb
+    monkeypatch.setattr(cfgmod, "PRESET_WEIGHTS_PATH", tmp_path / "preset.json")
+    a = cf.save_config({**USER_CFG, "name": "A"}, owner_id="user-a")
+    b = cf.save_config({**USER_CFG, "name": "B"}, owner_id="user-b")
+    daily = {"date": "20260801", "races": [_race("R1")]}
+
+    got = lb.build_leaderboard(daily, PRESET, owner_id="user-a",
+                               applied={"R1": a["id"]})
+    mine = [e for e in got["entries"] if not e["is_baseline"]]
+    assert [e["config_id"] for e in mine] == [a["id"]]
+    assert all(e["config_id"] != b["id"] for e in mine)
+
+
+def test_concurrent_config_saves_do_not_lose_other_users(tmp_path, monkeypatch):
+    monkeypatch.setattr(cfgmod, "PRESET_WEIGHTS_PATH", tmp_path / "preset.json")
+
+    def save(i):
+        return cf.save_config({**USER_CFG, "name": f"AI-{i}"}, owner_id=f"user-{i}")
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        saved = list(pool.map(save, range(20)))
+    assert len({x["id"] for x in saved}) == 20
+    for i, item in enumerate(saved):
+        assert cf.get_config(item["id"], owner_id=f"user-{i}")["name"] == f"AI-{i}"
 
 
 # ---------------------------------------------------------------------------
@@ -185,6 +223,9 @@ def test_predict_warns_when_all_columns_gated_out():
     codes = {w["code"] for w in got["warnings"]}
     assert "all_columns_gated_out" in codes
     assert got["n_columns_used"] == 0
+    assert got["marks"] == []
+    assert len(got["runners"]) == 12
+    assert got["runners"][0]["horse_num"] == "01"
 
 
 def test_predict_handles_empty_race():
@@ -247,7 +288,7 @@ def test_backtest_skips_unfinished_races():
 def test_feature_catalog_shape():
     cat = api.feature_catalog()
     assert cat["n_base_columns"] == 396
-    assert len(cat["step2_metrics"]) == 9
+    assert len(cat["step2_metrics"]) == len(sp.maib_participant_step2_metrics()) == 8
     assert len(cat["step2_matches"]) == 4 and len(cat["step2_lookbacks"]) == 11
     assert cat["step1"] and all("label" in x for x in cat["step1"])
     assert any("獲得本賞金" in n for n in cat["notes"])
@@ -262,6 +303,131 @@ def test_handle_predict_found_and_missing(monkeypatch):
     assert status == 200 and body["marks"][0]["mark"] == "◎"
     body, status = api.handle_predict({"race_id": "nope", "config": USER_CFG})
     assert status == 404 and body["error"] == "race_not_found"
+
+
+def test_finished_result_can_be_opened_without_a_saved_ai(monkeypatch):
+    """終了レースの着順・払戻は、マイAI未作成でも閲覧できる。"""
+    monkeypatch.setitem(api._STATE, "daily", {"races": [_race("DONE")]})
+    monkeypatch.setitem(api._STATE, "preset", PRESET)
+    body, status = api.handle_predict({"race_id": "DONE", "result_only": True})
+    assert status == 200
+    assert body["result_only"] is True and body["finished"] is True
+    assert body["result"] and body["warnings"] == []
+    assert body["result_pickup_analysis"]["mode"] == "add_one_item"
+
+    monkeypatch.setitem(api._STATE, "daily", {
+        "races": [_race("NEXT", with_order=False)]})
+    body, status = api.handle_predict({"race_id": "NEXT", "result_only": True})
+    assert status == 409 and body["error"] == "race_not_finished"
+
+
+def test_result_pickup_analysis_names_item_that_moves_winner_into_marks(monkeypatch):
+    """正寄与の列名だけでなく、追加後に印圏内へ入ることを順位で検証する。"""
+    race = _race("PICK", n=10)
+    for i, horse in enumerate(race["horses"], start=1):
+        horse["x"] = {
+            "jockey_win_rate": float(i),
+            "trainer_win_rate": 100.0 if i == 1 else float(i),
+        }
+    preset = {
+        "weights": {"jockey_win_rate": 1.0, "trainer_win_rate": 3.0},
+        "confidence_thresholds": PRESET["confidence_thresholds"],
+    }
+    monkeypatch.setitem(api._STATE, "daily", {"races": [race]})
+    monkeypatch.setitem(api._STATE, "preset", preset)
+    body, status = api.handle_predict({
+        "race_id": "PICK",
+        "config": {"name": "騎手AI", "step1": ["jockey_win_rate"], "step2": []},
+    })
+    assert status == 200
+    analysis = body["result_pickup_analysis"]["horses"]["01"]
+    assert analysis["base_rank"] > 5 and analysis["status"] == "into_marks"
+    candidate = next(c for c in analysis["candidates"]
+                     if c["id"] == "trainer_win_rate")
+    assert candidate["to_rank"] <= 5 and candidate["to_rank"] < candidate["from_rank"]
+    assert "調教師" in candidate["label"]
+
+
+def test_result_only_without_ai_finds_single_item_pickup(monkeypatch):
+    """マイAI未選択で結果だけを開いても、単独項目で拾えた候補を返す。"""
+    race = _race("PICK-ONE", n=10)
+    for i, horse in enumerate(race["horses"], start=1):
+        horse["x"] = {"trainer_win_rate": 100.0 if i == 1 else float(i)}
+    preset = {
+        "weights": {"trainer_win_rate": 3.0},
+        "confidence_thresholds": PRESET["confidence_thresholds"],
+    }
+    monkeypatch.setitem(api._STATE, "daily", {"races": [race]})
+    monkeypatch.setitem(api._STATE, "preset", preset)
+    body, status = api.handle_predict({"race_id": "PICK-ONE", "result_only": True})
+    assert status == 200 and body["marks"] == []
+    analysis = body["result_pickup_analysis"]["horses"]["01"]
+    assert analysis["base_rank"] is None and analysis["status"] == "into_marks"
+    assert analysis["candidates"][0]["id"] == "trainer_win_rate"
+    assert analysis["candidates"][0]["to_rank"] <= 5
+    review = body["result_review_ai"]
+    assert review and review["mode"] == "retrospective_ai"
+    assert review["items"][0]["id"] == "trainer_win_rate"
+    assert review["placed_in_marks"] >= 1
+
+
+def test_result_item_review_summarizes_day_with_track_surface_and_distance(monkeypatch):
+    """36レース一覧用APIは、各レースの条件と上位馬の代表項目をまとめる。"""
+    finished = _race("DONE", n=10)
+    finished.update({
+        "race_num": 1, "start_time": "09:50", "race_title": "2歳未勝利",
+        "seg": {"track": "01", "surface": "dirt", "distance": 1700,
+                "condition": "good"},
+    })
+    for i, horse in enumerate(finished["horses"], start=1):
+        horse["x"] = {"trainer_win_rate": 100.0 if i == 1 else float(i)}
+    waiting = _race("WAIT", n=10, with_order=False)
+    waiting.update({
+        "race_num": 2, "start_time": "10:20", "race_title": "2歳未勝利",
+        "seg": {"track": "01", "surface": "turf", "distance": 1200,
+                "condition": "good"},
+    })
+    daily = {"date": "20260801", "columns": [], "races": [finished, waiting]}
+    preset = {
+        "weights": {"trainer_win_rate": 3.0},
+        "confidence_thresholds": PRESET["confidence_thresholds"],
+    }
+    monkeypatch.setitem(api._STATE, "date", "20260802")
+    monkeypatch.setitem(api._STATE, "preset", preset)
+    monkeypatch.setitem(api._STATE, "_result_item_review_cache", {})
+    monkeypatch.setattr(api, "_daily_for_date", lambda date: daily if date == "20260801" else {})
+
+    body, status = api.handle_result_item_review("20260801")
+    assert status == 200
+    assert body["race_count"] == 2 and body["finished_count"] == 1
+    first = next(r for r in body["races"] if r["race_id"] == "DONE")
+    assert first["track_label"] and first["surface_label"]
+    assert first["distance"] == 1700 and len(first["top3"]) == 3
+    assert first["top3"][0]["candidate"]["id"] == "trainer_win_rate"
+    assert body["mode"] == "retrospective_ai"
+    assert first["review_ai"]["mode"] == "retrospective_ai"
+    assert first["review_ai"]["items"][0]["id"] == "trainer_win_rate"
+    assert first["review_ai"]["placed"][0]["ai_rank"] <= 5
+    assert next(r for r in body["races"] if r["race_id"] == "WAIT")["top3"] == []
+
+
+def test_live_refresh_rolls_an_always_on_server_to_today(monkeypatch):
+    old_daily = {"date": "20260731", "races": [_race("OLD", date="20260731")]}
+    new_daily = {"date": "20260801", "races": [_race("NEW", date="20260801")]}
+    refreshed = {**new_daily, "live_updated_at": "2026-08-01T09:00:00+09:00"}
+    monkeypatch.setitem(api._STATE, "date", "20260731")
+    monkeypatch.setitem(api._STATE, "daily", old_daily)
+    monkeypatch.setitem(api._STATE, "specs", [{"key": "popularity"}])
+    monkeypatch.setitem(api._STATE, "follow_today", True)
+    monkeypatch.setitem(api._STATE, "auto_build", True)
+    monkeypatch.setattr(api.md, "load_daily", lambda date, specs: new_daily)
+    monkeypatch.setattr(api.md, "refresh_live", lambda daily: refreshed)
+
+    api._refresh_current_daily(force=True, today="20260801")
+
+    assert api._STATE["date"] == "20260801"
+    assert api._STATE["daily"]["races"][0]["race_id"] == "NEW"
+    assert api._STATE["daily"]["live_updated_at"] == "2026-08-01T09:00:00+09:00"
 
 
 def test_static_serving_resolves_and_blocks_traversal(tmp_path, monkeypatch):
@@ -472,8 +638,23 @@ def test_popularity_stays_a_base_column_for_the_matrix():
     ids = [c["id"] for c in mx._columns(sp.maib_all_specs())]
     assert "popularity" in ids
     assert len(ids) == 425
-    # 参加者向けの STEP1 だけが1件少ない
-    assert len(sp.maib_participant_step1_specs()) == len(sp.maib_step1_specs()) - 1
+    # 基底列は維持し、参加者向けだけ監査不合格項目を除く
+    assert len(sp.maib_participant_step1_specs()) == \
+        len(sp.maib_step1_specs()) - len(
+            sp.PARTICIPANT_UNAVAILABLE_KEYS & set(sp.MAIB_STEP1_KEYS))
+
+
+def test_failed_holdout_items_are_not_offered_or_restored():
+    cat = api.feature_catalog()
+    offered1 = {x["key"] for x in cat["step1"]}
+    offered2 = {x["metric"] for x in cat["step2_metrics"]}
+    assert not offered1.intersection(sp.PARTICIPANT_RETIRED_KEYS)
+    assert "agg_gain_first_to_last" not in offered2
+    old = {"step1": ["draw_position", "burden_weight"], "step2": [
+        {"metric": "agg_gain_first_to_last", "match": [], "lookback": 3}]}
+    assert cf.normalize_config(old)["step1"] == ["burden_weight"]
+    assert cf.normalize_config(old)["step2"] == []
+    assert set(cf.excluded_in_config(old)) == {"draw_position", "agg_gain_first_to_last"}
 
 
 def test_backtest_and_leaderboard_cannot_use_popularity():
@@ -656,8 +837,9 @@ def test_preview_shows_finished_races_as_upcoming():
     平日や過去日では全レースが終了扱いになり、印の画面をまったく確認できない
     (開催日の発走前という短い時間帯しか触れない)。
     """
-    got = api._as_upcoming({"finished": True, "result": [{"order": 1}], "x": 1})
-    assert got["finished"] is False
+    got = api._as_upcoming({"finished": True, "started": True,
+                            "result": [{"order": 1}], "x": 1})
+    assert got["finished"] is False and got["started"] is False
     assert got["result"] == []
     assert got["x"] == 1                       # 他のキーは触らない
 
@@ -685,16 +867,17 @@ def test_preview_flag_reaches_predict_and_the_race_list(monkeypatch):
     assert raw["finished"] is True
 
 
-def test_built_dates_lists_current_version_caches(tmp_path, monkeypatch):
-    """レース0件のときに案内する「構築済みの日付」を拾えること。"""
+def test_built_dates_lists_versioned_caches_across_upgrades(tmp_path, monkeypatch):
+    """形式更新前の開催日も、結果・購入履歴の候補として拾うこと。"""
     from builder import config as c, matrix_daily as mdmod
     d = tmp_path / "daily"
     d.mkdir()
     (d / f"daily_v{mdmod.DAILY_VERSION}_20260726_abc.json").write_text("{}", encoding="utf-8")
     (d / f"daily_v{mdmod.DAILY_VERSION}_20250705_abc.json").write_text("{}", encoding="utf-8")
+    (d / "daily_v4_20260808_abc.json").write_text("{}", encoding="utf-8")
     (d / "daily_20240101_old.json").write_text("{}", encoding="utf-8")   # 旧版は無視
     monkeypatch.setattr(c, "CORNER_INDEX_PATH", tmp_path / "corner.json")
-    assert api._built_dates() == ["20250705", "20260726"]
+    assert api._built_dates() == ["20250705", "20260726", "20260808"]
 
 
 # ---------------------------------------------------------------------------
@@ -798,6 +981,31 @@ def test_marks_are_returned_when_a_column_is_usable():
     assert got["marks"][0]["mark"] == "◎"
 
 
+def test_debut_race_is_explicitly_capped_as_reference():
+    race = _race()
+    race["race_class"] = "新馬"
+    for h in race["horses"]:
+        h["n_past_runs"] = 0
+    got = svc.predict_race(race, USER_CFG, PRESET)
+    assert got["marks"]
+    assert got["history_reliability"]["profile"] == "debut"
+    assert got["history_reliability"]["recommended_preset"] == "debut"
+    assert got["confidence"]["label"] == "参考"
+    assert got["confidence"]["downgraded"] is True
+    assert "limited_history" in {w["code"] for w in got["warnings"]}
+
+
+def test_low_history_maiden_cannot_show_strong_confidence():
+    race = _race()
+    race["race_class"] = "未勝利"
+    for h in race["horses"]:
+        h["n_past_runs"] = 1
+    got = svc.predict_race(race, USER_CFG, PRESET)
+    assert got["history_reliability"]["profile"] == "limited"
+    assert got["history_reliability"]["recommended_preset"] == "maiden"
+    assert got["confidence"]["label"] not in ("鉄板級", "有力")
+
+
 # ---------------------------------------------------------------------------
 # F6: 順位規則は labels.py の静的文字列
 # ---------------------------------------------------------------------------
@@ -885,6 +1093,19 @@ def test_contributions_carry_plain_wording_not_raw_z():
             assert c["value_text"] in [b[1] for b in lbl.Z_BANDS], c
         else:
             assert c["value_text"] is None
+
+
+def test_prediction_excludes_cancelled_horse_and_reports_it():
+    race = _race(n=6)
+    scratched = race["horses"][1]
+    scratched.update({"scratched": True, "scratch_status": "競走除外"})
+    got = svc.predict_race(race, USER_CFG, PRESET)
+    assert scratched["num"] not in {m["horse_num"] for m in got["marks"]}
+    assert scratched["num"] not in {h["horse_num"] for h in got["runners"]}
+    assert got["scratched_horses"] == [{
+        "horse_num": scratched["num"], "horse_name": scratched["name"],
+        "label": "競走除外",
+    }]
 
 
 def test_plain_level_bands_are_ordered_and_single_sourced():
@@ -996,7 +1217,7 @@ def test_config_list_rename_and_duplicate(tmp_path, monkeypatch):
     """複数マイAIの一覧・改名・複製 (R3-b)。"""
     monkeypatch.setattr(cfgmod, "PRESET_WEIGHTS_PATH", tmp_path / "p.json")
     a = cf.save_config({"name": "AI-A", "step1": ["burden_weight"], "step2": []})
-    cf.save_config({"name": "AI-B", "step1": ["draw_position"], "step2": []})
+    cf.save_config({"name": "AI-B", "step1": ["jockey_win_rate"], "step2": []})
     names = [e["name"] for e in cf.list_configs()]
     assert names == ["AI-A", "AI-B"]
     assert all(e["n_items"] == 1 for e in cf.list_configs())
@@ -1010,6 +1231,49 @@ def test_config_list_rename_and_duplicate(tmp_path, monkeypatch):
     assert cf.get_config(a["id"])["name"] == "改名"
     assert cf.rename_config("nope", "x") is None
     assert cf.duplicate_config("nope") is None
+
+
+def test_config_names_are_unique_and_archiving_is_reversible(tmp_path, monkeypatch):
+    monkeypatch.setattr(cfgmod, "PRESET_WEIGHTS_PATH", tmp_path / "p.json")
+    a = cf.save_config({"name": "マイAI", "step1": ["burden_weight"], "step2": []},
+                       owner_id="user-a")
+    b = cf.save_config({"name": "マイAI", "step1": ["draw_position"], "step2": []},
+                       owner_id="user-a")
+    assert [x["name"] for x in cf.list_configs(owner_id="user-a")] == ["マイAI", "マイAI 2"]
+
+    assert cf.archive_config(a["id"], owner_id="user-b") is None
+    assert cf.archive_config(a["id"], owner_id="user-a")["archived"] is True
+    assert [x["id"] for x in cf.list_configs(owner_id="user-a")] == [b["id"]]
+    all_configs = cf.list_configs(owner_id="user-a", include_archived=True)
+    assert {x["id"] for x in all_configs} == {a["id"], b["id"]}
+    restored = cf.archive_config(a["id"], archived=False, owner_id="user-a")
+    assert restored["archived"] is False
+
+
+def test_applied_ai_mapping_is_persisted_per_owner_and_date(tmp_path, monkeypatch):
+    monkeypatch.setattr(cfgmod, "PRESET_WEIGHTS_PATH", tmp_path / "p.json")
+    cf.remember_applied("user-a", "20260801", "R1", "cfg-a")
+    cf.remember_applied("user-b", "20260801", "R1", "cfg-b")
+    assert cf.applied_configs("user-a", "20260801") == {"R1": "cfg-a"}
+    assert cf.applied_configs("user-b", "20260801") == {"R1": "cfg-b"}
+    assert cf.applied_configs("user-a", "20260802") == {}
+
+
+def test_legacy_configs_are_preserved_but_only_one_remains_active(tmp_path, monkeypatch):
+    monkeypatch.setattr(cfgmod, "PRESET_WEIGHTS_PATH", tmp_path / "p.json")
+    older = cf.save_config({"name": "参加者AI 1", "step1": ["draw_position"], "step2": []})
+    current = cf.save_config({"name": "参加者AI 1", "step1": ["burden_weight"], "step2": []})
+    cf.save_config({"name": "参加者AI 1", "step1": ["burden_weight"], "step2": []},
+                   config_id=current["id"])
+
+    migrated = cf.migrate_legacy_configs("role:admin")
+    assert migrated == {"migrated": 2, "archived": 1, "active_id": current["id"]}
+    active = cf.list_configs(owner_id="role:admin")
+    assert len(active) == 1 and active[0]["id"] == current["id"]
+    assert active[0]["name"] == "マイAI 1"
+    all_configs = cf.list_configs(owner_id="role:admin", include_archived=True)
+    assert len(all_configs) == 2
+    assert next(x for x in all_configs if x["id"] == older["id"])["archived"] is True
 
 
 # ---------------------------------------------------------------------------
@@ -1113,6 +1377,144 @@ def test_betslip_needs_the_daily_matrix(monkeypatch):
     assert status == 409 and got["error"] == "daily_matrix_not_built"
 
 
+def test_betslip_returns_odds_for_the_selected_point(monkeypatch):
+    monkeypatch.setitem(api._STATE, "daily", {"races": [_race("R1")]})
+    got, status = api.handle_betslip({"race_id": "R1", "selection": [
+        {"type": "tan", "mode": "each", "groups": [["01"]], "amount_yen": 200},
+    ]})
+    assert status == 200, got
+    point = got["slip"][0]["odds"][0]
+    assert point["available"] is True and point["low"] == 3.0
+    assert got["odds_note"]
+
+
+def test_smappy_qr_sends_expanded_points_and_amounts(monkeypatch):
+    race = _race("R1", date="20260801")
+    race["seg"] = {"track": "04"}
+    race["race_num"] = "1"
+    monkeypatch.setitem(api._STATE, "daily", {"races": [race]})
+    monkeypatch.setattr(api, "_live_feed_status", lambda _date=None: {
+        "fresh": True, "checked_at": "2026-08-01T09:00:00+09:00",
+        "age_seconds": 20, "max_age_seconds": 90,
+    })
+    captured = {}
+
+    def fake_create_qr(**kwargs):
+        captured.update(kwargs)
+        return {"qr_png": "data:image/png;base64,TEST", "created_at": "2026-07-31T22:00:00",
+                "points": len(kwargs["points"]), "total_yen": 600, "verified": True}
+
+    monkeypatch.setattr(api.smappy, "create_qr", fake_create_qr)
+    got, status = api.handle_smappy_qr({"race_id": "R1", "selection": [
+        {"type": "umaren", "mode": "box", "groups": [["01", "02", "03"]],
+         "amounts_yen": [100, 200, 300]},
+    ]})
+    assert status == 200, got
+    assert captured["date"] == "20260801"
+    assert captured["track_code"] == "04" and captured["race_num"] == 1
+    assert [(p.bet_type, p.combo, p.amount_yen) for p in captured["points"]] == [
+        ("umaren", (1, 2), 100), ("umaren", (1, 3), 200),
+        ("umaren", (2, 3), 300),
+    ]
+    assert got["verified"] is True and got["total_yen"] == 600
+    assert len(got["items"]) == 3
+
+
+def test_smappy_qr_blocks_when_0b14_confirmation_is_stale(monkeypatch):
+    race = _race("R1", date="20260801")
+    race["seg"] = {"track": "04"}
+    race["race_num"] = "1"
+    monkeypatch.setitem(api._STATE, "daily", {"races": [race]})
+    monkeypatch.setattr(api, "_live_feed_status", lambda _date=None: {
+        "fresh": False, "checked_at": "2026-08-01T09:00:00+09:00",
+        "age_seconds": 121, "max_age_seconds": 90,
+    })
+    called = False
+
+    def should_not_run(**_kwargs):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(api.smappy, "create_qr", should_not_run)
+    got, status = api.handle_smappy_qr({"race_id": "R1", "selection": [
+        {"type": "tan", "mode": "each", "groups": [["01"]], "amount_yen": 100},
+    ]})
+    assert status == 503 and got["error"] == "live_data_stale"
+    assert called is False
+
+
+def test_smappy_qr_never_partially_sends_invalid_selection(monkeypatch):
+    race = _race("R1", date="20260801")
+    race["seg"] = {"track": "04"}
+    race["race_num"] = "1"
+    monkeypatch.setitem(api._STATE, "daily", {"races": [race]})
+    called = False
+
+    def should_not_run(**_kwargs):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(api.smappy, "create_qr", should_not_run)
+    got, status = api.handle_smappy_qr({"race_id": "R1", "selection": [
+        {"type": "tan", "mode": "each", "groups": [["99"]], "amount_yen": 100},
+    ]})
+    assert status == 400 and got["error"] == "invalid_selection"
+    assert called is False
+
+
+def test_smappy_qr_stops_before_jra_after_the_scheduled_start(monkeypatch):
+    race = _race("R1", date="20260802")
+    race["start_time"] = "10:00"
+    race["seg"] = {"track": "01"}
+    race["race_num"] = "1"
+    monkeypatch.setitem(api._STATE, "daily", {"races": [race]})
+    called = False
+
+    def should_not_run(**_kwargs):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(api.smappy, "create_qr", should_not_run)
+    monkeypatch.setattr(api, "_race_sales_closed", lambda _race: True)
+    got, status = api.handle_smappy_qr({"race_id": "R1", "selection": [
+        {"type": "tan", "mode": "each", "groups": [["01"]], "amount_yen": 100},
+    ]})
+    assert status == 409 and got["error"] == "race_closed"
+    assert "10:00" in got["message"] and called is False
+
+
+def test_purchase_can_be_recorded_after_start_without_calling_jra(tmp_path, monkeypatch):
+    race = _race("R1", date="20260802")
+    race["start_time"] = "10:00"
+    monkeypatch.setitem(api._STATE, "daily", {"races": [race]})
+    monkeypatch.setattr(api.purchases.config, "PRESET_WEIGHTS_PATH", tmp_path / "preset.json")
+    called = False
+
+    def should_not_run(**_kwargs):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(api.smappy, "create_qr", should_not_run)
+    got, status = api.handle_purchase_record({"race_id": "R1", "selection": [
+        {"type": "tan", "mode": "each", "groups": [["01"]], "amount_yen": 200},
+    ]}, owner_id="alice")
+    assert status == 201, got
+    assert got["purchase_status"] == "purchased" and got["total_yen"] == 200
+    assert got["registered_before_start"] is False
+    assert called is False
+
+
+def test_purchase_record_rejects_partially_invalid_selection(tmp_path, monkeypatch):
+    monkeypatch.setitem(api._STATE, "daily", {"races": [_race("R1")]})
+    monkeypatch.setattr(api.purchases.config, "PRESET_WEIGHTS_PATH", tmp_path / "preset.json")
+    got, status = api.handle_purchase_record({"race_id": "R1", "selection": [
+        {"type": "tan", "mode": "each", "groups": [["01"]]},
+        {"type": "tan", "mode": "each", "groups": [["99"]]},
+    ]}, owner_id="alice")
+    assert status == 400 and got["error"] == "invalid_selection"
+    assert api.purchases.list_for_date("alice", "", [])["entries"] == []
+
+
 def test_catalog_serves_every_bet_type_with_its_input_rows():
     """券種・買い方・**入力欄の並び**まで API が返すこと。
 
@@ -1152,3 +1554,160 @@ def test_predict_returns_a_starting_selection(monkeypatch):
     slip, skipped = bslip.build_custom(sel)
     assert skipped == []
     assert [t["n"] for t in slip] == [t["n"] for t in got["bet_slip"]]
+
+
+def test_race_context_uses_the_selected_race_and_backtest_history(monkeypatch):
+    race = _race("R1")
+    source = {"races": [_race("OLD", date="20260701")], "columns": []}
+    monkeypatch.setitem(api._STATE, "daily", {"races": [race]})
+    monkeypatch.setitem(api._STATE, "backtest_matrix", source)
+    monkeypatch.setitem(api._STATE, "_context_trend_cache", {})
+    monkeypatch.setattr(api, "_refresh_current_daily", lambda **_kwargs: None)
+    monkeypatch.setattr(api, "_daily_for_date", lambda _date: {})
+    captured = {}
+
+    def fake_analyze(got_source, got_race):
+        captured.update(source=got_source, race=got_race)
+        return {"available": True, "items": [{"key": "burden_weight"}]}
+
+    monkeypatch.setattr(api.context_trends, "analyze", fake_analyze)
+    got, status = api.handle_context_trends("R1")
+    assert status == 200 and got["available"] is True
+    assert captured == {"source": source, "race": race}
+
+
+def test_race_context_merges_previous_day_final_results(monkeypatch):
+    race = _race("R1", date="20260801")
+    older = _race("OLD", date="20260701")
+    previous = _race("PREV", date="20260731")
+    monkeypatch.setitem(api._STATE, "daily", {"races": [race]})
+    legacy_without_id = {key: value for key, value in older.items() if key != "race_id"}
+    monkeypatch.setitem(api._STATE, "backtest_matrix",
+                        {"races": [older, legacy_without_id], "columns": []})
+    monkeypatch.setitem(api._STATE, "_context_trend_cache", {})
+    monkeypatch.setattr(api, "_refresh_current_daily", lambda **_kwargs: None)
+    monkeypatch.setattr(api, "_daily_for_date", lambda date: {
+        "date": date, "races": [previous], "columns": [],
+    })
+    captured = {}
+    def fake_analyze(source, _race):
+        captured["source"] = source
+        return {"available": False}
+    monkeypatch.setattr(api.context_trends, "analyze", fake_analyze)
+    got, status = api.handle_context_trends("R1")
+    assert status == 200
+    assert len(captured["source"]["races"]) == 3
+    assert {item.get("race_id") for item in captured["source"]["races"]
+            if item.get("race_id")} == {"OLD", "PREV"}
+
+
+def test_user_leaderboard_handler_passes_all_shared_user_names(monkeypatch):
+    race = _race("R1")
+    monkeypatch.setitem(api._STATE, "daily", {"date": "20260801", "races": [race]})
+    monkeypatch.setattr(api, "_refresh_current_daily", lambda **_kwargs: None)
+    monkeypatch.setattr(api, "_AUTH_ENABLED", True)
+
+    class FakeAuth:
+        @staticmethod
+        def list_users():
+            return [{"id": "u1", "display_name": "利用者A"}]
+
+    monkeypatch.setattr(api, "_AUTH", FakeAuth())
+    captured = {}
+
+    def fake_board(date, races, names):
+        captured.update(date=date, races=races, names=names)
+        return {"date": date, "entries": []}
+
+    monkeypatch.setattr(api.purchases, "user_leaderboard", fake_board)
+    got, status = api.handle_user_leaderboard()
+    assert status == 200 and got["entries"] == []
+    assert captured["date"] == "20260801" and captured["races"] == [race]
+    assert captured["names"]["u1"] == "利用者A"
+    assert captured["names"][api.ADMIN_OWNER_ID] == "管理者"
+
+
+def test_race_date_catalog_ignores_empty_days_and_links_previous(monkeypatch):
+    monkeypatch.setitem(api._STATE, "date", "20260814")
+    monkeypatch.setattr(api, "_built_dates",
+                        lambda: ["20260808", "20260809", "20260813", "20260814"])
+    race = _race("R1")
+    def daily_for_date(date):
+        return {
+        "date": date,
+        "races": [dict(race, date=date)] if date in {"20260808", "20260809"} else [],
+        }
+    monkeypatch.setattr(api, "_daily_for_date", daily_for_date)
+    monkeypatch.setattr(api.md, "load_historical_daily",
+                        lambda date, _specs: daily_for_date(date))
+    monkeypatch.setattr(api.md, "today_status", lambda daily: daily["races"])
+    got = api._race_date_catalog()
+    assert [item["date"] for item in got["dates"]] == ["20260808", "20260809"]
+    assert got["previous"]["date"] == "20260809"
+    assert got["next"] is None
+
+
+def test_performance_ranges_use_purchase_dates_and_previous_race_day(monkeypatch):
+    monkeypatch.setitem(api._STATE, "date", "20260814")
+    monkeypatch.setattr(api.purchases, "recorded_dates",
+                        lambda *_args, **_kwargs: ["20260801", "20260808", "20260809"])
+    monkeypatch.setattr(api, "_race_date_catalog", lambda _today=None: {
+        "previous": {"date": "20260809"}, "next": None, "dates": [],
+    })
+    assert api._performance_dates("previous") == ["20260809"]
+    assert api._performance_dates("7d") == ["20260808", "20260809"]
+    assert api._performance_dates("all") == ["20260801", "20260808", "20260809"]
+
+
+def test_historical_finished_race_can_be_opened_by_date(monkeypatch):
+    old_race = _race("2026073101010101", date="20260731", with_order=True)
+    monkeypatch.setitem(api._STATE, "date", "20260801")
+    monkeypatch.setitem(api._STATE, "daily", {"date": "20260801", "races": []})
+    monkeypatch.setitem(api._STATE, "preset", PRESET)
+    monkeypatch.setitem(api._STATE, "specs", [])
+    monkeypatch.setitem(api._STATE, "_historical_daily_cache", {})
+    monkeypatch.setattr(api, "_refresh_current_daily", lambda **_kwargs: None)
+    monkeypatch.setattr(api.md, "load_historical_daily", lambda date, _specs: {
+        "date": date, "races": [old_race], "columns": [],
+    })
+    monkeypatch.setattr(api.md, "refresh_live", lambda daily, **_kwargs: daily)
+    got, status = api.handle_predict({
+        "race_id": old_race["race_id"], "date": "20260731", "result_only": True,
+    })
+    assert status == 200
+    assert got["finished"] is True and got["result_only"] is True
+
+
+# ---------------------------------------------------------------------------
+# ライブ更新の間隔 (常駐プロセスが変わらないものを確かめ続けないこと)
+# ---------------------------------------------------------------------------
+def test_refresh_interval_backs_off_once_everything_is_settled(monkeypatch):
+    """日付を固定した過去日で全レース確定後は間隔を伸ばすこと。
+
+    固定 25 秒のまま回し続けたため、9日前の開催日を指定した常駐プロセスが
+    4日間で累計 2.1 TB を読む事態になった。払戻訂正が後から届くことはあるので
+    止めはしないが、変わらないものを確かめ続ける必要もない。
+    """
+    monkeypatch.setitem(api._STATE, "follow_today", False)
+    settled = {"races": [{"finished": True, "payouts": [{"type": "tan"}]},
+                         {"finished": True, "payouts": [{"type": "tan"}]}]}
+    assert api._refresh_interval(settled) == api._IDLE_REFRESH_INTERVAL_SECONDS
+    assert api._IDLE_REFRESH_INTERVAL_SECONDS > api._LIVE_REFRESH_INTERVAL_SECONDS
+
+
+def test_refresh_interval_stays_short_while_anything_can_change(monkeypatch):
+    monkeypatch.setitem(api._STATE, "follow_today", False)
+    for daily in (
+        {"races": [{"finished": True, "payouts": [{"type": "tan"}]},
+                   {"finished": False}]},                     # 未発走が残っている
+        {"races": [{"finished": True, "payouts": []}]},       # 払戻がまだ取れていない
+        {"races": []},                                        # 開催が読めていない
+    ):
+        assert api._refresh_interval(daily) == api._LIVE_REFRESH_INTERVAL_SECONDS, daily
+
+
+def test_refresh_interval_ignores_the_backoff_while_following_today(monkeypatch):
+    """当日を追う起動では日付が変わりうるので短いままにすること。"""
+    monkeypatch.setitem(api._STATE, "follow_today", True)
+    settled = {"races": [{"finished": True, "payouts": [{"type": "tan"}]}]}
+    assert api._refresh_interval(settled) == api._LIVE_REFRESH_INTERVAL_SECONDS

@@ -167,6 +167,17 @@ def _render_build(features: dict, tmp_path=None) -> dict:
     return json.loads(res.stdout)
 
 
+def _render_result_review(review: dict, tmp_path) -> str:
+    path = tmp_path / "_result_review.json"
+    path.write_text(json.dumps(review, ensure_ascii=False), encoding="utf-8")
+    res = subprocess.run(["node", str(ROOT / "tests" / "dom_render.js"),
+                          "--result-review", str(path)],
+                         capture_output=True, text=True, encoding="utf-8",
+                         cwd=str(ROOT), timeout=60)
+    assert res.returncode == 0, f"描画に失敗: {res.stderr[-2000:]}"
+    return res.stdout
+
+
 def _predict_fixture(n=12, finished=False, scramble=False) -> dict:
     """実 API と同じ形の予想レスポンス (predict_service が返す形)。
 
@@ -320,6 +331,100 @@ def test_finished_race_shows_no_marks(tmp_path):
     assert t.find("res-row"), "結果が表示されていない"
     # 凡例も出さない
     assert out["markLegend"] == ""
+    assert "購入した買い目を後から記録" in out["betSlip"]
+
+
+def test_finished_result_shows_pickup_candidate_instead_of_no_points(tmp_path):
+    """加点なしで終わらせず、その馬を印圏内へ上げる追加項目を示す。"""
+    p = _predict_fixture(finished=True)
+    winner_num = str(p["result"][0]["horse_num"])
+    mark = next(m for m in p["marks"] if str(m["horse_num"]) == winner_num)
+    for contribution in mark["contributions"]:
+        contribution["available"] = True
+        contribution["contribution"] = -abs(float(contribution.get("contribution") or 1.0))
+    mark["rank"] = 8
+    mark["mark"] = ""
+    p["result_pickup_analysis"] = {
+        "mark_cutoff": 5,
+        "basis": "pre_race_features",
+        "mode": "add_one_item",
+        "horses": {winner_num: {
+            "status": "into_marks", "base_rank": 8,
+            "candidates": [{"label": "騎手の直近30日複勝率", "from_rank": 8,
+                            "to_rank": 4, "reaches_marks": True}],
+        }},
+    }
+    out = _render(p, api.feature_catalog(), tmp_path)
+    text = Tree()
+    text.feed(out["markList"])
+    rendered = text.all_text(text.root)
+    assert "印圏内へ上げる候補:" in rendered
+    assert "騎手の直近30日複勝率（評価8位→4位）" in rendered
+    assert "選択項目では加点されませんでした" not in rendered
+    assert "評価を下げた主な項目:" in rendered
+    assert "各馬の内訳は、発走前データで評価を上げた項目" in rendered
+
+
+def test_finished_result_shows_retrospective_ai_item_set(tmp_path):
+    """結果画面で、単独項目ではなくマイAIとして選ぶ項目セットを示す。"""
+    p = _predict_fixture(finished=True)
+    p["result_review_ai"] = {
+        "items": [
+            {"section": "基本項目", "label": "騎手のこの競馬場での成績"},
+            {"section": "詳細設定", "label": "最終コーナーからの着順上昇(直近6走)"},
+        ],
+        "placed_in_marks": 3,
+        "n_placed": 3,
+        "placed": [
+            {"order": 1, "horse_num": "01", "horse_name": "テスト1",
+             "ai_rank": 2, "ai_mark": "○", "in_marks": True},
+            {"order": 2, "horse_num": "02", "horse_name": "テスト2",
+             "ai_rank": 1, "ai_mark": "◎", "in_marks": True},
+            {"order": 3, "horse_num": "03", "horse_name": "テスト3",
+             "ai_rank": 5, "ai_mark": "△", "in_marks": True},
+        ],
+    }
+    out = _render(p, api.feature_catalog(), tmp_path)
+    tree = Tree()
+    tree.feed(out["markList"])
+    rendered = tree.all_text(tree.root)
+    assert "このレースで選べばよかった項目" in rendered
+    assert "騎手のこの競馬場での成績" in rendered
+    assert "最終コーナーからの着順上昇(直近6走)" in rendered
+    assert "3/3" in rendered and "評価2位・○" in rendered
+    assert "発走前データだけを使って" in rendered
+
+
+def test_result_review_renders_mobile_summary_with_surface_and_distance(tmp_path):
+    review = {
+        "date": "20260815", "race_count": 36, "finished_count": 36,
+        "races": [{
+            "race_id": "R1", "race_num": 1, "track_label": "中京",
+            "race_title": "2歳未勝利", "surface_label": "ダート",
+            "distance": 1400, "condition_label": "良", "finished": True,
+            "top3": [{"order": 1, "horse_num": "16", "horse_name": "スマートポーション",
+                      "candidate": {"label": "最終コーナーからの着順上昇(直近1走)",
+                                    "to_rank": 1, "reaches_marks": True}}],
+            "review_ai": {
+                "items": [
+                    {"label": "最終コーナーからの着順上昇(直近1走)", "section": "詳細設定"},
+                    {"label": "騎手のこの競馬場での成績", "section": "基本項目"},
+                ],
+                "placed": [{"horse_num": "16", "ai_rank": 2, "ai_mark": "○",
+                            "in_marks": True}],
+                "placed_in_marks": 1, "n_placed": 1,
+            },
+        }],
+    }
+    rendered = _render_result_review(review, tmp_path)
+    tree = Tree()
+    tree.feed(rendered)
+    text = tree.all_text(tree.root)
+    assert "中京" in text and "ダート・1400m・良" in text
+    assert "1着 16 スマートポーション" in text
+    assert "マイAIで選ぶ項目" in text and "最終コーナーからの着順上昇" in text
+    assert "騎手のこの競馬場での成績" in text and "この組み合わせで評価2位・印圏内" in text
+    assert tree.find("review-race") and tree.find("review-filters")
 
 
 def test_upcoming_race_shows_marks_and_legend(tmp_path):
@@ -331,6 +436,26 @@ def test_upcoming_race_shows_marks_and_legend(tmp_path):
     assert marks, "発走前レースに印が出ていない"
     assert "◎" in t.all_text(marks[0])
     assert out["markLegend"], "印の凡例が無い"
+
+
+def test_low_coverage_race_still_allows_manual_bet_selection(tmp_path):
+    p = _predict_fixture(n=8, finished=False)
+    p["runners"] = [{**m, "mark": ""} for m in p["marks"]]
+    p["marks"] = []
+    p["bet_selection"] = []
+    p["bet_slip"] = []
+    p["warnings"] = [{
+        "code": "all_columns_gated_out",
+        "message": "選択された全項目がカバレッジ不足でこのレースでは使えません",
+        "hint": "AI印は出せませんが、出走馬から買い目を手動で選択できます",
+    }]
+    out = _render(p, api.feature_catalog(), tmp_path)
+    t = Tree()
+    t.feed(out["markList"] + out["betSlip"] + out["betDraft"])
+    assert t.find("manual-bet-note"), "データ不足時の手動選択案内が無い"
+    assert t.find("bed"), "買い目エディタが表示されていない"
+    assert len(t.find("bchip")) == 8, "全出走馬を選択できない"
+    assert not t.find("mark"), "根拠のないAI印を表示している"
 
 
 # ---------------------------------------------------------------------------
@@ -482,13 +607,17 @@ def test_cell_count_is_visible(tmp_path):
 # ---------------------------------------------------------------------------
 # 公式サイトへの引き渡し (誤登録の最後の防波堤)
 # ---------------------------------------------------------------------------
-def test_handoff_lists_every_bet_type_with_its_count(tmp_path):
-    """券種ごとの行と点数、および合計点が出ていること。
+def test_race_opens_without_prefilled_bets(tmp_path):
+    """予想一覧を買い目20点で押し下げず、追加は参加者の明示操作にする。"""
+    out = _render_build_free(_predict_fixture(n=12), tmp_path)
+    t = Tree()
+    t.feed(out["initialBetResult"])
+    assert not t.find("bs-row"), "レースを開いただけで買い目が入力されている"
+    assert t.find("bs-suggest"), "印から買い目を作る任意操作が無い"
 
-    QR は JRA 公式サイトでしか作れず、外部から買い目を渡す口も無い
-    (調査記録: docs/SMAPPY_QR_PLAN.md)。人が手で入れるしかないので、
-    **入れ終わったあとに突き合わせる材料**が必ず画面に無いといけない。
-    """
+
+def test_handoff_lists_every_bet_type_with_its_count(tmp_path):
+    """券種ごとの行・点数・金額と、QR後の照合材料が出ていること。"""
     p = _predict_fixture(n=12)
     assert p["bet_slip"], "買い目が生成されていない"
     out = _render_build_free(p, tmp_path)
@@ -502,6 +631,92 @@ def test_handoff_lists_every_bet_type_with_its_count(tmp_path):
     # 読み合わせの指示があること (突き合わせずに買わせない)
     assert t.find("hb-check"), "読み合わせの案内が無い"
     assert "読み合わせ" in txt
+
+
+def test_slip_has_amount_inputs_and_smappy_qr_action(tmp_path):
+    p = _predict_fixture(n=12)
+    out = _render_build_free(p, tmp_path)
+    t = Tree()
+    t.feed(out["betResult"])
+    amounts = t.find("bs-amount")
+    assert len(amounts) == len(p["bet_slip"])
+    assert all(x["tag"] == "input" for x in amounts)
+    assert all(x["attrs"].get("min") == "100" for x in amounts)
+    assert all(x["attrs"].get("step") == "100" for x in amounts)
+    point_amounts = t.find("bo-amount")
+    assert len(point_amounts) == sum(x["n"] for x in p["bet_slip"])
+    assert all(x["attrs"].get("data-slip") is not None for x in point_amounts)
+    assert all(x["attrs"].get("data-point") is not None for x in point_amounts)
+    assert all(x["attrs"].get("step") == "100" for x in point_amounts)
+    assert "スマッピーQRを作成" in t.all_text(t.root)
+    assert t.find("bs-funds"), "予算からの資金配分欄が無い"
+    assert t.find("bf-input"), "予算入力欄が無い"
+    assert "オッズで資金配分" in t.all_text(t.root)
+    assert "disabled" in t.find("bf-apply")[0]["attrs"]
+    assert "オッズ未発表" in t.all_text(t.root)
+    assert "均等に配分" in t.all_text(t.root)
+    assert "disabled" not in t.find("bf-apply")[1]["attrs"]
+
+
+def test_point_amount_can_be_changed_after_budget_allocation():
+    """点別配分を維持したまま、指定した1点の金額だけを変更できる。"""
+    entries = [{"type": "umaren", "mode": "box", "groups": [["1", "2", "3"]],
+                "amounts_yen": [800, 400, 200]}]
+    slip = [{"n": 3, "amount_yen": None, "amounts_yen": [800, 400, 200]}]
+    res = subprocess.run(
+        ["node", str(ROOT / "tests" / "dom_render.js"), "--point-edit",
+         json.dumps(entries), json.dumps(slip), "0", "1", "600"],
+        capture_output=True, text=True, encoding="utf-8", check=True,
+    )
+    got = json.loads(res.stdout)
+    assert got["ok"] is True
+    assert got["entries"][0]["amounts_yen"] == [800, 600, 200]
+    assert "amount_yen" not in got["entries"][0]
+
+
+def test_odds_budget_allocation_equalizes_expected_returns():
+    slip = [
+        {"n": 1, "odds": [{"available": True, "low": 2.0}]},
+        {"n": 1, "odds": [{"available": True, "low": 4.0}]},
+    ]
+    res = subprocess.run(
+        ["node", str(ROOT / "tests" / "dom_render.js"), "--allocation", "1200",
+         json.dumps(slip)],
+        capture_output=True, text=True, encoding="utf-8", check=True,
+    )
+    got = json.loads(res.stdout)
+    assert got["byEntry"] == [[800], [400]]
+    assert got["usedYen"] == 1200
+    assert 800 * 2.0 == 400 * 4.0
+
+
+def test_odds_budget_allocation_uses_all_100_yen_units_after_rounding():
+    slip = [{"n": 3, "odds": [
+        {"available": True, "low": 2.0},
+        {"available": True, "low": 4.0},
+        {"available": True, "low": 10.0},
+    ]}]
+    res = subprocess.run(
+        ["node", str(ROOT / "tests" / "dom_render.js"), "--allocation", "1300",
+         json.dumps(slip)],
+        capture_output=True, text=True, encoding="utf-8", check=True,
+    )
+    got = json.loads(res.stdout)
+    assert sum(got["byEntry"][0]) == 1300
+    assert all(x >= 100 and x % 100 == 0 for x in got["byEntry"][0])
+
+
+def test_equal_budget_allocation_works_without_odds():
+    slip = [{"n": 2, "odds": [{"available": False}, {"available": False}]},
+            {"n": 1, "odds": [{"available": False}]}]
+    res = subprocess.run(
+        ["node", str(ROOT / "tests" / "dom_render.js"), "--equal-allocation", "1000",
+         json.dumps(slip)],
+        capture_output=True, text=True, encoding="utf-8", check=True,
+    )
+    got = json.loads(res.stdout)
+    assert got["byEntry"] == [[400, 300], [300]]
+    assert got["usedYen"] == 1000 and got["remainingYen"] == 0
 
 
 def test_handoff_keeps_the_direction_of_ordered_bets(tmp_path):
@@ -659,7 +874,7 @@ def test_the_slip_shows_what_was_selected_per_row(tmp_path):
 
 
 def test_the_point_list_is_collapsed_but_present(tmp_path):
-    """点の内訳は畳んでおく。**消してはいけない** (手入力に必要)。"""
+    """点の内訳は畳んでおく。**消してはいけない** (QRとの照合に必要)。"""
     out = _render_build_free(_predict_fixture(n=12), tmp_path)
     t = Tree()
     t.feed(out["betResult"])

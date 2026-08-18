@@ -115,7 +115,8 @@ def _assign_ranks(entries: list[dict]) -> None:
 def build_leaderboard(daily: dict, preset: dict, *,
                       configs: list[dict] | None = None,
                       as_of: str | None = None,
-                      applied: dict | None = None) -> dict:
+                      applied: dict | None = None,
+                      owner_id: str | None = None) -> dict:
     """当日の確定レースから順位表を作る。
 
     daily: matrix_daily の当日行列。preset: プリセット重み。
@@ -129,11 +130,11 @@ def build_leaderboard(daily: dict, preset: dict, *,
 
     if configs is None:
         configs = []
-        store = cf._load_store()
-        for cid, entry in store.items():
-            got = cf.get_config(cid)
+        for listed in cf.list_configs(owner_id=owner_id):
+            cid = listed["id"]
+            got = cf.get_config(cid, owner_id=owner_id)
             if got:
-                configs.append({"id": cid, "name": entry.get("name") or cid,
+                configs.append({"id": cid, "name": listed.get("name") or cid,
                                 "config": got["config"]})
 
     accs = {c["id"]: _blank() for c in configs}
@@ -148,8 +149,10 @@ def build_leaderboard(daily: dict, preset: dict, *,
         favorite = next((h["num"] for h in r["horses"] if h.get("pop") == 1), None)
         _tally(base, favorite, favorite, order, race=r)   # ベースライン = 1番人気を◎
         # 適用AIの指定があるレースは、その1つだけを集計する
-        target = (applied or {}).get(r.get("race_id"))
+        target = applied.get(r.get("race_id")) if applied is not None else None
         for c in configs:
+            if applied is not None and not target:
+                continue
             if target and c["id"] != target:
                 continue
             ranked = model.score_columns_detailed(
@@ -158,6 +161,8 @@ def build_leaderboard(daily: dict, preset: dict, *,
             _tally(accs[c["id"]], pick, favorite, order, race=r)
 
     entries = [_entry(c["name"], accs[c["id"]], config_id=c["id"]) for c in configs]
+    if applied is not None:
+        entries = [e for e in entries if e["races"] > 0]
     entries.append(_entry("1番人気AI", base, is_baseline=True))
     entries.sort(key=_sort_key)
     _assign_ranks(entries)
@@ -173,7 +178,7 @@ def build_leaderboard(daily: dict, preset: dict, *,
         # /api/features からも供給される)。
         "ranking_rule": lb.RANKING_RULE,
         # 適用AI指定があると AI ごとに対象レース数が変わる。UI は races を必ず出す
-        "scoped_to_applied": bool(applied),
+        "scoped_to_applied": applied is not None,
         "roi_note": ("回収率は当たり外れの偶然に大きく左右されます。"
                      f"{roimod.MIN_RACES_FOR_ROI}レース未満は数値を出しません。"
                      f"単勝の控除率は{int(roimod.TAKEOUT * 100)}%なので、"
