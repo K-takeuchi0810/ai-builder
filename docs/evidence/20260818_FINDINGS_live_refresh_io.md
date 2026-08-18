@@ -153,3 +153,40 @@ powershell -Command "Get-Process python* | Where-Object { $_.Path -like '*venv64
 
 `--date` を指定した検証用プロセスを起動したまま放置しないこと。
 §5 の修正で読み取りは消えたが、開催日ごとに落とす運用が前提。
+
+---
+
+## 9. あわせて直したフレークテスト
+
+`test_config_names_are_unique_and_archiving_is_reversible` が稀に落ちていた。
+
+```
+AssertionError: At index 0 diff: 'マイAI 2' != 'マイAI'
+```
+
+**コードは仕様どおりで、テストの期待が時刻に依存していた。**
+
+`list_configs` の並びは `(archived, -updated_at, name)` で、`updated_at` は
+`int(time.time())` の**秒精度**。テストは同じ名前で2件保存して
+`["マイAI", "マイAI 2"]` を期待していたが、
+
+| 2回の save | 並び |
+|---|---|
+| 同じ秒に入る | `["マイAI", "マイAI 2"]` (名前で並ぶ) |
+| 秒境界をまたぐ | `["マイAI 2", "マイAI"]` (新しいものが先) |
+
+docstring は「新しいものが先」なので後者が正しい挙動。時刻を差し替えて
+**両方を決定的に再現**して確認した。
+
+**修正**:
+
+- 名前の一意化のテストは並び順に依存させない (`a["name"]` / `b["name"]` と集合で確認)
+- 並び順は `test_config_list_puts_the_newest_first` で**時刻を固定して**別に検証
+  (1分差で新しいものが先、同じ秒なら名前順)
+
+`test_api.py` + `test_payouts.py` + `test_betslip.py` を10回連続実行して失敗0件。
+
+### 残る仕様上の制約 (直していない)
+
+同じ秒に作った2件は作成順ではなく名前順になる。`updated_at` が秒精度のため。
+実害は一覧の並びだけなので、保存形式を変える価値は無いと判断した。

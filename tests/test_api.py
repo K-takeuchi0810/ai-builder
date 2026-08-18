@@ -1239,7 +1239,13 @@ def test_config_names_are_unique_and_archiving_is_reversible(tmp_path, monkeypat
                        owner_id="user-a")
     b = cf.save_config({"name": "マイAI", "step1": ["draw_position"], "step2": []},
                        owner_id="user-a")
-    assert [x["name"] for x in cf.list_configs(owner_id="user-a")] == ["マイAI", "マイAI 2"]
+    # 同じ名前は自動で連番になる。**並び順に依存させない** —
+    # `list_configs` は「新しいものが先」で、同秒なら名前で並ぶ。
+    # 2回の save が秒境界をまたぐと反転するため、以前はここが稀に落ちていた
+    # (`updated_at` は int(time.time()) = 秒精度)。
+    assert a["name"] == "マイAI"
+    assert b["name"] == "マイAI 2"
+    assert {x["name"] for x in cf.list_configs(owner_id="user-a")} == {"マイAI", "マイAI 2"}
 
     assert cf.archive_config(a["id"], owner_id="user-b") is None
     assert cf.archive_config(a["id"], owner_id="user-a")["archived"] is True
@@ -1711,3 +1717,34 @@ def test_refresh_interval_ignores_the_backoff_while_following_today(monkeypatch)
     monkeypatch.setitem(api._STATE, "follow_today", True)
     settled = {"races": [{"finished": True, "payouts": [{"type": "tan"}]}]}
     assert api._refresh_interval(settled) == api._LIVE_REFRESH_INTERVAL_SECONDS
+
+
+def test_config_list_puts_the_newest_first(tmp_path, monkeypatch):
+    """一覧は「新しいものが先」。同じ秒なら名前で並ぶ。
+
+    `updated_at` は int(time.time()) の秒精度なので、この2つを分けて確かめる。
+    (以前は名前の一意化テストが並び順にも依存していて、2回の save が秒境界を
+    またぐと稀に落ちていた。)
+    """
+    monkeypatch.setattr(cfgmod, "PRESET_WEIGHTS_PATH", tmp_path / "p.json")
+    base = [1_800_000_000]
+
+    def fake_time():
+        return float(base[0])
+
+    monkeypatch.setattr(cf.time, "time", fake_time)
+    old = cf.save_config({"name": "ふるいAI", "step1": ["burden_weight"], "step2": []},
+                         owner_id="user-a")
+    base[0] += 60                                  # 1分後に別のAIを作る
+    new = cf.save_config({"name": "あたらしいAI", "step1": ["draw_position"], "step2": []},
+                         owner_id="user-a")
+    got = [x["id"] for x in cf.list_configs(owner_id="user-a")]
+    assert got == [new["id"], old["id"]], "新しいものが先になっていない"
+
+    # 同じ秒に作った2件は名前順 (安定した並びになること)
+    monkeypatch.setattr(cfgmod, "PRESET_WEIGHTS_PATH", tmp_path / "q.json")
+    cf.save_config({"name": "B", "step1": ["burden_weight"], "step2": []},
+                   owner_id="user-a")
+    cf.save_config({"name": "A", "step1": ["draw_position"], "step2": []},
+                   owner_id="user-a")
+    assert [x["name"] for x in cf.list_configs(owner_id="user-a")] == ["A", "B"]
