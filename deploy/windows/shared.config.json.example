@@ -1,0 +1,10 @@
+{
+  "python_exe": "C:\\Users\\YOUR_NAME\\dev\\keiba-yosou\\.venv64\\Scripts\\python.exe",
+  "workdir": "C:\\Users\\YOUR_NAME\\dev\\ai-builder",
+  "public_url": "https://YOUR-PC.YOUR-TAILNET.ts.net",
+  "admin_password": "REPLACE_WITH_A_LONG_RANDOM_SECRET",
+  "auth_db": "C:\\Users\\YOUR_NAME\\dev\\ai-builder\\out\\cache\\auth.db",
+  "port": 8780,
+  "build": true,
+  "no_backtest": false
+}

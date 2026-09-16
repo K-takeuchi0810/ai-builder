@@ -488,15 +488,19 @@ def score_columns_detailed(rows: dict[str, dict[str, float | None]],
         used += 1
         for hn in horse_nums:
             z = zs.get(hn)
+            # n_with_value / n_runners = **その項目に値があった頭数**。
+            # 項目別のカバレッジを寄与の行に添えるために持たせる (馬単位の
+            # 「過去N走を参照」とは別の軸で、どちらも表示する)。
+            base = {"id": cid, "label": c.get("label", cid), "weight": w,
+                    "n_with_value": n_have, "n_runners": n_runners}
             if z is None:
-                contribs[hn].append({"id": cid, "label": c.get("label", cid), "weight": w,
-                                     "z": None, "contribution": 0.0, "available": False})
+                contribs[hn].append({**base, "z": None, "contribution": 0.0,
+                                     "available": False})
                 continue
             val = w * z
             scores[hn] += val
-            contribs[hn].append({"id": cid, "label": c.get("label", cid), "weight": w,
-                                 "z": round(z, 4), "contribution": round(val, 4),
-                                 "available": True})
+            contribs[hn].append({**base, "z": round(z, 4),
+                                 "contribution": round(val, 4), "available": True})
 
     coverage = {hn: {"n_used": used,
                      "n_with_value": sum(1 for x in contribs[hn] if x["available"])}

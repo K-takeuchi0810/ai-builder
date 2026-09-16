@@ -45,6 +45,8 @@ _SEASON = {"spring": "春", "summer": "夏", "autumn": "秋", "winter": "冬",
            "unknown": "不明"}
 _POPULARITY = {"1": "1番人気", "2": "2番人気", "3": "3番人気", "4-6": "4〜6番人気",
                "7-9": "7〜9番人気", "10+": "10番人気以下", "unknown": "不明"}
+# 性別コード (JV-Data)。出走情報の「性齢」表示に使う。
+_SEX = {"1": "牡", "2": "牝", "3": "セン", "0": "", "": ""}
 
 
 # STEP2 のセル (一致条件 × さかのぼる範囲) のラベル。
@@ -69,10 +71,208 @@ def match_label(match, *, short: bool = False) -> str:
 
 
 def lookback_label(lookback, *, short: bool = False) -> str:
-    """さかのぼる範囲 (None=全走 / N=直近N走) → 日本語。"""
+    """さかのぼる範囲 (None=全走 / N=直近N走) → 日本語。
+
+    C-2: 長い形を「全レース」から「これまでの全走」に変えた。一致条件の
+    「全レース」と同じ文字列で、「どの条件で × どこまでさかのぼる」の
+    両軸に同名のチップが並び、どちらの軸の話か読めなかった。
+    短い形 (列名に埋め込む「全走」) は変えない。
+    """
     if lookback in (None, "", 0):
-        return "全走" if short else "全レース"
+        return "全走" if short else "これまでの全走"
     return f"直近{int(lookback)}走" if short else f"直近{int(lookback)}レース"
+
+
+# ---------------------------------------------------------------------------
+# 用語辞書 — 競馬を知らない人が読んで意味が通ることを基準に書く
+# ---------------------------------------------------------------------------
+# UI 側に説明文を複製しない (語彙の二重管理を禁止)。API 経由で供給する。
+# 「儲かる」「買い目」等の語彙は入れない。
+GLOSSARY: dict[str, dict[str, str]] = {
+    "mark": {"term": "印", "reading": "しるし",
+             "desc": "予想の順位づけです。◎本命 ○対抗 ▲単穴 △連下 ×注意 の順に有力とみています。"
+                     "マイAIが評価した上位5頭に付きます。"},
+    "honmei": {"term": "◎ 本命", "desc": "そのレースで最も有力とみた1頭です。"},
+    "taikou": {"term": "○ 対抗", "desc": "本命に次いで有力とみた1頭です。"},
+    "tanana": {"term": "▲ 単穴", "desc": "3番目の評価。上位2頭を逆転する可能性をみています。"},
+    "renka": {"term": "△ 連下", "desc": "4番目の評価。3着以内に入る可能性をみています。"},
+    "chuui": {"term": "× 注意", "desc": "5番目の評価。押さえておきたい1頭です。"},
+    "mujirushi": {"term": "– 無印", "desc": "6番目以降の評価です。印は上位5頭までなので付きません。"},
+    "win_odds": {"term": "単勝オッズ", "reading": "たんしょうオッズ",
+                 "desc": "その馬が1着になった場合の払戻倍率です。低いほど多くの人が支持しています。"},
+    "popularity": {"term": "人気", "desc": "単勝オッズの低い順に付けた順位です。"
+                                          "1番人気が最も支持されている馬です。"},
+    "fukushou": {"term": "複勝", "reading": "ふくしょう",
+                 "desc": "3着以内に入ることです。「複勝率」は3着以内に入った割合です。"},
+    "condition": {"term": "馬場状態", "reading": "ばばじょうたい",
+                  "desc": "コースの湿り具合です。乾いている順に 良・稍重・重・不良 の4段階。"
+                          "馬によって得意な状態が違います。"},
+    "burden_weight": {"term": "斤量", "reading": "きんりょう",
+                      "desc": "その馬が背負う重さ(騎手+装具)です。重いほど不利とされます。"},
+    "horse_weight": {"term": "馬体重", "desc": "馬の体重です。前走からの増減が調子の目安になります。"},
+    "time_index": {"term": "タイム指数",
+                   "desc": "走破時計を距離で割って比較できるようにした指標です。"
+                           "距離の違うレースのタイムを並べて見るために使います。"},
+    "final_3f": {"term": "上がり3F", "reading": "あがりスリーエフ",
+                 "desc": "最後の600メートル(3ハロン)にかかった時間です。短いほど終盤に伸びています。"},
+    "corner": {"term": "コーナー通過順位",
+               "desc": "各コーナーを何番手で回ったかです。前で運んだか後方から追い込んだかが分かります。"},
+    "last_corner": {"term": "最終コーナー", "reading": "さいしゅうコーナー",
+                    "desc": "直線に入る直前のコーナーです。ここでの位置どりが結果に影響します。"},
+    "margin": {"term": "着差", "reading": "ちゃくさ",
+               "desc": "勝ち馬との差です。小さいほど惜しい負け方をしています。"},
+    "prize": {"term": "獲得本賞金", "reading": "かくとくほんしょうきん",
+              "desc": "これまでに獲得した賞金の本体部分です(付加賞・褒賞金は含みません)。"
+                      "強い相手と戦ってきたかの目安になります。"},
+    "surface": {"term": "芝・ダート",
+                "desc": "コースの種類です。芝は草、ダートは砂。得意な方が馬によって違います。"},
+    "draw": {"term": "枠位置", "reading": "わくいち",
+             "desc": "ゲートの並び順です。内側は距離のロスが少なく、外側は他馬の影響を受けにくいとされます。"},
+    "sire": {"term": "父", "desc": "その馬の父馬です。父の得意条件が仔にも出ることがあります。"},
+    "dam_sire": {"term": "母父", "reading": "ははちち",
+                 "desc": "母の父です。父とは別の傾向を仔に伝えることがあります。"},
+    "confidence": {"term": "自信度",
+                   "desc": "1位と2位の評価差から3段階で示しています。"
+                           "差が大きいほど鉄板級、小さいほど混戦です。"},
+    "upset": {"term": "人気を出し抜いた的中",
+              "desc": "1番人気ではない馬を◎にして、その馬が1着になったレースです。"},
+    "backtest": {"term": "これまでの成績",
+                 "desc": "過去のレースに同じ設定を当てはめて集計した的中率です。"
+                         "学習に使っていない期間で計算しています。"},
+    "coverage": {"term": "分析に使えた項目",
+                 "desc": "選んだ項目のうち、そのレースで実際に評価に使えた数です。"
+                         "データが足りない項目は評価から外します。"},
+    "jiku": {"term": "軸", "reading": "じく",
+             "desc": "組み合わせの中心にする馬です。軸を決めると、そこから相手の馬へ広げる買い方ができます。"},
+    "nagashi": {"term": "流し", "reading": "ながし",
+                "desc": "軸の馬を必ず含めて、相手に選んだ馬と1つずつ組み合わせる買い方です。"},
+    "box": {"term": "ボックス",
+            "desc": "選んだ馬すべての組み合わせを買う方法です。頭数が増えると点数が急に増えます。"},
+    "formation": {"term": "フォーメーション",
+                  "desc": "着ごとに候補の馬を分けて選ぶ買い方です。"
+                          "「1着はこの2頭、2着はこの3頭」のように指定できます。"},
+    "wakuren": {"term": "枠連", "reading": "わくれん",
+                "desc": "馬ではなく枠(ゲートのグループ)の組を当てます。"
+                        "同じ枠に2頭以上いる枠は、その枠どうしの組(ゾロ目)も買えます。"},
+    "sanrentan": {"term": "三連単", "reading": "さんれんたん",
+                  "desc": "1着から3着までを順序どおりに当てます。点数が最も増えやすい券種です。"},
+    "tensuu": {"term": "点数", "reading": "てんすう",
+               "desc": "買う組み合わせの数です。1点ごとに1つの馬券になります。"},
+    "low_sample": {"term": "データ少なめ",
+                   "desc": "この項目は記録の保存期間が短く、他の項目より根拠が薄くなります。"},
+}
+
+
+# 成績比較の並び順 (判断C で確定)。**静的な文字列としてここに置く。**
+# API レスポンス経由で埋めていたため、board が空だと差し込まれず画面に
+# プレースホルダの「—」が残っていた。規則は集計結果に依存しない事実なので、
+# 語彙表の一部として持ち、選択肢と同じ経路 (/api/features) で常に供給する。
+RANKING_RULE = ("並び順は ①◎的中率 → ②人気を出し抜いた的中数 → ③◎複勝率 "
+                "の順です。それでも同じなら同順位で並びます。"
+                "率で並べるのは、AI ごとに対象レース数が違うためです "
+                "(的中数だけで並べると多く使ったAIが機械的に上位になります)。")
+
+
+# z 値 → 平易表現 (5段)。**生の z を画面に出さない** ための単一辞書。
+# 境界は「レース内の標準偏差いくつ分か」。UI 側に同じ表を作らない。
+Z_BANDS: tuple[tuple[float, str], ...] = (
+    (1.0, "出走馬の中でかなり上"),
+    (0.35, "出走馬の中で上"),
+    (-0.35, "平均的"),
+    (-1.0, "出走馬の中で下"),
+    (float("-inf"), "出走馬の中でかなり下"),
+)
+
+
+def plain_level(z: float | None) -> str | None:
+    """z 値 → 平易表現。None は None (捏造しない)。"""
+    if z is None:
+        return None
+    for threshold, label in Z_BANDS:
+        if z >= threshold:
+            return label
+    return Z_BANDS[-1][1]
+
+
+def glossary() -> list[dict]:
+    """用語辞書を API で返せる形にする (キー順で安定)。"""
+    return [{"key": k, **v} for k, v in GLOSSARY.items()]
+
+
+# ---------------------------------------------------------------------------
+# STEP1 の自然語ラベルとグループ (設計: 初心者が読んで意味が通ること)
+# ---------------------------------------------------------------------------
+# 開発者語彙と「×」記法を画面から全廃する。特徴量キーは変更しない。
+# 3要素: (自然語ラベル, グループ, 用語辞書のキー | None)
+_STEP1: dict[str, tuple[str, str, str | None]] = {
+    "popularity": ("人気(市場)", "market", "popularity"),
+
+    "burden_weight": ("斤量", "condition", "burden_weight"),
+    "burden_delta": ("前走からの斤量の増減", "condition", "burden_weight"),
+    "horse_weight_change": ("前走からの馬体重の増減", "condition", "horse_weight"),
+    "days_since_last": ("前走からの間隔", "condition", None),
+
+    "jockey_win_rate": ("騎手の勝率", "people", None),
+    "jockey_recent_30d_top3_rate": ("騎手の最近30日の成績", "people", "fukushou"),
+    "jockey_track_top3_rate": ("騎手のこの競馬場での成績", "people", "fukushou"),
+    "trainer_win_rate": ("調教師の勝率", "people", None),
+    "trainer_recent_30d_top3_rate": ("調教師の最近30日の成績", "people", "fukushou"),
+
+    "sire_surface_top3_rate": ("父の芝ダート適性", "blood", "sire"),
+    "sire_distance_top3_rate": ("父の距離適性", "blood", "sire"),
+    "sire_going_top3_rate": ("父の馬場状態適性", "blood", "condition"),
+    "dam_sire_surface_top3_rate": ("母父の芝ダート適性", "blood", "dam_sire"),
+
+    "fit_course": ("このコースでの実績", "record", "fukushou"),
+    "fit_course_distance": ("このコースと距離での実績", "record", "fukushou"),
+    "fit_distance": ("この距離での実績", "record", "fukushou"),
+    "fit_going": ("この馬場状態での実績", "record", "condition"),
+    "fit_surface": ("芝ダートの適性", "record", "surface"),
+    "horse_track_top3_rate": ("この競馬場での実績", "record", "fukushou"),
+    "horse_recent_90d_top3_rate": ("最近90日の実績", "record", "fukushou"),
+    # C-1: STEP2 の「平均着順」と区別できなかった。実装は直近3走固定
+    # (keiba-yosou predictor/features.py の recent3)。窓を名前に出す。
+    "recent_avg_finish": ("直近3走の平均着順", "record", None),
+    "recent_trend_delta": ("直近3走の調子(上向き/下向き)", "record", None),
+    "last_finish": ("前走の着順", "record", None),
+
+    "draw_position": ("枠の内外", "running", "draw"),
+    "avg_final_3f": ("終盤の脚(上がり3F)", "running", "final_3f"),
+    "best_final_3f_rank": ("終盤の脚の最高順位", "running", "final_3f"),
+    "recent_4corner_avg_position": ("最終コーナーでの位置どり", "running", "last_corner"),
+    "recent_4corner_position_change": ("コーナーでの押し上げ", "running", "corner"),
+}
+
+# グループの表示名と1行説明 (順序が画面の並び順になる)
+STEP1_GROUPS: tuple[tuple[str, str, str], ...] = (
+    ("condition", "馬の状態", "斤量や馬体重の増減など、当日のコンディションをみます"),
+    ("record", "過去の実績", "同じ条件のレースでどれだけ走れているかをみます"),
+    ("people", "騎手・調教師", "乗る人・仕上げる人の成績をみます"),
+    ("running", "脚質・展開", "位置どりや終盤の伸びなど、走り方の傾向をみます"),
+    ("blood", "血統", "父・母父の得意条件との一致度をみます"),
+    ("market", "市場", "オッズに現れた支持をみます"),
+)
+
+
+def step1_label(key: str) -> str:
+    """STEP1 の自然語ラベル。定義が無ければ FEATURES の名前に落とす。"""
+    got = _STEP1.get(key)
+    if got:
+        return got[0]
+    from . import model
+    feat = model.FEATURES.get(key)
+    return feat.label if feat else key
+
+
+def step1_group(key: str) -> str:
+    got = _STEP1.get(key)
+    return got[1] if got else "other"
+
+
+def glossary_key(key: str) -> str | None:
+    """その項目に紐づく用語辞書のキー (無ければ None)。"""
+    got = _STEP1.get(key)
+    return got[2] if got else None
 
 
 def column_label(key: str, match=None, lookback=None) -> str:
@@ -86,9 +286,10 @@ def column_label(key: str, match=None, lookback=None) -> str:
     feat = model.FEATURES.get(key)
     if feat is None:
         return key
-    base = feat.label.replace("(可変集計)", "")
     if feat.kind != "aggregate":
-        return base
+        # STEP1 は自然語ラベル (「父×芝ダート」のような開発者記法を画面に出さない)
+        return step1_label(key)
+    base = feat.label.replace("(可変集計)", "")
     return f"{base}({match_label(match, short=True)}・{lookback_label(lookback, short=True)})"
 
 
@@ -112,7 +313,7 @@ def value_label(axis: str, value: str) -> str:
     table = {
         "surface": _SURFACE, "distance": _DISTANCE, "condition": _CONDITION,
         "weather": _WEATHER, "weather_wet": _WEATHER_WET, "meet_progress": _MEET,
-        "season": _SEASON, "popularity": _POPULARITY,
+        "season": _SEASON, "popularity": _POPULARITY, "sex": _SEX,
     }.get(axis)
     if table is not None:
         return table.get(v, v)
@@ -128,3 +329,80 @@ def value_label(axis: str, value: str) -> str:
 
 def axis_label(axis: str) -> str:
     return AXIS_LABELS.get(axis, axis)
+
+# ---------------------------------------------------------------------------
+# 買い目の券種・買い方・入力欄 (参加者が自分で組む)
+# ---------------------------------------------------------------------------
+# どの券種・どの買い方が有利かは示さない (実測でエッジは無い)。
+# 何が起きるかだけを書く。**UI に文言を複製しない。**
+#   キー: (ラベル, 説明, 用語辞書のキー | None)
+BET_MODES: dict[str, tuple[str, str, str | None]] = {
+    "each": ("通常", "選んだ馬を1頭ずつ、別々に買います。", None),
+    "box": ("ボックス", "選んだ馬(枠)すべての組み合わせを買います。", "box"),
+    "nagashi": ("ながし", "軸を必ず含めて、相手に選んだものと組み合わせます。", "nagashi"),
+    "nagashi2": ("軸2頭ながし",
+                 "軸に選んだ2頭を必ず含めて、相手を1頭足します。", "nagashi"),
+    "nagashi_1st": ("1着ながし", "軸の馬を1着に固定して、残りを相手から選びます。", "nagashi"),
+    "nagashi_2nd": ("2着ながし", "軸の馬を2着に固定して、残りを相手から選びます。", "nagashi"),
+    "nagashi_3rd": ("3着ながし", "軸の馬を3着に固定して、残りを相手から選びます。", "nagashi"),
+    "nagashi_both": ("1着2着ながし",
+                     "軸が1着の組と、軸が2着の組の両方を買います。点数は2倍になります。",
+                     "nagashi"),
+    "formation": ("フォーメーション",
+                  "着ごとに候補を分けて選び、各段から1つずつ取った組を買います。",
+                  "formation"),
+}
+
+
+def bet_mode_label(mode: str) -> str:
+    got = BET_MODES.get(mode)
+    return got[0] if got else mode
+
+
+def bet_modes(keys) -> list[dict]:
+    """券種が選べる買い方を API で返せる形にする。"""
+    out = []
+    for k in keys:
+        lab, desc, term = BET_MODES.get(k, (k, "", None))
+        out.append({"key": k, "label": lab, "desc": desc, "term": term})
+    return out
+
+
+# 入力欄 (グループ) の見出し。券種の size と順序の有無で言い方が変わる。
+#   axis    … ながしの軸
+#   partner … ながしの相手
+#   pick    … 通常・ボックスで選ぶもの
+#   p1..p3  … フォーメーションの各段
+_GROUP_LABELS: dict[str, str] = {
+    "axis": "軸",
+    "partner": "相手",
+    "pick": "選ぶ馬",
+}
+# フォーメーションの段。順序ありは「◯着」、順序なしは「◯頭目」
+_FORM_ORDERED = {"p1": "1着候補", "p2": "2着候補", "p3": "3着候補"}
+_FORM_UNORDERED = {"p1": "1頭目", "p2": "2頭目", "p3": "3頭目"}
+
+
+def bet_group_label(name: str, *, size: int, ordered: bool, unit: str) -> str:
+    """入力欄の見出し。枠で選ぶ券種は「馬」ではなく「枠」と言う。
+
+    段の判定は **キーの集合で行う** — `startswith("p")` にすると
+    `partner` と `pick` まで巻き込んで、見出しが英字のまま出る (実際に出た)。
+    """
+    if name in _FORM_ORDERED:
+        got = (_FORM_ORDERED if ordered else _FORM_UNORDERED)[name]
+        return got.replace("頭目", "枠目") if unit == "frame" else got
+    lab = _GROUP_LABELS.get(name, name)
+    if unit == "frame":
+        return {"軸": "軸の枠", "相手": "相手の枠", "選ぶ馬": "選ぶ枠"}.get(lab, lab)
+    return lab
+
+
+# 買い目の注記。**UI にハードコードしない。**
+BET_SLIP_NOTE = ("これは参加者が選んだ組み合わせです。金額は100円単位で指定できます。"
+                 "投票用データはJRA公式スマッピーへ送信し、JRAが生成した内容だけを"
+                 "QRコードとして表示します。発売機で購入前に必ず内容を確認してください。"
+                 "◎の的中率は実測で約20%(1番人気は約33%)です。")
+
+# 枠連のゾロ目についての注記 (同じ枠に2頭以上いるときだけ成立する)
+ZORO_NOTE = "同じ枠に2頭以上いる枠は「1-1」のようなゾロ目も含めています。"

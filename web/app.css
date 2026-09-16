@@ -9,13 +9,22 @@
  */
 :root{
   --turf-900:#0B3D2C; --turf-700:#14614A; --turf-500:#2C7A5D; --turf-100:#E2EDE5;
-  --paper:#F4F6F1; --card:#FFFFFF; --ink:#1F281F; --ink-soft:#5C6759; --ink-faint:#8B9486;
+  --paper:#F4F6F1; --card:#FFFFFF; --ink:#1F281F; --ink-soft:#5C6759;
+  /* D-2: 旧値 #8B9486 は白地 3.14:1・paper 2.89:1 で、最小サイズ本文 (12.5px) には
+     WCAG AA (4.5:1) 不適合だった。注記・補助ラベルは25箇所で最小サイズ × この色の
+     組み合わせだったので、個別置換ではなく色そのものを AA まで暗くする。
+     paper 上でも 4.78:1 を確保し、--ink-soft (5.93:1) との階層は保つ。 */
+  --ink-faint:#66705C;
   --gold:#A8811C; --gold-bright:#C9A227; --gold-soft:#F6EDD2;
+  /* D-2: 文字用。#A8811C は gold-soft 上で 3.09:1 で WCAG AA 不適合なので、
+     テキストには 5.28:1 のこちらを使う (背景・枠線は --gold のまま) */
+  --gold-text:#7A5D0F;
   --alert:#B2432F; --alert-soft:#F7E4DF;
   --line:#DCE3D8; --line-soft:#E9EEE5;
-  --minus:#7C8AA0;
+  /* D-2: 旧値 #7C8AA0 は白地 3.5:1 で不適合。基準との差 (−14pt) は判断材料なので AA まで暗くする */
+  --minus:#5D6C82;
   --r-lg:14px; --r-md:10px; --r-sm:6px;
-  --fs-min:.72rem;      /* 可読性の下限。これより小さい値を新設しない */
+  --fs-min:.78rem;      /* 可読性の下限。競馬ユーザーの年齢層を考慮して .72 から引き上げ */
   --tap:44px;           /* タップ標的の最小高さ */
   font-size:16px;
 }
@@ -43,6 +52,21 @@ header.app{
 .screen-title h1{font-size:.95rem; font-weight:700; letter-spacing:.04em}
 .screen-title .sub{font-size:var(--fs-min); color:#9DB8A8}
 
+/* 発走時刻を常に視界に置く縮小ヘッダ */
+.mini-head{margin-top:8px; padding:7px 10px; border-radius:var(--r-sm);
+  background:rgba(255,255,255,.12); color:#EAF2EC; font-size:var(--fs-min);
+  font-weight:700; letter-spacing:.04em; font-variant-numeric:tabular-nums}
+
+/* デモ演出中の常時バッジ (?demo=1 のみ。通常URLでは DOM から除去) */
+.demo-banner{position:sticky; top:0; z-index:29; text-align:center;
+  background:var(--gold-soft); color:var(--gold-text); font-size:var(--fs-min);
+  font-weight:700; padding:6px 10px; border-bottom:1px solid var(--gold-bright)}
+
+/* 検証モード (--preview) の常時バナー。結果を知った状態で印を見ていることを隠さない */
+.preview-banner{position:sticky; top:0; z-index:29; text-align:center;
+  background:var(--alert-soft); color:var(--alert); font-size:var(--fs-min);
+  font-weight:700; padding:6px 10px; border-bottom:1px solid var(--alert)}
+
 main{flex:1; padding:14px 14px 84px}
 .screen{display:none}
 .screen.active{display:block}
@@ -50,21 +74,27 @@ main{flex:1; padding:14px 14px 84px}
 /* ---------- shared ---------- */
 .card{background:var(--card); border:1px solid var(--line); border-radius:var(--r-lg); overflow:hidden}
 .chip{display:inline-flex; align-items:center; gap:4px; font-size:var(--fs-min); font-weight:500;
-  padding:3px 9px; border-radius:999px; border:1px solid var(--line); color:var(--ink-soft); background:#fff}
+  padding:3px 9px; border-radius:999px; border:1px solid var(--line); color:var(--ink-soft);
+  background:#fff; white-space:nowrap}
 .chip.ok{background:var(--turf-100); border-color:transparent; color:var(--turf-700)}
-.chip.wait{background:var(--gold-soft); border-color:transparent; color:var(--gold)}
+.chip.wait{background:var(--gold-soft); border-color:transparent; color:var(--gold-text)}
 /* §7: 欠損カバレッジは「注意」= 無彩色。赤は操作を要するエラー専用 */
 .chip.muted{background:#fff; border-color:var(--ink-faint); color:var(--ink-soft)}
 /* alert は操作を要するエラーのみ (fetch 失敗など) */
 .chip.alert{background:var(--alert-soft); border-color:transparent; color:var(--alert)}
 .section-label{font-size:var(--fs-min); font-weight:700; letter-spacing:.14em; color:var(--ink-faint); margin:18px 2px 8px}
-.note{font-size:var(--fs-min); color:var(--ink-faint); line-height:1.7}
+.note{font-size:var(--fs-min); color:var(--ink-soft); line-height:1.7}
 .empty{padding:28px 18px; text-align:center; background:var(--card); border:1px solid var(--line);
   border-radius:var(--r-lg)}
 .empty .t{font-weight:700; font-size:.95rem}
 .empty .d{margin-top:8px; font-size:.8rem; color:var(--ink-soft); line-height:1.7}
 .empty .cta{margin-top:16px}
 .hidden{display:none !important}
+#predBody{display:flex; flex-direction:column}
+#raceHead{order:1}#contextTrend{order:2}#predWarn{order:3}#markLegend{order:4}
+#markList{order:5}#demoStrip{order:6}#betSlip{order:7}#predictDisclaimer{order:8}
+#predBody.result-mode #markList{order:3}
+#predBody.result-mode #predWarn{order:4}
 
 /* 枠番チップ(JRA枠色) */
 .waku{display:inline-flex; align-items:center; justify-content:center;
@@ -82,23 +112,701 @@ main{flex:1; padding:14px 14px 84px}
 .warns{margin-bottom:12px; display:flex; flex-direction:column; gap:8px}
 .warn-card{background:var(--gold-soft); border:1px solid transparent; border-radius:var(--r-md);
   padding:12px 14px}
-.warn-card .m{font-size:.82rem; font-weight:700; color:var(--gold); line-height:1.6}
+.warn-card .m{font-size:.82rem; font-weight:700; color:var(--gold-text); line-height:1.6}
 .warn-card .h{margin-top:6px; font-size:var(--fs-min); color:var(--ink-soft); line-height:1.7}
 .warn-cols{margin-top:8px; font-size:var(--fs-min); color:var(--ink-soft); line-height:1.8;
   border-top:1px solid rgba(168,129,28,.25); padding-top:7px}
 
-/* ---------- レース一覧 ---------- */
-/* 開催 (競馬場) の見出し。1日に複数開催があるのでレース番号だけでは一意にならない */
-/* .card が overflow:hidden なので sticky は使わない (効かないうえに描画が崩れる) */
-.track-head{background:var(--turf-100); color:var(--turf-700);
-  font-size:var(--fs-min); font-weight:700; letter-spacing:.1em; padding:7px 14px;
+/* 用語のワンタップ説明。点線下線でタップできることを見せる。
+ * 説明文は labels.py が正本 (UI に複製しない)。 */
+.term{font:inherit; color:var(--turf-700); background:none; border:none; cursor:pointer;
+  border-bottom:1px dotted var(--turf-500); padding:0 1px; margin:0 1px; line-height:inherit}
+
+/* ボトムシート (用語・印の説明) */
+.sheet-wrap{position:fixed; inset:0; background:rgba(15,35,25,.5); display:none;
+  align-items:flex-end; justify-content:center; z-index:80}
+.sheet-wrap.show{display:flex}
+.sheet{background:var(--card); width:100%; max-width:430px;
+  border-radius:var(--r-lg) var(--r-lg) 0 0; padding:16px 18px 24px;
+  max-height:76vh; overflow-y:auto}
+.sheet-head{display:flex; align-items:center; gap:10px}
+.sheet-head h3{font-size:1rem; font-weight:700; flex:1}
+.sheet-close{background:none; border:none; font-size:1rem; color:var(--ink-soft);
+  min-width:var(--tap); min-height:var(--tap); cursor:pointer; font-family:inherit}
+.sheet-body{margin-top:6px; font-size:.85rem; line-height:1.85; color:var(--ink-soft)}
+.sheet-row{display:flex; gap:10px; padding:9px 0; border-bottom:1px solid var(--line-soft)}
+.sheet-row b{flex:none; min-width:5.4em; color:var(--ink)}
+.sheet-foot{margin-top:12px; padding-top:10px; border-top:1px solid var(--line-soft);
+  color:var(--ink-faint)}
+
+/* A-2: 選択チップと説明ⓘは **兄弟** にする (button の入れ子を作らない) */
+.pchip-wrap{display:inline-flex; align-items:stretch; gap:2px}
+.pinfo{min-width:var(--tap); min-height:var(--tap); padding:0 6px; font-family:inherit;
+  font-size:.8rem; color:var(--turf-700); background:none; border:none; cursor:pointer;
+  flex:none}
+.thin-mark{margin-left:5px; font-size:var(--fs-min); font-weight:700; color:var(--gold-text);
+  background:var(--gold-soft); border-radius:999px; padding:1px 6px; white-space:nowrap}
+
+/* STEP1 のグループ分節 */
+.g-block{margin-bottom:16px}
+.g-head{font-size:.9rem; font-weight:700; color:var(--turf-900)}
+.g-desc{font-size:var(--fs-min); color:var(--ink-soft); margin-top:2px; line-height:1.6}
+
+/* 「まよったら」プリセット */
+.starter-list{display:grid; gap:8px; margin-top:14px}
+.starter{background:var(--gold-soft); border-radius:var(--r-lg); padding:14px}
+.starter .s-title{font-weight:700; font-size:.92rem; color:var(--gold-text)}
+.starter .s-desc{font-size:var(--fs-min); color:var(--ink-soft); margin-top:4px; line-height:1.7}
+.starter .s-btn{margin-top:10px; width:100%; min-height:var(--tap); padding:11px;
+  font-family:inherit; font-size:.88rem; font-weight:700; color:#fff;
+  background:var(--gold); border:none; border-radius:var(--r-md); cursor:pointer}
+
+/* 印の凡例 (印リスト直上の1行) */
+.legend-row{display:flex; align-items:center; gap:10px; width:100%; min-height:var(--tap);
+  padding:9px 14px; margin-bottom:8px; background:var(--turf-100); border:none;
+  border-radius:var(--r-md); font-family:inherit; cursor:pointer; text-align:left}
+.legend-row .l-marks{flex:1; font-size:.82rem; font-weight:700; color:var(--turf-900)}
+.legend-row .l-more{font-size:var(--fs-min); color:var(--turf-700);
+  border-bottom:1px dotted var(--turf-500)}
+
+/* 終了したレース */
+.finished{padding:18px 16px}
+.finished .f-title{font-weight:700; font-size:.95rem}
+.finished .f-body{margin-top:12px}
+.finished .f-note{margin-top:10px; font-size:var(--fs-min); color:var(--ink-soft);
+  line-height:1.7}
+.result-ai-answer{margin:14px -4px 16px; padding:15px; border:1px solid #d8c278;
+  border-radius:var(--r-md); background:#fff9e8}
+.result-ai-answer.unavailable{border-color:var(--line); background:var(--paper)}
+.result-ai-kicker{display:inline-flex; align-items:center; padding:4px 9px;
+  border-radius:999px; background:var(--gold-soft); color:var(--gold-text); font-size:.78rem;
+  font-weight:800; line-height:1.25}
+.result-ai-answer h3{margin:8px 0 0; color:var(--ink); font-size:1rem; line-height:1.45}
+.result-ai-answer>p{margin:6px 0 0; color:var(--ink-soft); font-size:.8rem; line-height:1.7}
+.result-ai-answer>p strong{color:var(--turf-700); font-size:.92rem}
+.result-ai-items{display:grid; gap:7px; margin:12px 0; padding:0; list-style:none}
+.result-ai-items li{display:grid; grid-template-columns:28px minmax(0,1fr); align-items:center;
+  gap:9px; padding:9px 10px; border:1px solid rgba(168,129,28,.25); border-radius:9px; background:#fff}
+.result-ai-number{display:grid; place-items:center; width:28px; height:28px; border-radius:50%;
+  background:var(--turf-700); color:#fff; font-size:.8rem; font-weight:800; line-height:1}
+.result-ai-items small,.result-ai-items b{display:block}
+.result-ai-items small{color:var(--ink-soft); font-size:.78rem; line-height:1.25}
+.result-ai-items b{margin-top:2px; color:var(--ink); font-size:.84rem; line-height:1.45}
+.result-ai-outcome{margin:0; padding:0; list-style:none; border-top:1px solid rgba(168,129,28,.25)}
+.result-ai-outcome li{display:flex; align-items:center; justify-content:space-between; gap:8px;
+  padding:7px 2px; border-bottom:1px solid rgba(168,129,28,.2); font-size:.78rem; line-height:1.4}
+.result-ai-outcome li span{min-width:0}.result-ai-outcome li b{flex:none; color:var(--turf-700)}
+.result-ai-answer .result-ai-caution{margin-top:9px; color:var(--ink-faint); font-size:.78rem}
+.result-diagnostics{margin-top:10px; border:1px solid var(--line); border-radius:var(--r-lg);
+  background:#fff; overflow:hidden}
+.result-diagnostics>summary{display:flex; align-items:center; min-height:var(--tap); padding:10px 14px;
+  color:var(--ink-soft); font-size:.8rem; font-weight:800; cursor:pointer}
+.result-diagnostics-body{display:grid; gap:8px; padding:0 10px 10px}
+.result-diagnostics-body .warn-card{margin:0}
+.res-row{display:flex; gap:12px; padding:7px 0; border-bottom:1px solid var(--line-soft)}
+.res-row .o{font-weight:700; color:var(--gold-text); flex:none; width:3em}
+.res-row .n{font-size:.9rem}
+.res-row .n b{display:block}
+.res-mark{display:inline-block; margin-top:3px; color:var(--turf-700); font-weight:700;
+  font-size:var(--fs-min)}
+.res-why{margin-top:3px; color:var(--ink-soft); font-size:var(--fs-min); line-height:1.55}
+.res-why b{color:var(--ink); font-weight:800}
+.res-why.up b{color:var(--turf-700)}
+.res-why.pickup b{color:var(--gold-text)}
+.res-why.down b{color:var(--minus)}
+.res-why.neutral,.res-why.unavailable{color:var(--ink-faint)}
+.result-payout{margin-top:16px; padding-top:14px; border-top:1px solid var(--line)}
+.pay-row{display:grid; grid-template-columns:4em minmax(0,1fr) auto; gap:7px;
+  align-items:baseline; padding:7px 0; border-bottom:1px solid var(--line-soft); font-size:.85rem}
+.pay-row strong{color:var(--gold-text)}
+.pay-row small{grid-column:2/4; color:var(--ink-soft)}
+
+/* 開催日36レースの項目別振り返り。1着と代表項目は閉じたまま読め、
+ * 2・3着は details を開いたときだけ出して縦スクロールを抑える。 */
+.result-review-launch{margin-top:14px; padding:14px}
+.result-review-launch>div:first-child{display:flex; align-items:baseline; gap:8px; flex-wrap:wrap}
+.result-review-launch>div:first-child b{font-size:.92rem}
+.result-review-launch>div:first-child p{font-size:var(--fs-min); color:var(--ink-soft)}
+.result-review-launch>button{width:100%; min-height:var(--tap); margin-top:10px; border:0;
+  border-radius:var(--r-md); background:var(--turf-700); color:#fff; font:inherit;
+  font-size:.85rem; font-weight:700; cursor:pointer}
+.review-loading,.review-error{margin-top:12px; padding:12px; border-radius:var(--r-md);
+  background:var(--turf-100); color:var(--ink-soft); font-size:.8rem; line-height:1.7}
+.review-error{background:var(--alert-soft); color:var(--alert)}
+.review-summary{display:flex; justify-content:space-between; gap:8px; margin-top:14px;
+  padding-top:12px; border-top:1px solid var(--line); font-size:.84rem}
+.review-summary span{color:var(--turf-700); font-weight:700}
+.review-note{margin-top:7px; color:var(--ink-soft); font-size:var(--fs-min); line-height:1.65}
+.review-filters{display:flex; gap:6px; overflow-x:auto; padding:11px 0 5px; scrollbar-width:none}
+.review-filters::-webkit-scrollbar{display:none}
+.review-filters button{flex:none; min-height:var(--tap); padding:7px 13px; border:1px solid var(--line);
+  border-radius:999px; background:#fff; color:var(--ink-soft); font:inherit; font-size:.78rem;
+  font-weight:700; cursor:pointer}
+.review-filters button.on{background:var(--turf-700); color:#fff; border-color:var(--turf-700)}
+.review-track{margin-top:12px}
+.review-track-title{display:flex; justify-content:space-between; align-items:center; padding:7px 2px;
+  color:var(--turf-900); font-size:.9rem; font-weight:800}
+.review-track-title span{color:var(--ink-faint); font-size:var(--fs-min); font-weight:600}
+.review-races{border:1px solid var(--line); border-radius:var(--r-md); overflow:hidden}
+.review-race{background:#fff; border-bottom:1px solid var(--line-soft)}
+.review-race:last-child{border-bottom:0}
+.review-race summary{list-style:none; padding:10px 12px; cursor:pointer}
+.review-race summary::-webkit-details-marker{display:none}
+.review-race summary::after{content:'›'; float:right; margin-top:-31px; color:var(--ink-faint);
+  font-size:1.1rem; transform:rotate(90deg)}
+.review-race[open] summary::after{transform:rotate(-90deg)}
+.review-head{display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:7px;
+  font-size:.78rem}
+.review-head b{min-width:2.3em; color:var(--turf-900); font-size:.9rem}
+.review-head span{min-width:0; color:var(--ink-soft); overflow:hidden; text-overflow:ellipsis;
+  white-space:nowrap}
+.review-head em{padding:2px 6px; border-radius:999px; background:var(--gold-soft);
+  color:var(--gold-text); font-style:normal; font-size:var(--fs-min); font-weight:700;
+  white-space:nowrap}
+.review-winner{min-width:0; margin-top:5px; padding-right:18px; font-size:.78rem}
+.review-winner strong{display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  color:var(--ink)}
+.review-ai-compact{display:block; max-width:100%; margin-top:3px; color:var(--gold-text);
+  font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.review-winner small,.review-horse small{display:block; color:var(--ink-faint); font-size:var(--fs-min)}
+.review-none{display:inline-block; margin-top:3px; color:var(--ink-faint); font-size:var(--fs-min)}
+.review-places{padding:0 12px 8px; background:var(--paper)}
+.review-ai-box{margin:0 -12px 7px; padding:11px 12px; background:var(--gold-soft);
+  color:var(--ink-soft); font-size:var(--fs-min); line-height:1.55}
+.review-ai-box>b{color:var(--gold-text)}
+.review-ai-box ol{margin:7px 0 0 1.7em}
+.review-ai-box li{padding:2px 0; color:var(--ink); font-weight:700}
+.review-ai-box li span{display:inline-block; margin-right:5px; padding:1px 5px; border-radius:999px;
+  background:#fff; color:var(--turf-700); font-size:var(--fs-min); font-weight:600}
+.review-ai-box p{margin-top:7px}
+.review-ai-box p strong{color:var(--turf-700)}
+.review-place{display:flex; gap:8px; padding:8px 0; border-top:1px solid var(--line-soft)}
+.review-order{width:2.8em; flex:none; color:var(--gold-text); font-size:var(--fs-min); font-weight:700}
+.review-horse{min-width:0; font-size:var(--fs-min)}
+.review-horse b{display:block; color:var(--ink)}
+.review-race.waiting{padding:10px 12px}
+.review-race.waiting p{margin:4px 0 0 2.3em; color:var(--ink-faint); font-size:var(--fs-min)}
+
+/* 順位規則カード (board が空でも常時表示) */
+.rule-card{margin-top:12px; padding:14px 16px}
+.rule-title{font-size:var(--fs-min); font-weight:700; letter-spacing:.12em;
+  color:var(--ink-faint)}
+.rule-body{margin-top:7px; font-size:.82rem; line-height:1.8}
+.rule-note{margin-top:9px; font-size:var(--fs-min); color:var(--ink-soft); line-height:1.8}
+
+/* 寄与の内訳の見出し (上げた / 下げた / 使えなかった) */
+.c-head{margin:12px 0 6px; font-size:var(--fs-min); font-weight:700;
+  letter-spacing:.08em; color:var(--ink-faint)}
+/* 決め手の一文 — 初心者にはこれが本文 */
+.decisive{margin:2px 0 4px; font-size:.85rem; line-height:1.75; font-weight:500;
+  background:var(--turf-100); border-radius:var(--r-md); padding:10px 12px}
+
+/* レース行: 1行目=名称かクラス / 2行目=施行条件 (常設) */
+.race-name .cond{font-size:var(--fs-min); color:var(--ink-soft); margin-top:3px}
+.race-name .rcls{margin-left:7px; font-size:var(--fs-min); font-weight:500;
+  color:var(--turf-700); background:var(--turf-100); padding:1px 7px; border-radius:999px}
+.race-name .meta{margin-top:4px}
+/* ゲート事前判定の共通通知 (行チップの反復をやめる) */
+.gate-note{background:#fff; border:1px solid var(--line); border-radius:var(--r-md);
+  padding:10px 13px; margin-bottom:12px; font-size:var(--fs-min);
+  color:var(--ink-soft); line-height:1.7}
+
+/* 予想ヘッダの施行条件行 (常設) */
+.rcond{margin-top:5px; font-size:var(--fs-min); color:#BFD2C6}
+/* 適用AIの切替ボタン */
+.ai-pick{margin-left:auto; min-height:var(--tap); padding:6px 10px; font-family:inherit;
+  font-size:var(--fs-min); color:#BFD2C6; background:rgba(255,255,255,.12);
+  border:none; border-radius:999px; cursor:pointer}
+.ai-pick b{color:#fff}
+/* 選び直しの記録と封印期間。
+ * 良し悪しは言わない — 「この数字を信じてよいか」の材料だけを出す。 */
+.gen{margin-top:10px; padding:14px}
+.gen-h{font-size:.92rem}
+.gen-h b{color:var(--gold-text)}
+.gen-note{margin:8px 0 0; font-size:var(--fs-min); color:var(--ink-soft); line-height:1.8}
+.gen-note b{color:var(--ink)}
+.gen-list{margin:12px 0 0; padding:0; list-style:none; display:flex;
+  flex-direction:column; gap:6px}
+.gen-item{display:flex; align-items:center; gap:9px; font-size:var(--fs-min)}
+.gen-v{flex:none; width:2.4em; color:var(--ink-soft)}
+.gen-bar{flex:1; height:8px; border-radius:999px; background:var(--line-soft);
+  overflow:hidden}
+.gen-bar i{display:block; height:100%; background:var(--turf-500); border-radius:999px}
+.gen-n{flex:none; width:3em; text-align:right; font-weight:700}
+/* 封印期間 — 開けるまで数字を出さない */
+.hold{margin-top:10px; padding:14px; border:1.5px solid var(--gold); background:var(--gold-soft)}
+.hold.open{border-color:var(--turf-500); background:#fff}
+.hold-h{font-size:.92rem; font-weight:700; color:var(--gold-text)}
+.hold.open .hold-h{color:var(--ink)}
+.hold-n{margin-left:8px; font-size:var(--fs-min); font-weight:400}
+.hold-btn{width:100%; margin-top:12px; min-height:var(--tap); font-family:inherit;
+  font-size:.9rem; font-weight:700; cursor:pointer; border:none;
+  border-radius:var(--r-md); background:var(--gold-text); color:#fff}
+.hold-btn:disabled{background:var(--line); color:var(--ink-faint); cursor:default}
+.hold-once{padding:9px 11px; border-radius:var(--r-md); background:var(--gold-soft);
+  color:var(--gold-text)}
+.hold.open .hold-once{margin-top:10px}
+
+/* 買い目エディタ (参加者が自分で組む)。
+ * 流れは公式サイトと同じ「券種 → 買い方 → 馬(枠)」。
+ * どの券種・買い方が有利かは示さない — 点数だけを出す。 */
+.bed{padding:4px 14px 14px}
+.bed-sec{padding:11px 0; border-bottom:1px solid var(--line-soft)}
+.bed-h{display:flex; align-items:center; gap:4px; font-size:var(--fs-min);
+  font-weight:700; letter-spacing:.08em; color:var(--ink-soft); margin-bottom:8px}
+.bed-n{margin-left:auto; font-size:var(--fs-min); font-weight:700; color:var(--turf-700)}
+.bed-quick{margin-left:auto; display:inline-flex; gap:5px}
+.bed-quick button{min-width:44px; min-height:var(--tap); padding:0 10px; border:1px solid var(--turf-700);
+  border-radius:999px; background:#fff; color:var(--turf-700); font-weight:800; cursor:pointer}
+.bed-h .bed-n + .bed-quick{margin-left:4px}
+.bed-note{margin:8px 0 0; font-size:var(--fs-min); color:var(--ink-soft); line-height:1.75}
+.bed-chips{display:flex; flex-wrap:wrap; gap:6px}
+/* 券種は8つ並ぶので折り返す。押した券種が選択中 */
+.btype-row,.bmode-row{display:flex; flex-wrap:wrap; gap:6px}
+.btype{min-height:var(--tap); padding:0 13px; font-family:inherit; font-size:.86rem;
+  font-weight:700; cursor:pointer; border:1.5px solid var(--line);
+  border-radius:var(--r-md); background:#fff; color:var(--ink-soft); white-space:nowrap}
+.btype.on{background:var(--turf-700); border-color:var(--turf-700); color:#fff}
+.bmode{min-height:var(--tap); padding:0 12px; font-family:inherit;
+  font-size:var(--fs-min); cursor:pointer; border:1.5px solid var(--line);
+  border-radius:999px; background:#fff; color:var(--ink-soft); white-space:nowrap}
+.bmode.on{background:var(--turf-100); border-color:var(--turf-700);
+  color:var(--turf-700); font-weight:700}
+/* 馬番・枠番チップ。タップ標的は 44px を維持する */
+.bchip{display:inline-flex; align-items:center; gap:3px; min-width:var(--tap);
+  min-height:var(--tap); padding:0 10px; font-family:inherit; cursor:pointer;
+  border:1.5px solid var(--line); border-radius:var(--r-md); background:#fff;
+  color:var(--ink-soft); white-space:nowrap}
+.bchip .num{font-size:.95rem; font-weight:700}
+.bchip.on{background:var(--turf-700); border-color:var(--turf-700); color:#fff}
+.bc-m{font-size:var(--fs-min); font-weight:700; opacity:.85}
+.bed-add{width:100%; margin-top:14px; min-height:var(--tap); font-family:inherit;
+  font-size:.92rem; font-weight:700; cursor:pointer; border:none;
+  border-radius:var(--r-md); background:var(--turf-700); color:#fff}
+.bed-add:disabled{background:var(--line); color:var(--ink-faint); cursor:default}
+
+/* 追加済みの買い目1件。**何を選んだのか**を先に見せ、点の内訳は折りたたむ。
+ * 点の一覧だけだと、フォーメーションで「1着に誰を入れたか」が追えない。 */
+.bs-row{padding:12px 14px; border-bottom:1px solid var(--line-soft)}
+.bs-row:last-child{border-bottom:none}
+.bs-head{display:flex; align-items:center; gap:8px}
+.bs-k{font-size:.92rem; font-weight:700}
+.bs-mode{font-size:var(--fs-min); color:var(--turf-700); background:var(--turf-100);
+  border-radius:999px; padding:2px 9px; white-space:nowrap}
+.bs-n{margin-left:auto; font-size:var(--fs-min); font-weight:700; color:var(--ink-soft);
+  white-space:nowrap}
+.bs-del{flex:none; min-width:var(--tap); min-height:var(--tap); font-family:inherit;
+  font-size:var(--fs-min); cursor:pointer; background:none; border:none;
+  color:var(--ink-soft)}
+/* 段ごとの選択。見出しと番号を2列で並べる */
+.bs-picks{display:grid; grid-template-columns:auto 1fr; gap:3px 10px; margin:9px 0 0}
+.bs-picks dt{font-size:var(--fs-min); color:var(--ink-soft); white-space:nowrap}
+.bs-picks dd{margin:0; font-size:.92rem; font-weight:700; word-break:break-all}
+/* 点の内訳は既定で閉じる (照合するときだけ開く) */
+.bs-pts{margin-top:8px}
+.bs-pts summary{font-size:var(--fs-min); color:var(--turf-700); cursor:pointer;
+  min-height:var(--tap); display:flex; align-items:center; list-style:none}
+.bs-pts summary::-webkit-details-marker{display:none}
+.bs-pts summary::before{content:'\25b8'; margin-right:5px}
+.bs-pts[open] summary::before{content:'\25be'}
+.bs-v{font-size:var(--fs-min); color:var(--ink-soft); line-height:1.8;
+  word-break:break-all}
+/* 合計と、まとめてのやり直し */
+.bs-total{display:flex; align-items:center; gap:8px; padding:11px 14px;
+  font-size:var(--fs-min); color:var(--ink-soft); border-top:1px solid var(--line-soft)}
+.bs-total b{font-size:1rem; color:var(--ink)}
+.bs-clear,.bs-reset{min-height:var(--tap); padding:4px 11px; font-family:inherit;
+  font-size:var(--fs-min); cursor:pointer; background:none; border-radius:999px;
+  white-space:nowrap}
+.bs-clear{margin-left:auto; color:var(--ink-soft); border:1px solid var(--line)}
+.bs-reset{color:var(--turf-700); border:1px solid var(--turf-500)}
+/* 組めなかった指定は黙って消さない */
+.bs-skip{display:flex; align-items:center; gap:8px; margin:0 0 8px; padding:10px 12px;
+  border-radius:var(--r-md); background:var(--gold-soft); color:var(--gold-text);
+  font-size:var(--fs-min); line-height:1.7}
+.bs-skip .bs-del{color:var(--gold-text); border:1px solid var(--gold);
+  border-radius:999px; padding:0 10px}
+
+/* 公式サイトへの引き渡し (STEP順の並べ替えと読み合わせ)。
+ * 自動入力が入っても残す — 誤登録の最後の防波堤。 */
+.hb{margin-top:10px; border:1.5px solid var(--line); border-radius:var(--r-md); background:#fff}
+.hb-head{display:flex; align-items:center; gap:8px; padding:13px 14px; min-height:var(--tap);
+  font-size:.86rem; font-weight:700; cursor:pointer; list-style:none}
+.hb-head::-webkit-details-marker{display:none}
+.hb-head::after{content:'\25be'; margin-left:auto; color:var(--ink-soft)}
+.hb[open] .hb-head::after{content:'\25b4'}
+.hb-total{font-size:var(--fs-min); font-weight:700; color:var(--turf-700);
+  background:var(--turf-100); border-radius:999px; padding:2px 9px; white-space:nowrap}
+.hb-body{padding:0 14px 14px}
+.hb-step{margin:0 0 9px; font-size:var(--fs-min); color:var(--ink-soft); line-height:1.8}
+.hb-step b{color:var(--ink)}
+.hb-check{padding:10px 12px; border-radius:var(--r-md); background:var(--gold-soft);
+  color:var(--gold-text)}
+.hb-check b{color:var(--gold-text)}
+.hb-list{margin:0 0 10px; padding:0; list-style:none;
+  border-top:1px solid var(--line-soft)}
+.hb-item{padding:10px 0; border-bottom:1px solid var(--line-soft);
+  font-size:var(--fs-min)}
+.hb-item:last-child{border-bottom:none}
+.hb-top{display:flex; align-items:center; gap:8px}
+.hb-t{font-weight:700; font-size:.9rem}
+.hb-mode{font-size:var(--fs-min); color:var(--turf-700); background:var(--turf-100);
+  border-radius:999px; padding:2px 9px; white-space:nowrap}
+.hb-c{margin-top:7px; word-break:break-all; line-height:1.8}
+.hb-n{margin-left:auto; font-weight:700; color:var(--ink-soft); white-space:nowrap}
+
+/* E-1: 手動更新 (発走直前はオッズが動くので待たずに取り直せるように) */
+.refresh{min-height:var(--tap); padding:6px 12px; font-family:inherit;
+  font-size:var(--fs-min); font-weight:700; color:#BFD2C6;
+  background:rgba(255,255,255,.12); border:none; border-radius:999px;
+  cursor:pointer; white-space:nowrap}
+.result-back{min-height:var(--tap); padding:6px 12px; border:1px solid rgba(255,255,255,.28);
+  border-radius:999px; background:transparent; color:#fff; font:inherit; font-size:var(--fs-min);
+  font-weight:800; cursor:pointer; white-space:nowrap}
+
+/* このレース条件での成績1行 */
+.cond-rec{margin-top:9px; padding-top:9px; border-top:1px solid rgba(255,255,255,.15);
+  font-size:var(--fs-min); color:#DCEAE0; line-height:1.7}
+.cond-rec b{color:#fff; font-size:.82rem}
+.cond-rec.muted{color:#9DB8A8}
+/* マイAI切替シートの行 */
+.ai-row{display:flex; align-items:center; gap:10px; width:100%; min-height:var(--tap);
+  padding:11px 4px; background:none; border:none; border-bottom:1px solid var(--line-soft);
+  font-family:inherit; cursor:pointer; text-align:left}
+.ai-row .an{flex:1; font-size:.88rem; font-weight:700; color:var(--ink)}
+.ai-row .am{font-size:var(--fs-min); color:var(--ink-faint)}
+.ai-row .ac{font-size:var(--fs-min); font-weight:700; color:var(--turf-700);
+  background:var(--turf-100); padding:2px 8px; border-radius:999px}
+.ai-row.on .an{color:var(--turf-700)}
+.ai-manage-row{padding:4px 0 10px; border-bottom:1px solid var(--line-soft)}
+.ai-manage-row .ai-row{border-bottom:0}
+.ai-manage-row.archived{opacity:.8}
+.ai-tools{display:flex; justify-content:flex-end; gap:8px; padding:0 4px}
+.ai-tools .quiet-btn{font-size:var(--fs-min)}
+.ai-current-card{display:grid; grid-template-columns:1fr auto; gap:3px 12px; padding:13px 14px;
+  border-radius:var(--r-md); background:var(--turf-100)}
+.ai-current-card span{grid-column:1/-1; color:var(--ink-soft); font-size:var(--fs-min)}
+.ai-current-card b{color:var(--turf-700); font-size:1rem}
+.ai-current-card small{align-self:center; color:var(--ink-soft); font-size:var(--fs-min)}
+.ai-switcher{display:grid; gap:8px; margin-top:14px}
+.ai-switcher label{color:var(--ink-soft); font-size:var(--fs-min); font-weight:800}
+.ai-switcher select{width:100%; min-height:var(--tap); padding:0 10px; border:1px solid var(--line);
+  border-radius:var(--r-md); background:#fff; color:var(--ink); font:inherit}
+.ai-switcher .cta{margin:0}
+.ai-switch-empty{margin:12px 0 0; padding:11px 13px; border-radius:var(--r-md);
+  background:var(--paper); color:var(--ink-soft); font-size:var(--fs-min)}
+.ai-manage-details{margin-top:14px; border-top:1px solid var(--line-soft)}
+.ai-manage-details>summary{display:flex; align-items:center; min-height:var(--tap); padding:10px 2px;
+  color:var(--turf-700); font-size:.84rem; font-weight:800; cursor:pointer}
+.ai-manage-details .ai-manage-row{padding-left:4px; padding-right:4px}
+.ai-build-link{width:100%; margin-top:10px}
+/* 出走情報の行 */
+.horse .entry{font-size:var(--fs-min); color:var(--ink-soft); margin-top:3px;
+  font-variant-numeric:tabular-nums}
+/* 馬単位のデータ薄警告 (whyカードを開かなくても見える位置) */
+.thin-race{margin:0 0 8px; padding:9px 13px; border-radius:var(--r-md);
+  background:var(--gold-soft); color:var(--gold-text); font-size:var(--fs-min);
+  font-weight:700; line-height:1.7}
+.thin-horse{margin-top:4px; font-size:var(--fs-min); font-weight:700; color:var(--gold-text);
+  line-height:1.6}
+/* 内訳が空のときの明示 (セクションごと消さない) */
+.c-none{font-size:var(--fs-min); color:var(--ink-faint); padding:2px 0 4px}
+/* 条件別内訳カード */
+.cb{padding:4px 14px}
+.cb-row{display:flex; align-items:center; gap:10px; padding:10px 0;
   border-bottom:1px solid var(--line-soft)}
+.cb-row:last-child{border-bottom:none}
+.cb-k{flex:1; font-size:.85rem}
+.cb-v{font-size:.85rem; text-align:right}
+.cb-base{font-size:var(--fs-min); color:var(--ink-soft); margin-left:6px}
+.cb-none{font-size:var(--fs-min); color:var(--ink-soft)}
+
+/* B-1: 基準を同格に並べ、差を主表示にする */
+.bt2{padding:4px 14px}
+.bt2-head{display:flex; align-items:center; gap:10px; padding:9px 0 7px;
+  border-bottom:1px solid var(--line-soft); font-size:var(--fs-min);
+  color:var(--ink-faint)}
+.bt2-head > span:first-child{flex:1}
+.bt2-head > span:last-child{flex:none; width:3.4em; text-align:right}
+.bt2-row{display:flex; align-items:center; gap:10px; padding:11px 0;
+  border-bottom:1px solid var(--line-soft)}
+.bt2-row:last-child{border-bottom:none}
+.bt2-k{flex:1; font-size:.82rem}
+.bt2-pair{flex:none; display:flex; align-items:baseline; gap:6px}
+.bt2-you,.bt2-base{font-size:.95rem; font-weight:700}
+.bt2-base{color:var(--ink-soft)}
+.bt2-sep{font-size:var(--fs-min); color:var(--ink-faint)}
+.bt2-diff{flex:none; width:3.4em; text-align:right; font-size:.82rem; font-weight:700}
+.bt2-diff.up{color:var(--turf-700)}
+.bt2-diff.down{color:var(--minus)}
+.bt2-diff.even{color:var(--ink-faint)}
+.bt2-foot{padding:9px 0; font-size:var(--fs-min); color:var(--ink-soft); line-height:1.7}
+
+/* B-2: 自信度は turf 系。gold は「注意・保留」専用にして意味を衝突させない */
+.badge-conf.low{background:var(--gold-soft); color:var(--gold-text)}
+.race-change{margin-top:4px;color:#9b5d00;font-size:var(--fs-min);font-weight:700;line-height:1.35}
+.change-card{border-color:#d9a441;background:#fff8e6}
+.conf-note{margin-top:7px; font-size:var(--fs-min); color:#E8D9A8; line-height:1.7}
+
+/* 回収率の行 — 点推定を単独で見せない (幅とレース数を必ず併記) */
+.roi-row{display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  padding:8px 14px 12px; font-size:var(--fs-min); color:var(--ink-soft)}
+.roi-row b{font-size:.95rem; color:var(--ink)}
+.roi-row.muted{color:var(--ink-faint)}
+.roi-rank{font-weight:700; color:var(--turf-700); background:var(--turf-100);
+  padding:2px 8px; border-radius:999px}
+.roi-ci{color:var(--ink-soft)}
+.roi-tie{color:var(--gold-text); background:var(--gold-soft); padding:2px 8px;
+  border-radius:999px; font-weight:700}
+
+/* 回収率ランキング (表示期間の集計) */
+.rr{padding:2px 14px}
+.rr-row{display:flex; align-items:center; gap:11px; padding:11px 0;
+  border-bottom:1px solid var(--line-soft)}
+.rr-row:last-child{border-bottom:none}
+.rr-row.baseline{background:var(--turf-100); margin:0 -14px; padding:11px 14px}
+.rr-rank{flex:none; width:2.6em; font-size:.85rem; font-weight:700;
+  color:var(--turf-700); text-align:center}
+.rr-who{flex:1; min-width:0}
+.rr-name{font-size:.88rem; font-weight:700}
+.rr-sub{font-size:var(--fs-min); color:var(--ink-soft); margin-top:2px}
+.rr-v{flex:none; text-align:right}
+.rr-v b{font-size:.95rem}
+
+/* 全員が同順位のときの見出し (「1位」を並べても情報にならないので事実を書く) */
+.rr-tied{background:var(--gold-soft); color:var(--gold-text); border-radius:var(--r-md);
+  padding:10px 13px; margin-bottom:9px; font-size:var(--fs-min);
+  font-weight:700; line-height:1.7}
+
+/* 買い目・JRAスマッピーQR */
+.bs{padding:4px 14px}
+.bs-start{padding:14px; margin-top:8px; display:flex; align-items:center; gap:10px;
+  justify-content:space-between; flex-wrap:wrap}
+.manual-bet-note{margin:10px 0; padding:12px 14px; border-radius:var(--r-md);
+  background:var(--gold-soft); color:var(--gold-text); font-size:.82rem; line-height:1.7}
+.bs-empty-note{margin:0; color:var(--ink-soft); font-size:.82rem; line-height:1.7}
+.bs-suggest{min-height:var(--tap); padding:10px 14px; border:1.5px solid var(--turf-500);
+  border-radius:var(--r-md); background:#fff; color:var(--turf-700); font-family:inherit;
+  font-size:.82rem; font-weight:700; cursor:pointer}
+.bs-actions{display:flex; gap:9px; margin-top:10px; flex-wrap:wrap}
+.bs-copy,.bs-qr,.bs-record{flex:1; min-height:var(--tap); padding:11px; font-family:inherit;
+  font-size:.85rem; font-weight:700; color:#fff; background:var(--turf-700);
+  border:none; border-radius:var(--r-md); cursor:pointer}
+.bs-qr{background:#5b3b8c}
+.bs-record{background:var(--turf-700)}
+.bs-qr:disabled,.bs-record:disabled{opacity:.6; cursor:wait}
+.bs-link{flex:1; min-height:var(--tap); display:flex; align-items:center;
+  justify-content:center; padding:11px; font-size:.85rem; font-weight:700;
+  color:var(--turf-700); background:#fff; border:1.5px solid var(--turf-500);
+  border-radius:var(--r-md); text-decoration:none}
+.bs-note{margin-top:9px; line-height:1.8}
+.bs-money{display:flex; align-items:center; flex-wrap:wrap; gap:7px; margin-top:9px;
+  padding-top:9px; border-top:1px solid var(--line-soft); font-size:var(--fs-min);
+  color:var(--ink-soft); font-weight:700}
+.bs-amount{width:7em; min-height:var(--tap); padding:7px 8px; border:1.5px solid var(--line);
+  border-radius:var(--r-sm); background:#fff; color:var(--ink); font-size:.9rem; text-align:right}
+.bs-amount:focus{outline:2px solid var(--turf-500); outline-offset:1px}
+.bs-sub{margin-left:auto; color:var(--turf-700)}
+.bs-odds-note{font-size:var(--fs-min); color:var(--ink-soft); line-height:1.6;
+  padding:9px 0; margin:0; border-top:1px solid var(--line-soft)}
+.bo-state{display:inline-block; margin-left:6px; padding:2px 7px; border-radius:999px;
+  background:var(--turf-100); color:var(--turf-700); font-size:var(--fs-min); font-weight:700}
+.bo-state.pending,.bo-odds.pending{background:var(--paper); color:var(--ink-faint)}
+.bo-row{display:grid; grid-template-columns:minmax(55px,auto) minmax(110px,1fr);
+  gap:3px 10px; align-items:center; padding:8px 0; border-bottom:1px solid var(--line-soft);
+  font-size:.78rem}
+.bo-row:last-child{border-bottom:none}
+.bo-odds{justify-self:end; color:var(--turf-700); font-weight:700; padding:3px 7px;
+  border-radius:999px; background:var(--turf-100)}
+.bo-stake{grid-column:1/-1; display:flex; align-items:center; justify-content:flex-end; gap:5px;
+  color:var(--ink); font-size:var(--fs-min); font-weight:700}
+.bo-amount{width:7em; min-height:var(--tap); padding:7px 8px; border:1.5px solid var(--line);
+  border-radius:var(--r-sm); background:#fff; color:var(--ink); font-size:.88rem; text-align:right}
+.bo-amount:focus{outline:2px solid var(--turf-500); outline-offset:1px}
+.bo-pay{grid-column:1/-1; color:var(--ink-soft); font-size:var(--fs-min); text-align:right}
+.bs-funds{margin:8px 0 4px; padding:12px; border-radius:var(--r-md); background:var(--turf-100);
+  display:flex; align-items:center; flex-wrap:wrap; gap:8px; font-size:.78rem}
+.bf-title{width:100%; font-weight:700; color:var(--turf-700)}
+.bs-funds label{display:flex; align-items:center; gap:5px; font-weight:700; color:var(--ink-soft)}
+.bf-input{width:8em; min-height:var(--tap); padding:7px 8px; border:1.5px solid var(--line);
+  border-radius:var(--r-sm); background:#fff; color:var(--ink); font-size:.9rem; text-align:right}
+.bf-actions{display:flex; flex-wrap:wrap; gap:6px}
+.bf-apply{min-height:var(--tap); padding:9px 12px; border:0; border-radius:var(--r-sm);
+  background:var(--turf-700); color:#fff; font-family:inherit; font-size:.78rem;
+  font-weight:700; cursor:pointer}
+.bf-apply.secondary{background:#fff; color:var(--turf-700); border:1.5px solid var(--turf-700)}
+.bf-apply:disabled{opacity:.48; cursor:not-allowed}
+.bf-left.over{color:var(--minus); font-weight:800}
+
+/* 共有運用: 招待・管理画面。アプリと同じ配色だが、投票QRとは明確に分ける。 */
+.auth-gate{position:fixed; inset:0; z-index:1000; overflow:auto; padding:24px 14px;
+  background:linear-gradient(160deg,var(--turf-900),var(--turf-700)); display:grid;
+  place-items:start center}
+.auth-gate[hidden]{display:none}
+.auth-card{width:min(100%,560px); margin:auto; padding:24px; border-radius:var(--r-lg);
+  background:#fff; box-shadow:0 20px 55px rgba(0,0,0,.24)}
+.auth-logo{font-size:1.35rem; font-weight:900; letter-spacing:.04em; color:var(--turf-900)}
+.auth-logo em{font-style:normal; color:var(--gold-text)}
+.auth-card h2{margin:12px 0 6px; color:var(--ink)}
+.auth-card p{line-height:1.7; color:var(--ink-soft)}
+.auth-form,.admin-create{display:grid; gap:12px; margin-top:18px}
+.auth-form label,.admin-create label{display:grid; gap:6px; color:var(--ink-soft); font-weight:700}
+.auth-form input,.admin-create input{min-height:var(--tap); padding:9px 10px; border:1.5px solid var(--line);
+  border-radius:var(--r-sm); font:inherit; background:#fff; color:var(--ink)}
+.auth-error{min-height:1.5em; margin:0; color:var(--alert)!important; font-weight:700}
+.user-pill{min-height:var(--tap); max-width:145px; overflow:hidden; text-overflow:ellipsis;
+  white-space:nowrap; padding:6px 10px; border:1px solid rgba(255,255,255,.4);
+  border-radius:999px; background:transparent; color:#fff; font:inherit; cursor:pointer}
+.admin-head{display:flex; align-items:flex-start; justify-content:space-between; gap:10px}
+.quiet-btn{min-height:var(--tap); padding:8px 12px; border:1px solid var(--line);
+  border-radius:var(--r-sm); background:#fff; color:var(--turf-700); font:inherit;
+  font-weight:700; cursor:pointer}
+.auth-admin-link{display:flex; align-items:center; justify-content:center; margin-top:18px;
+  text-decoration:none}
+.admin-actions,.invite-actions{display:flex; flex-wrap:wrap; justify-content:center; gap:8px}
+.admin-head .admin-actions{justify-content:flex-end}
+.admin-guide{margin:14px 0 0}
+.invite-result .note{font-size:var(--fs-min); margin:6px 0 12px}
+.invite-result{margin:18px 0; padding:16px; border-radius:var(--r-lg); text-align:center;
+  background:#eaf4fb; border:2px solid #2d6f9f}
+.invite-result img{display:block; width:min(260px,80vw); height:auto; margin:10px auto;
+  image-rendering:pixelated}
+.admin-list{margin-top:18px; padding-top:10px; border-top:1px solid var(--line)}
+.admin-row{display:flex; align-items:center; justify-content:space-between; gap:10px;
+  padding:10px 0; border-bottom:1px solid var(--line-soft)}
+.admin-row span{min-width:0}.admin-row small{display:block; color:var(--ink-soft); margin-top:3px}
+.admin-summary{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:18px}
+.admin-summary>div{padding:11px 8px; border-radius:var(--r-md); background:var(--turf-100);
+  text-align:center}
+.admin-summary b,.admin-summary span{display:block}
+.admin-summary b{font-size:1.15rem; color:var(--turf-700)}
+.admin-summary span{margin-top:3px; font-size:var(--fs-min); color:var(--ink-soft)}
+.admin-collapsible{margin-top:12px; border:1px solid var(--line); border-radius:var(--r-md);
+  background:var(--paper); overflow:hidden}
+.admin-collapsible>summary{display:flex; align-items:center; min-height:var(--tap); padding:9px 12px;
+  cursor:pointer; color:var(--turf-700); font-size:.84rem; font-weight:800}
+.admin-collapsible .admin-row{padding-left:12px; padding-right:12px; background:#fff}
+.bs-funds p{width:100%; margin:0; color:var(--ink-soft); font-size:var(--fs-min); line-height:1.6}
+.bf-left{display:block; color:var(--gold-text); font-weight:700}
+.hb-money{font-size:var(--fs-min); color:var(--ink-soft); margin-top:5px}
+.smq,.smq-error{margin-top:12px; border-radius:var(--r-lg); padding:14px}
+.smq{background:#fff; border:2px solid #5b3b8c; text-align:center}
+.smq h3{font-size:1rem; margin:0 0 5px; color:#3f2865}
+.smq-ok{font-size:var(--fs-min); color:var(--turf-700); font-weight:700; margin:0 0 10px}
+.smq-img{display:block; width:min(100%,405px); height:auto; margin:0 auto;
+  image-rendering:pixelated; background:#fff}
+.smq-meta{font-size:var(--fs-min); color:var(--ink-soft); line-height:1.7; margin:8px 0}
+.smq details{text-align:left; margin-top:8px}
+.smq details summary{cursor:pointer; font-size:.82rem; font-weight:700; color:var(--turf-700)}
+.smq details ul{list-style:none; padding:0; margin:8px 0}
+.smq details li{display:flex; gap:8px; flex-wrap:wrap; padding:6px 0;
+  border-bottom:1px solid var(--line-soft); font-size:var(--fs-min)}
+.smq details li span:last-child{margin-left:auto}
+.smq-actions{display:grid; gap:8px; margin:12px 0}
+.smq-actions button{min-height:var(--tap); border-radius:8px; border:1px solid #5b3b8c;
+  background:#fff; color:#3f2865; font-weight:800; cursor:pointer}
+.smq-actions button:first-child{background:#5b3b8c; color:#fff}
+.smq-actions button:disabled{opacity:.65}
+.smq-keep{font-size:var(--fs-min); color:var(--ink-soft)}
+.smq-warn{text-align:left; background:var(--gold-soft); color:var(--gold-text);
+  border-radius:var(--r-md); padding:10px; font-size:var(--fs-min); line-height:1.7; margin:10px 0 0}
+.smq-error{background:var(--alert-soft); color:var(--alert); font-size:.82rem; line-height:1.7}
+.late-purchase{margin-top:14px; border:1px solid var(--line); border-radius:var(--r-lg);
+  background:#fff; overflow:hidden}
+.late-purchase>summary{display:flex; align-items:center; min-height:var(--tap); padding:12px 14px;
+  cursor:pointer; color:var(--turf-700); font-weight:800}
+.late-purchase[open]>summary{border-bottom:1px solid var(--line-soft)}
+.late-purchase-note{margin:12px 14px 4px; padding:10px 12px; border-radius:var(--r-md);
+  background:var(--turf-100); color:var(--ink-soft); font-size:var(--fs-min); line-height:1.7}
+.late-purchase>#bsDraft,.late-purchase>#bsResult{margin-left:12px; margin-right:12px}
+.late-purchase>#bsResult{margin-bottom:12px}
+
+/* ---------- レース一覧 ---------- */
+.race-date-nav{display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:6px; margin-bottom:8px;
+  padding:4px; border:1px solid var(--line); border-radius:10px; background:#fff}
+.race-date-nav button{min-height:var(--tap); border:0; border-radius:8px; background:transparent;
+  color:var(--ink-soft); font-family:inherit; font-weight:700; cursor:pointer}
+.race-date-nav button.on{background:var(--turf-700); color:#fff}
+.race-date-select{display:grid; grid-template-columns:auto minmax(0,1fr); align-items:center; gap:10px;
+  margin:0 0 12px; padding:8px 10px; border:1px solid var(--line); border-radius:var(--r-md);
+  background:#fff; color:var(--ink-soft); font-size:var(--fs-min); font-weight:700}
+.race-date-select select{min-width:0; width:100%; min-height:var(--tap); padding:0 8px;
+  border:1px solid var(--line); border-radius:8px; background:var(--paper); color:var(--ink)}
+.race-near{margin-bottom:14px}
+.race-picker{padding:14px; margin-top:12px}
+.race-picker-head{display:flex; align-items:baseline; justify-content:space-between; gap:8px}
+.race-picker-head h3{margin:0; font-size:1rem}
+.race-picker-head span{color:var(--ink-soft); font-size:var(--fs-min); white-space:nowrap}
+.result-track-tabs{display:flex; gap:7px; margin:12px -2px 10px; padding:2px;
+  overflow-x:auto; overscroll-behavior-x:contain; scrollbar-width:none}
+.result-track-tabs::-webkit-scrollbar{display:none}
+.result-track{display:flex; align-items:center; justify-content:center; gap:6px; flex:1 0 auto;
+  min-width:92px; min-height:var(--tap); padding:8px 12px; border:1px solid var(--line);
+  border-radius:999px; background:#fff; color:var(--ink); font:inherit; font-weight:800;
+  line-height:1; cursor:pointer}
+.result-track small{display:block; color:var(--ink-soft); font-size:var(--fs-min); font-weight:700; line-height:1}
+.result-track.on{border-color:var(--turf-700); background:var(--turf-700); color:#fff}
+.result-track.on small{color:#dceae0}
+.result-race-grid{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px}
+.result-race-grid[hidden]{display:none}
+.result-race-button{display:grid; grid-template-columns:1fr auto; align-items:center; gap:2px 5px;
+  min-width:0; min-height:64px; padding:8px 9px; border:1px solid var(--line); border-radius:10px;
+  background:#fff; color:var(--ink); font:inherit; text-align:left; cursor:pointer}
+.result-race-button>span:first-child{display:flex; align-items:baseline; gap:5px}
+.result-race-button b{font-size:.95rem}.result-race-button small{color:var(--ink-soft); font-size:.78rem}
+.result-race-button em{align-self:center; font-style:normal; color:var(--turf-700); font-size:.78rem;
+  font-weight:800; line-height:1.2}
+.result-race-button.finished{background:var(--turf-100); border-color:#c9dccf}
+.result-race-button:disabled{cursor:not-allowed; opacity:.55}
+.result-race-title{grid-column:1/-1; overflow:hidden; color:var(--ink-soft); font-size:.78rem;
+  line-height:1.35; text-overflow:ellipsis; white-space:nowrap}
+.race-picker p{margin:8px 0 0; color:var(--ink-soft); font-size:var(--fs-min)}
 .race-item{display:flex; align-items:center; gap:12px; padding:13px 14px; min-height:var(--tap);
   border-bottom:1px solid var(--line-soft); background:var(--card); width:100%; text-align:left;
   border-left:none; border-right:none; border-top:none; font-family:inherit; cursor:pointer}
 .race-item:last-child{border-bottom:none}
 .race-item:disabled{cursor:default; opacity:.75}
 .race-item.on{background:var(--turf-100)}
+.track-patch{display:inline-flex; align-items:center; margin-right:7px; padding:3px 8px;
+  border-radius:999px; background:var(--turf-700); color:#fff; font-size:var(--fs-min);
+  font-weight:800; line-height:1.25; vertical-align:middle; white-space:nowrap}
+
+/* ---------- コース・距離別の項目傾向 ---------- */
+.context-trend{margin-top:14px}
+.context-trend.loading-card{padding:14px; border:1px solid var(--line-soft);
+  border-radius:var(--r-md); background:var(--card)}
+.context-trend.loading-card p,.context-trend.card p{margin:5px 0 0; color:var(--ink-soft);
+  font-size:var(--fs-min)}
+.trend-card{overflow:hidden}
+.trend-scope{display:flex; justify-content:space-between; gap:8px; align-items:center;
+  padding:12px 14px; background:var(--turf-100); color:var(--turf-900)}
+.trend-scope span{font-size:var(--fs-min); color:var(--ink-soft); white-space:nowrap}
+.trend-recent{border-bottom:1px solid var(--line)}
+.trend-recent>.trend-scope{background:#FFF9E8}
+.trend-recent>.trend-note{padding-top:9px; background:#FFFDF5}
+.trend-recent.empty-recent{display:flex; flex-direction:column; gap:3px; padding:12px 14px;
+  background:var(--paper); color:var(--ink-soft); font-size:var(--fs-min)}
+.trend-recent.empty-recent b{color:var(--ink)}
+.trend-history{border-bottom:1px solid var(--line)}
+.trend-history>summary{display:flex; align-items:center; justify-content:space-between; gap:8px;
+  min-height:var(--tap); padding:10px 14px; cursor:pointer; color:var(--turf-900)}
+.trend-history>summary span{color:var(--ink-soft); font-size:var(--fs-min); text-align:right}
+.trend-row{display:grid; grid-template-columns:26px minmax(0,1fr) auto; gap:8px;
+  align-items:center; padding:11px 12px; border-bottom:1px solid var(--line-soft)}
+.trend-rank{display:grid; place-items:center; width:24px; height:24px; border-radius:50%;
+  background:var(--gold-soft); color:var(--gold-text); font-weight:800}
+.trend-name{min-width:0}
+.trend-name b,.trend-name small,.trend-lift b,.trend-lift small{display:block}
+.trend-name b{font-size:.87rem}
+.trend-name small,.trend-lift small{font-size:var(--fs-min); color:var(--ink-soft); margin-top:2px}
+.trend-lift{text-align:right; color:var(--turf-700); white-space:nowrap}
+.trend-signal{grid-column:2 / 4; justify-self:start; font-size:var(--fs-min); font-weight:700;
+  color:var(--turf-700); background:var(--turf-100); border-radius:999px; padding:3px 8px}
+.trend-signal.muted{color:var(--ink-soft); background:var(--paper)}
+.trend-card .trend-apply{width:calc(100% - 24px); margin:12px; min-height:var(--tap);
+  padding-left:8px; padding-right:8px; line-height:1.45; white-space:normal}
+.trend-note{margin:0; padding:0 14px 14px; color:var(--ink-soft); font-size:var(--fs-min);
+  line-height:1.65}
 .race-time{width:54px; flex:none}
 .race-time .t{font-weight:700; font-size:1rem}
 .race-time .r{font-size:var(--fs-min); color:var(--ink-faint)}
@@ -113,7 +821,7 @@ main{flex:1; padding:14px 14px 84px}
 .param-chips{display:flex; flex-wrap:wrap; gap:8px; margin-top:8px}
 .pchip{font-size:.8rem; padding:11px 14px; min-height:var(--tap); border-radius:999px;
   border:1.5px solid var(--line); background:#fff; color:var(--ink-soft); cursor:pointer;
-  user-select:none; transition:background .12s,color .12s,border-color .12s; font-family:inherit}
+  user-select:none; transition:background .12s,color .12s,border-color .12s; font-family:inherit; white-space:nowrap}
 .pchip.on{background:var(--turf-700); border-color:var(--turf-700); color:#fff; font-weight:500}
 .step2{margin-top:8px}
 .step2 .item{border-bottom:1px solid var(--line-soft)}
@@ -134,8 +842,42 @@ main{flex:1; padding:14px 14px 84px}
 .mini-label{font-size:var(--fs-min); font-weight:700; letter-spacing:.1em; color:var(--ink-faint); margin:10px 0 6px}
 .cellrow{display:flex; flex-wrap:wrap; gap:6px}
 .cchip{font-size:var(--fs-min); padding:11px 12px; min-height:var(--tap); border-radius:999px;
-  border:1px solid var(--line); background:#fff; color:var(--ink-soft); cursor:pointer; font-family:inherit}
+  border:1px solid var(--line); background:#fff; color:var(--ink-soft); cursor:pointer; font-family:inherit; white-space:nowrap}
 .cchip.on{background:var(--turf-100); border-color:var(--turf-500); color:var(--turf-700); font-weight:700}
+/* C-1: 詳細設定 (STEP2) は初期折りたたみ。閉じていても中身の規模が分かるように
+ * 選択数のバッジを見出しに出す。 */
+.adv{margin-top:18px; border:1.5px solid var(--line); border-radius:var(--r-md); background:#fff}
+.adv-head{display:flex; align-items:center; gap:10px; width:100%; padding:14px;
+  min-height:var(--tap); background:none; border:none; font-family:inherit; cursor:pointer;
+  text-align:left; color:var(--ink)}
+.adv-t{flex:1; font-size:.88rem; font-weight:700}
+.adv-n{font-size:var(--fs-min); color:var(--ink-soft); white-space:nowrap}
+.adv-n.on{color:var(--turf-700); font-weight:700}
+.adv-caret{color:var(--ink-soft); font-size:1rem; line-height:1}
+.adv-head:focus-visible{outline:2px solid var(--turf-500); outline-offset:-2px}
+.adv-body{padding:0 14px 14px}
+.adv-desc{font-size:var(--fs-min); color:var(--ink-soft); line-height:1.75; margin:0}
+
+/* C-2: 期間は 11 チップからスライダー1つへ。「これまでの全走」は連続量の外なので
+ * 別トグルで残す (どちらか一方は必須)。 */
+.lbctl{display:flex; flex-direction:column; gap:2px}
+.lb-slide{display:flex; align-items:center; gap:12px; min-height:var(--tap)}
+.lb-slide input[type=range]{flex:1; min-width:0; accent-color:var(--turf-700); height:var(--tap)}
+.lb-slide input[type=range]:disabled{opacity:.4}
+.lb-out{font-size:var(--fs-min); font-weight:700; color:var(--turf-700);
+  white-space:nowrap; min-width:6.5em; text-align:right}
+.lb-multi{margin:2px 0 0; padding:8px 11px; border-radius:var(--r-md);
+  background:var(--gold-soft); color:var(--gold-text); font-size:var(--fs-min); line-height:1.65}
+/* C-2b: 直積で生成されるセル数を見せる (以前は「全レース ほか2 × 直近3 ほか4」で規模が不可視) */
+.cellnote{margin:6px 0 0; font-size:var(--fs-min); color:var(--ink-soft)}
+
+/* C-5: マイAI未作成なら、レースを選ばせる前に作成へ誘導する */
+.fr{padding:20px 16px; border-radius:var(--r-lg); background:var(--turf-100);
+  border:1.5px solid var(--turf-500); margin-bottom:14px}
+.fr-t{font-size:1rem; font-weight:700; color:var(--turf-700)}
+.fr-d{margin:7px 0 14px; font-size:.86rem; color:var(--ink-soft); line-height:1.75}
+.fr .cta{margin:0}
+
 .ai-name{margin-top:16px}
 .ai-name input{width:100%; padding:12px 14px; min-height:var(--tap); font-size:1rem;
   border:1.5px solid var(--line); border-radius:var(--r-md); font-family:inherit; background:#fff}
@@ -149,7 +891,6 @@ main{flex:1; padding:14px 14px 84px}
 
 /* 成績カード (バックテスト結果) */
 .bt-result{margin-top:14px}
-.bt-grid{display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--line-soft)}
 .bt-cell{background:var(--card); padding:12px 14px}
 .bt-cell .k{font-size:var(--fs-min); color:var(--ink-faint)}
 .bt-cell .v{font-weight:800; font-size:1.2rem; margin-top:3px}
@@ -163,18 +904,23 @@ main{flex:1; padding:14px 14px 84px}
 .race-head .top .off{margin-left:auto; font-size:var(--fs-min); color:#BFD2C6}
 .race-head .bottom{display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-top:10px}
 .badge-conf{font-size:var(--fs-min); font-weight:700; padding:8px 14px; min-height:var(--tap);
-  display:inline-flex; align-items:center; border-radius:999px; background:var(--gold-soft);
-  color:var(--gold); border:none; font-family:inherit; cursor:pointer}
+  display:inline-flex; align-items:center; border-radius:999px; background:var(--turf-100);
+  color:var(--turf-700); border:none; font-family:inherit; cursor:pointer; white-space:nowrap}
+.badge-conf .ci{margin-left:5px; opacity:.8}
 .race-head .ai{margin-left:auto; font-size:var(--fs-min); color:#BFD2C6}
 .race-head .ai b{color:#fff}
-.head-chip{font-size:var(--fs-min); padding:3px 9px; border-radius:999px;
-  background:rgba(255,255,255,.12); color:#CFE3D6}
+.head-chip{display:inline-flex; align-items:center; min-height:var(--tap); padding:6px 12px;
+  border-radius:999px; background:rgba(255,255,255,.12); color:#CFE3D6;
+  font-size:var(--fs-min); line-height:1.35}
 
 .marks{margin-top:12px}
 .horse{border-bottom:1px solid var(--line-soft); background:var(--card); transition:background .5s}
 .horse:last-child{border-bottom:none}
 .horse .row{display:flex; align-items:center; gap:11px; padding:11px 14px; min-height:var(--tap);
   cursor:pointer; width:100%; text-align:left; background:none; border:none; font-family:inherit}
+.horse .row:focus-visible{outline:2px solid var(--turf-500); outline-offset:-2px}
+/* 枠番がデータに無い場合は色を付けない (誤った枠色を出すより無色) */
+.w-none{background:var(--line-soft); color:var(--ink-soft); border:1px dashed var(--line)}
 .mark{font-weight:800; font-size:1.55rem; width:36px; text-align:center; flex:none; line-height:1; color:var(--ink)}
 .mark.hon{color:var(--gold)}
 .mark.none{color:var(--line); font-size:1.1rem}
@@ -189,7 +935,7 @@ main{flex:1; padding:14px 14px 84px}
 .horse.hon .scorebar .bar i{background:var(--gold-bright)}
 /* ◎が1番人気でないことの目印。alert(赤) は操作を要するエラー専用なので gold を使う。
  * 煽り表現は付けない (設計書 v0.3 §1 DON'T)。文言は「1番人気ではない」。 */
-.badge-upset{font-size:var(--fs-min); font-weight:700; color:var(--gold); background:var(--gold-soft);
+.badge-upset{font-size:var(--fs-min); font-weight:700; color:var(--gold-text); background:var(--gold-soft);
   padding:2px 8px; border-radius:999px}
 .horse.flash{background:var(--gold-soft)}
 
@@ -244,12 +990,128 @@ main{flex:1; padding:14px 14px 84px}
 .board-hero{padding:16px; background:var(--turf-900); border-radius:var(--r-lg); color:#F2F6EF}
 .board-hero .h{font-weight:800; font-size:1.05rem; letter-spacing:.04em}
 .board-hero .s{font-size:var(--fs-min); color:#9DB8A8; margin-top:4px}
+.performance-range{display:grid; grid-template-columns:repeat(4,1fr); gap:5px; margin-top:10px;
+  padding:4px; border:1px solid var(--line); border-radius:var(--r-md); background:#fff}
+.performance-range button{min-height:var(--tap); padding:5px 3px; border:0; border-radius:8px;
+  background:transparent; color:var(--ink-soft); font-family:inherit; font-size:var(--fs-min);
+  font-weight:800; cursor:pointer}
+.performance-range button.on{background:var(--turf-700); color:#fff}
+.user-board-section{margin-top:14px}
+.user-board-loading,.user-board-empty{margin-top:12px; padding:14px; border:1px solid var(--line);
+  border-radius:var(--r-lg); background:#fff; color:var(--ink-soft); font-size:.8rem; line-height:1.65}
+.user-board-loading b,.user-board-loading span{display:block}
+.user-board-loading b{color:var(--ink)}
+.user-board-loading span{margin-top:3px}
+.user-board-empty b,.user-board-empty span{display:block}
+.user-board-empty span{margin-top:3px}
+.user-score-card{margin-top:8px; overflow:hidden}
+.user-score-card.top{border-color:#C9A84C}
+.user-score-head{display:grid; grid-template-columns:44px 1fr auto; align-items:center; gap:9px;
+  padding:12px 13px; background:var(--card)}
+.user-score-head.no-rank{grid-template-columns:1fr auto}
+.user-score-card.top .user-score-head{background:#FFF9E8}
+.user-rank{font-weight:800; color:var(--gold-text); text-align:center}
+.user-score-head>div b,.user-score-head>div small{display:block}
+.user-score-head>div b{font-size:.92rem}
+.user-score-head>div small{margin-top:2px; color:var(--ink-soft); font-size:var(--fs-min)}
+.user-score-head>strong{font-size:1.1rem; color:var(--turf-700)}
+.user-score-stats{display:grid; grid-template-columns:1fr 1fr; border-top:1px solid var(--line-soft)}
+.user-score-stats>div{padding:9px 12px; border-bottom:1px solid var(--line-soft)}
+.user-score-stats>div:nth-child(odd){border-right:1px solid var(--line-soft)}
+.user-score-stats span,.user-score-stats b{display:block}
+.user-score-stats span{font-size:var(--fs-min); color:var(--ink-soft)}
+.user-score-stats b{margin-top:2px; font-size:.88rem}
+.user-score-stats .plus{color:var(--turf-700)}
+.user-score-stats .minus{color:#9B3B35}
+.provisional{margin:0; padding:7px 12px; color:var(--ink-soft); background:var(--turf-100);
+  font-size:var(--fs-min)}
+.user-board-note{margin:8px 2px 0; color:var(--ink-soft); font-size:var(--fs-min); line-height:1.6}
+.user-registration-details{border-top:1px solid var(--line-soft)}
+.user-registration-details>summary{min-height:var(--tap); padding:10px 12px; cursor:pointer;
+  color:var(--turf-700); font-size:var(--fs-min); font-weight:800}
+.user-registration-details>p{margin:0; padding:0 12px 8px; color:var(--ink-soft);
+  font-size:var(--fs-min); line-height:1.6}
+.registration-race-row{margin:0 10px 8px; border:1px solid var(--line); border-radius:8px; background:#fff}
+.registration-race-row>summary{display:flex; justify-content:space-between; gap:8px; min-height:var(--tap);
+  padding:9px 10px; cursor:pointer; font-size:var(--fs-min)}
+.registration-race-row>summary span,.registration-race-row>summary b{display:block}
+.registration-race-row>summary strong{text-align:right; color:var(--gold-text)}
+.registration-race-row>div{padding:9px 10px; border-top:1px solid var(--line-soft);
+  font-size:var(--fs-min); color:var(--ink-soft)}
+.registration-ai{margin:8px 0 0; line-height:1.6}
+.registration-ai b{color:var(--ink)}
+.purchase-summary{margin:14px 0}
+.purchase-list-section{margin:14px 0}
+.purchase-hero{margin:12px 0; padding:12px 14px; border:1px solid var(--line);
+  border-radius:var(--r-lg); background:#fff}
+.purchase-hero b,.purchase-hero span{display:block}
+.purchase-hero span{margin-top:4px; color:var(--ink-soft); font-size:var(--fs-min); line-height:1.6}
+.board-empty-action{width:100%; margin-top:12px}
+.purchase-totals{display:grid; grid-template-columns:1fr 1fr; gap:0; overflow:hidden}
+.purchase-totals>div{padding:11px 12px; border-bottom:1px solid var(--line-soft)}
+.purchase-totals>div:nth-child(odd){border-right:1px solid var(--line-soft)}
+.purchase-totals span,.purchase-totals b{display:block}
+.purchase-totals span{font-size:var(--fs-min); color:var(--ink-soft)}
+.purchase-totals b{margin-top:3px; color:var(--turf-700)}
+.purchase-totals .plus{color:var(--turf-700)}
+.purchase-totals .minus{color:#9B3B35}
+.purchase-basis{margin:8px 2px 0; color:var(--ink-soft); font-size:var(--fs-min); line-height:1.65}
+.purchase-updated{white-space:nowrap}
+.purchase-list-head{display:flex; align-items:baseline; justify-content:space-between; gap:8px}
+.purchase-list-head .section-label{margin-bottom:6px}
+.purchase-visible-count{color:var(--ink-soft); font-size:var(--fs-min); white-space:nowrap}
+.purchase-list-note{margin:0 0 7px; color:var(--ink-soft); font-size:var(--fs-min); line-height:1.6}
+.purchase-filter{display:flex; gap:6px; overflow-x:auto; padding:2px 0 5px; scrollbar-width:none}
+.purchase-filter::-webkit-scrollbar{display:none}
+.purchase-filter button{flex:none; min-height:var(--tap); padding:0 13px; border:1px solid var(--line);
+  border-radius:999px; background:#fff; color:var(--ink-soft); font-family:inherit;
+  font-size:var(--fs-min); font-weight:700; cursor:pointer}
+.purchase-filter button.on{border-color:var(--turf-700); background:var(--turf-100); color:var(--turf-700)}
+.purchase-row{margin-top:7px; border:1px solid var(--line); border-radius:8px; background:#fff}
+.purchase-row summary{display:flex; justify-content:space-between; gap:8px; padding:10px 12px;
+  min-height:var(--tap); cursor:pointer; font-size:.82rem}
+.purchase-row summary span,.purchase-row summary small{display:block}
+.purchase-row summary small{color:var(--ink-soft); margin-top:4px; font-size:var(--fs-min)}
+.purchase-row summary strong{text-align:right; color:var(--gold-text)}
+.purchase-row>div{padding:10px 12px; border-top:1px solid var(--line-soft);
+  font-size:var(--fs-min); line-height:1.7; color:var(--ink-soft)}
+.purchase-race-meta{display:flex !important; align-items:center; gap:6px; margin-bottom:5px}
+.purchase-race-meta .track-patch{margin:0; padding:2px 7px}
+.purchase-date{font-weight:800; color:var(--turf-700)}
+.purchase-time{font-weight:700; color:var(--ink-soft)}
+.settlement-breakdown{display:grid; grid-template-columns:repeat(3,1fr); border-bottom:1px solid var(--line-soft)}
+.settlement-breakdown>div{padding:5px 7px 8px; border-right:1px solid var(--line-soft)}
+.settlement-breakdown>div:last-child{border-right:0}
+.settlement-breakdown span,.settlement-breakdown b{display:block}
+.settlement-breakdown span{color:var(--ink-soft); font-size:var(--fs-min)}
+.settlement-breakdown b{margin-top:2px; color:var(--ink); font-size:.8rem}
+.settlement-breakdown .plus{color:var(--turf-700)}
+.settlement-breakdown .minus{color:#9B3B35}
+.purchase-items{display:grid; gap:0}
+.purchase-item{display:grid; grid-template-columns:minmax(0,1fr) auto; gap:4px 10px;
+  align-items:center; padding:8px 0; border-bottom:1px solid var(--line-soft)}
+.purchase-item:last-child{border-bottom:0}
+.purchase-item span b,.purchase-item span small{display:block}
+.purchase-item span b{color:var(--ink); font-size:.82rem}
+.purchase-item span small{margin-top:2px; font-size:var(--fs-min)}
+.purchase-item>strong{color:var(--ink); text-align:right}
+.purchase-item>em{grid-column:1/-1; color:var(--ink-soft); font-style:normal}
+.purchase-item.hit{margin:0 -6px; padding:8px 6px; border-radius:6px; background:var(--gold-soft)}
+.purchase-item.hit>em{color:var(--gold-text); font-weight:800}
+.purchase-late-note{margin:9px 0 0; padding:8px 10px; border-radius:var(--r-sm);
+  background:var(--gold-soft); color:var(--gold-text); line-height:1.6}
+.purchase-record-actions{display:flex; justify-content:flex-end; margin-top:10px; padding-top:9px;
+  border-top:1px solid var(--line-soft)}
+.purchase-record-actions button{min-height:var(--tap); padding:8px 12px; border:1px solid #b55a54;
+  border-radius:var(--r-sm); background:#fff; color:#8f342f; font:inherit; font-size:var(--fs-min);
+  font-weight:700; cursor:pointer}
+.purchase-record-actions button:disabled{opacity:.55}
 .board{margin-top:12px}
 .brow{display:flex; align-items:center; gap:12px; padding:13px 14px; min-height:var(--tap);
   background:var(--card); border-bottom:1px solid var(--line-soft)}
 .brow:last-child{border-bottom:none}
 .brow .rank{font-weight:800; font-size:1.15rem; width:30px; text-align:center; color:var(--ink-faint)}
-.brow.top .rank{color:var(--gold)}
+.brow.top .rank{color:var(--gold-text)}
 /* ベースラインは背景色を変え、順位数字を出さない (§5) */
 .brow.baseline{background:var(--turf-100)}
 .brow .who{flex:1; min-width:0}
@@ -257,19 +1119,71 @@ main{flex:1; padding:14px 14px 84px}
 .brow .astat{font-size:var(--fs-min); color:var(--ink-faint); margin-top:3px}
 .brow .hits{text-align:right}
 .brow .hits .n{font-weight:800; font-size:1.2rem}
-.brow.top .hits .n{color:var(--gold)}
+.brow.top .hits .n{color:var(--gold-text)}
 .brow .hits .l{font-size:var(--fs-min); color:var(--ink-faint)}
+.ai-analysis{margin-top:14px; border:1px solid var(--line); border-radius:var(--r-lg); background:#fff;
+  overflow:hidden}
+.ai-analysis>summary{display:flex; align-items:center; min-height:var(--tap); padding:11px 14px;
+  cursor:pointer; color:var(--turf-700); font-weight:700; font-size:.88rem}
+.ai-analysis-note{margin:0; padding:0 14px 4px; color:var(--ink-soft); font-size:var(--fs-min)}
+.ai-analysis>#boardList,.ai-analysis>#roiRanking,.ai-analysis>.rule-card{margin-left:10px; margin-right:10px}
+.ai-analysis>.rule-card{margin-bottom:10px}
+.ai-more{margin:8px 0}
+.ai-more>summary{display:flex; align-items:center; justify-content:center; min-height:var(--tap);
+  padding:9px 12px; border:1px solid var(--line); border-radius:8px; color:var(--turf-700);
+  background:var(--card); cursor:pointer; font-size:var(--fs-min); font-weight:800}
+.ai-more[open]>summary{border-bottom-left-radius:0; border-bottom-right-radius:0}
+.ai-more>.card{margin-top:6px}
 
 /* ---------- tab bar ---------- */
 nav.tabs{position:fixed; bottom:0; left:50%; transform:translateX(-50%); width:100%; max-width:430px;
   background:#fff; border-top:1px solid var(--line); display:flex; z-index:40;
   padding-bottom:env(safe-area-inset-bottom)}
+/* C-6: 漢字1文字のアイコンをやめラベルのみ。色はコントラスト確保のため ink-soft */
 nav.tabs button{flex:1; padding:8px 0; min-height:52px; background:none; border:none; font-family:inherit;
-  cursor:pointer; font-size:var(--fs-min); color:var(--ink-faint); display:flex; flex-direction:column;
-  align-items:center; justify-content:center; gap:3px}
-nav.tabs button .ic{font-size:1.05rem; line-height:1; font-weight:700}
+  cursor:pointer; font-size:.82rem; color:var(--ink-soft); display:flex;
+  align-items:center; justify-content:center}
 nav.tabs button.on{color:var(--turf-700); font-weight:700}
+nav.tabs button:disabled{cursor:not-allowed; color:#8a918d; background:#f3f5f3}
+nav.tabs button.on::before{content:''; position:absolute; top:0; width:2.6em; height:3px;
+  border-radius:0 0 3px 3px; background:var(--turf-700)}
+nav.tabs button{position:relative}
 nav.tabs button:focus-visible{outline:2px solid var(--turf-500); outline-offset:-2px}
+
+button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible{
+  outline:3px solid var(--turf-500); outline-offset:2px}
+
+@media (max-width:480px){
+  .auth-card{padding:20px 18px}
+  .admin-head{flex-direction:column; align-items:stretch}
+  .admin-head .admin-actions{display:grid; grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);
+    width:100%; justify-content:stretch}
+  .admin-head .admin-actions .quiet-btn{width:100%; padding-left:8px; padding-right:8px}
+  #openMainApp{border-color:var(--turf-700); background:var(--turf-700); color:#fff}
+  .admin-summary>div{padding-left:4px; padding-right:4px}
+  .admin-summary span{line-height:1.35}
+  .result-race-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .race-head .bottom{align-items:center}
+  .result-back{flex:1 1 auto}
+}
+
+@media (max-width:350px){
+  .result-race-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+
+@media (min-width:760px){
+  body.wide-board{max-width:860px}
+  body.wide-board nav.tabs{max-width:860px}
+  #scr-board.active{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+    gap:0 18px; align-items:start}
+  #scr-board .board-hero,#scr-board .performance-range,#scr-board #boardWarn,
+  #scr-board #purchaseList,#scr-board .ai-analysis{grid-column:1/-1}
+  #scr-board #purchaseSummary{grid-column:1}
+  #scr-board #userLeaderboard{grid-column:2}
+  .auth-card.admin-card{width:min(100%,900px)}
+  .admin-create{grid-template-columns:1fr 1fr auto; align-items:end}
+  .admin-lists-grid{display:grid; grid-template-columns:1fr 1fr; gap:24px}
+}
 
 @media (prefers-reduced-motion: reduce){
   *{transition:none !important; animation:none !important}

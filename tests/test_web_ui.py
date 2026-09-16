@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 import re
 import sys
 
@@ -43,6 +44,14 @@ def _strip_comments(text: str) -> str:
 CODE = {name: _strip_comments(t) for name, t in ALL.items()}
 
 
+def test_official_race_changes_are_visible_and_explain_recalculation():
+    """TC/CC must not silently alter only the backend state."""
+    assert "発走変更" in JS
+    assert "コース変更" in JS
+    assert "締切と結果取得も変更後の時刻" in JS
+    assert "AI評価は変更後の条件で再計算" in JS
+
+
 def test_web_files_exist_and_are_the_only_assets():
     """素の HTML/CSS/JS の3枚のみ (ビルド成果物・依存ディレクトリを置かない)。"""
     names = sorted(p.name for p in WEB.iterdir() if p.is_file())
@@ -51,17 +60,38 @@ def test_web_files_exist_and_are_the_only_assets():
     assert not (WEB / "package.json").exists()
 
 
+# JRA 公式の QR 作成サイトだけは遷移先として許可する
+# (買い目は公式サイトで手入力する方針。QR データ形式は非公開なので
+#  このツールでは生成しない)。ページ自体はオフラインでも動く。
+ALLOWED_LINK_HOSTS = ("qrcode.jra.go.jp",)
+
+
 def test_no_external_resources():
-    """外部ホストへの参照ゼロ (Webフォント・CDN・アナリティクス)。
+    """外部ホストから読み込むものがゼロであること。
 
     デモ会場のネットワークに依存させないため、および §0 の「Webフォントを追加しない」。
+    **`<a href>` のリンク先は読み込みではない**ので対象外 (オフラインでも画面は動く)。
     """
     for name, text in ALL.items():
         assert "//fonts.googleapis" not in text, name
         assert "@import" not in text, name          # 外部CSS読み込み
         assert "@font-face" not in text, name       # Webフォント
-        # http(s) の外部参照 (コメント中の説明も含めて禁止して単純化する)
-        assert not re.search(r"https?://(?!127\.0\.0\.1|localhost)", text), name
+        # 読み込み位置の外部参照を禁止: src= / link href= / url() / fetch()
+        for pat in (r"src\s*=\s*[\"']https?://", r"<link[^>]+href\s*=\s*[\"']https?://",
+                    r"url\(\s*[\"']?https?://", r"fetch\(\s*[\"'`]https?://"):
+            got = re.search(pat, text)
+            assert not got, f"{name} に外部読み込み: {got.group(0)}"
+
+
+def test_only_the_official_jra_site_is_linked():
+    """外部リンクは JRA 公式の QR 作成サイトだけ、かつ安全な属性を付けること。"""
+    hosts = set(re.findall(r"https?://([^/\"'`\s)]+)", CODE["app.js"] + CODE["index.html"]))
+    hosts -= {"127.0.0.1", "localhost"}
+    assert hosts <= set(ALLOWED_LINK_HOSTS), f"許可外の外部ホスト: {hosts}"
+    if hosts:
+        # 新しいタブで開き、参照元を渡さない
+        assert 'target="_blank"' in CODE["app.js"]
+        assert 'rel="noopener noreferrer"' in CODE["app.js"]
 
 
 def test_no_framework_or_build_tooling():
@@ -72,25 +102,31 @@ def test_no_framework_or_build_tooling():
             assert banned not in low, f"{name} に {banned!r}"
 
 
+# D-1: 下限を .72rem (11.5px) から .78rem に引き上げた。判断材料の大半が
+# 最小サイズで出ており、競馬ユーザーの年齢層を考えると小さすぎた。
+FONT_FLOOR = 0.78
+
+
 def test_no_font_size_below_the_floor():
-    """§0 DON'T: フォントサイズ .72rem 未満を新設しない。
+    """§0 DON'T: フォントサイズを下限未満で新設しない。
 
     v0.2 モックアップには .62〜.70rem が残っていたので、機械的に閉じる。
     """
     small = []
     for m in re.finditer(r"font-size:\s*([0-9.]+)rem", CSS):
         v = float(m.group(1))
-        if v < 0.72:
+        if v < FONT_FLOOR:
             small.append(m.group(0))
-    assert small == [], f"下限 .72rem 未満: {small}"
-    assert "--fs-min:.72rem" in CSS.replace(" ", "")
+    assert small == [], f"下限 {FONT_FLOOR}rem 未満: {small}"
+    assert f"--fs-min:{FONT_FLOOR}rem".replace("0.", ".") in CSS.replace(" ", "")
 
 
 def test_no_px_font_size_below_the_floor():
-    """px 指定で下限を回り込まないこと (.72rem = 11.52px 相当)。"""
+    """px 指定で下限を回り込まないこと (.78rem = 12.48px 相当)。"""
+    floor_px = FONT_FLOOR * 16
     small = [m.group(0) for m in re.finditer(r"font-size:\s*(\d+)px", CSS)
-             if int(m.group(1)) < 12]
-    assert small == [], f"12px 未満: {small}"
+             if int(m.group(1)) < floor_px]
+    assert small == [], f"{floor_px}px 未満: {small}"
 
 
 def test_tap_targets_are_at_least_44px():
@@ -128,25 +164,72 @@ def test_localstorage_is_not_the_source_of_truth():
     保持していいのは「サーバ上の設定を指す id」だけで、設定本体は毎回 API から取る。
     """
     assert "localStorage" not in CODE["app.js"]
-    # sessionStorage は id の保存/読み出しのみ
+    # sessionStorage に置いていいのは **id と、レース→AIの対応** だけ。
+    # 設定本体はサーバから取り直す。
+    allowed = {"CFG_ID_KEY", "RACE_CFG_KEY"}
     for m in re.finditer(r"sessionStorage\.(getItem|setItem|removeItem)\(([^)]*)\)", JS):
-        assert "CFG_ID_KEY" in m.group(2), f"id 以外を保存している: {m.group(0)}"
+        key = m.group(2).split(",")[0].strip()
+        assert key in allowed, f"許可外のキーを保存している: {m.group(0)}"
+    # 設定の中身を保存していないこと
+    assert not re.search(r"sessionStorage\.setItem\([^)]*step1", JS)
     # 復元は必ず API を叩く
     assert "/api/configs/" in JS
 
 
-def test_no_roi_or_recovery_rate_in_ui():
-    """§10 全体DON'T: 回収率・ROI をUIのどこにも出さない。
+def test_roi_is_never_shown_as_a_bare_point_estimate():
+    """回収率の表示は **不確かさを必ず伴う** こと (2026-07-27 の判断で表示に変更)。
 
-    検査はコメントを除いた実コード (規則を説明するコメントは正当)。
+    全面禁止をやめた代わりに、より強い構造要件をここで固定する。
+    1日36レースでは回収率は「◎に30倍が来たか」でほぼ決まるので、点推定を
+    単独で見せると運の差が実力の差に見える。
+
+    実測の根拠: 182,594候補で再現するエッジは0件、回収率で浮上した3件は
+    ◎勝率 2.6〜8.0% (1番人気は33〜35%) の大穴くじだった。
+    """
+    js = CODE["app.js"]
+    # 数値を出す前に enough を確認している (レース数のゲート)
+    assert "s.enough" in js, "最小レース数のゲートを通していない"
+    assert "s.min_races" in js, "不足時にレース数を出していない"
+    # 信頼区間を併記している
+    assert "s.ci" in js, "信頼区間を出していない"
+    # 首位との差が誤差の範囲なら明示する
+    assert "roi_tied_with_leader" in js and "誤差の範囲" in js
+    # 最大配当1本が支配している場合を開示する
+    assert "top_share" in js
+    # 控除率の上限を注記としてサーバから受け取り表示する
+    assert "roi_note" in js
+    # 数値はサーバ集計のみ (UI で回収率を計算しない)
+    for banned in ("/ 100", "reduce((s", "payout"):
+        assert banned not in js.split("function roiRow")[1].split("function betSlipBlock")[0], banned
+
+
+def test_roi_module_attaches_uncertainty_by_construction():
+    """roi.py が点推定だけを返せない形になっていること。"""
+    import numpy as np
+    from builder import roi
+    # 不足時は数値を出さない判定
+    few = roi.summarize(np.array([0.0] * 10 + [5.0]))
+    assert few["enough"] is False and few["ci"] is None
+    # 足りていれば信頼区間が付く
+    enough = roi.summarize(np.array([0.0] * 59 + [30.0]))
+    assert enough["enough"] is True and enough["ci"] is not None
+    # 最大配当1本の占有率が出る (1本で説明できるかを示す)
+    assert enough["top_share"] == 1.0
+    # 控除率の上限が必ず入る
+    assert enough["long_run_ceiling"] == 0.8
+    assert roi.MIN_RACES_FOR_ROI >= 50
+
+
+def test_no_profit_promising_vocabulary():
+    """回収率を出すようになっても「儲かる」方向の語彙は入れない。
+
+    設計書 v0.3 §1 DON'T は維持する (表示の解禁は数値の話であって、
+    煽り文言の解禁ではない)。
     """
     for name, text in CODE.items():
-        assert "ROI" not in text, name
-        assert "回収率" not in text, name
-        assert "払戻" not in text and "払い戻し" not in text, name
-    # API の値も参照しない (そもそも predict/backtest は ROI キーを持たない)
-    assert "roi" not in CODE["app.js"]
-    assert "payout" not in CODE["app.js"] and "tan" not in CODE["app.js"].split("const")[0]
+        for banned in ("儲か", "稼げ", "必勝", "勝てます", "確実", "おすすめの馬券",
+                       "推奨買い目"):
+            assert banned not in text, f"{name} に {banned!r}"
 
 
 def test_no_contest_or_hype_vocabulary():
@@ -162,7 +245,7 @@ def test_no_contest_or_hype_vocabulary():
     # 「見どころ」のような煽り語彙も置換済みであること
     assert "見どころ" not in CODE["index.html"]
     # 置換後の語彙が入っていること
-    assert "本日の成績比較" in CODE["index.html"]
+    assert "今日の成績" in CODE["index.html"]
     assert "基準" in CODE["index.html"]
 
 
@@ -173,7 +256,16 @@ def test_popularity_is_absent_from_the_ui():
     人気を前提にした文言や独自ロジックが残っていないことを固定する。
     """
     js = CODE["app.js"]
-    assert "'popularity'" not in js and '"popularity"' not in js
+    # 選択肢としての popularity をUIが持たないこと。
+    # レスポンスのフィールド参照 (m.popularity で「N番人気」を表示) と
+    # 用語辞書キーとしての参照 (term('popularity', ...)) は要件なので許可する。
+    # **文字列リテラル** としての出現がすべて term() 呼び出しであることを確認する。
+    for m in re.finditer(r"""['"]popularity['"]""", js):
+        before = js[max(0, m.start() - 6):m.start()]
+        assert "term(" in before, f"term() 以外の文字列参照: ...{before}{m.group(0)}"
+    assert 'data-key="popularity"' not in js
+    # 設定に人気を差し込む経路が無いこと (選択肢はサーバが返す)
+    assert "step1: ['popularity'" not in js and 'step1: ["popularity"' not in js
     # 1番人気との比較表示は残る (ベースラインは市場人気専用なので正当)
     assert "1番人気" in js or "1番人気" in CODE["index.html"]
 
@@ -203,7 +295,8 @@ def test_marks_are_suppressed_by_default_on_unknown_warnings():
     assert m is not None, "HARMLESS の列挙が無い"
     harmless = re.findall(r"'([a-z_]+)'", m.group(1))
     # 印を出して良いのは「開示のみ」の警告だけ
-    assert set(harmless) == {"low_sample_columns", "excluded_columns_dropped"}, harmless
+    assert set(harmless) == {"low_sample_columns", "excluded_columns_dropped",
+                             "columns_skipped_in_race", "limited_history"}, harmless
     # 判定は「HARMLESS 以外があれば止める」向きであること
     assert "!HARMLESS.includes" in js
     # 個別コードの直接列挙で塞いでいないこと (漏れの原因)
@@ -228,6 +321,135 @@ def test_server_side_warning_codes_are_all_classified():
                      "preset_column_mismatch", "preset_fingerprint_missing"):
         assert blocking in codes, f"{blocking} がサーバ側に無い"
         assert blocking not in harmless, f"{blocking} を許可してはいけない"
+
+
+def test_no_negative_percentage_in_the_ui():
+    """受け入れ条件: 負のパーセントが画面に出ない。
+
+    押し下げ側は「評価を下げた内訳」見出しの下に正の % で出す。
+    マイナス記号つきの % を組み立てるコードが無いことを固定する。
+    """
+    js = CODE["app.js"]
+    assert "−${" not in js and "-${share" not in js
+    # 割合は絶対値から作る (符号は見出しで示す)
+    assert re.search(r"const a = Math\.abs\(", js), "寄与の絶対値を取っていない"
+    assert re.search(r"const share = [^\n;]*\ba / total", js), "割合が絶対値由来でない"
+    # 表示は %% のみで、符号を前置していない
+    assert "${share}%" in js and "+${share}" not in js
+    # 見出しで向きを示している
+    assert "評価を上げた内訳" in js and "評価を下げた内訳" in js
+
+
+def test_beginner_affordances_are_present():
+    """初心者対応: 印の凡例・用語シート・決め手の一文・事前マーク。"""
+    js, html = CODE["app.js"], CODE["index.html"]
+    assert "openMarkSheet" in js                     # 印の凡例シート
+    assert "openTermSheet" in js and "data-term" in js
+    assert "m.decisive" in js                        # 決め手の一文 (サーバ生成)
+    # A-2: 以前は button 内の <button class="chip-thin">。内容モデル違反だったので
+    # 操作不可の印 (thin-mark) に変え、説明は兄弟の ⓘ に寄せた。
+    assert "thin-mark" in js                         # 低サンプルの事前マーク
+    assert "starter_preset" in js                    # 「まよったら」
+    assert 'id="sheet"' in html                      # ボトムシート本体
+    assert 'id="markLegend"' in html
+
+
+def test_explanations_are_not_hardcoded_in_the_ui():
+    """DON'T: 説明文を UI にハードコードしない (labels.py 経由)。
+
+    用語の説明本文は glossary から来る。UI 側に desc 文字列を持たない。
+    """
+    js = CODE["app.js"]
+    assert "state.glossary[" in js and "g.desc" in js
+    # 用語の説明らしい長文を UI が持っていないこと
+    for phrase in ("払戻倍率", "3着以内に入ること", "コースの湿り具合", "背負う重さ"):
+        assert phrase not in js, f"説明文が UI にハードコードされている: {phrase}"
+
+
+def test_ranking_rule_is_always_visible():
+    """受け入れ条件: board が空でも順位規則が読める。
+
+    以前は空のとき早期 return して #boardRule を一度も設定しなかった。
+    規則カードを静的に置き、空状態でも DOM に存在させる。
+    """
+    html = CODE["index.html"]
+    assert 'id="boardRule"' in html
+    assert "rule-card" in html
+    # 初心者向けの一文も静的に置く
+    assert "本命(◎)にした馬が1着" in html
+    # 空状態の出し分けが実装されている
+    js = CODE["app.js"]
+    for kind in ("waiting", "nomyai", "notready"):
+        assert kind in js, kind
+
+
+def test_start_time_stays_visible():
+    """受け入れ条件: スクロール位置によらず発走時刻が視界にある。"""
+    js, html = CODE["app.js"], CODE["index.html"]
+    assert 'id="miniHead"' in html
+    assert "setMiniHead" in js and "発走" in js
+    assert "window.addEventListener('scroll', updateMiniHead" in js
+    # スクロールイベントが来なくても描画時に評価する (戻る操作で既にスクロール済みの場合)
+    assert re.search(r"updateMiniHead\(\);\s*//", js), "描画時に呼んでいない"
+
+
+def test_ui_does_not_derive_the_frame_number():
+    """F2: 枠色を馬番から計算しないこと。
+
+    JRA の枠割は頭数依存なので UI 導出は原理的に不可能。実測で ceil(馬番/2) は
+    7頭立ての 6/7 件を外した。サーバの waku をそのまま出す。
+    """
+    js = CODE["app.js"]
+    assert "wakuColor" not in js, "馬番からの導出関数が残っている"
+    assert "Math.ceil" not in js, "枠の計算式が残っている"
+    assert "m.waku" in js, "API の waku を使っていない"
+    assert "w-none" in js, "枠番が無いときの無色表示が無い"
+
+
+def test_race_id_is_carried_in_the_url():
+    """F3: リロード・共有・戻るで同じレースに戻れること。"""
+    js = CODE["app.js"]
+    assert "#predict/${" in js or "`#predict/" in js, "URL にレースを載せていない"
+    assert "parseHash" in js
+    assert "state.selectedRaceId = h.raceId" in js or "if (h.raceId)" in js
+    assert "state.listDate = state.selectedRaceDate" in js
+    assert "initialRaceLoad" in js, "履歴データを待たずに結果画面を描画している"
+
+
+def test_race_list_has_jump_affordances():
+    """F4: 直近レースを優先し、残りは競馬場→レースの2タップで開けること。"""
+    js, css = CODE["app.js"], CSS
+    assert "proximity" in js and "upcoming.slice(0, 3)" in js
+    assert "raceButtonPicker" in js and "data-result-track" in js
+    assert "result-race-button" in js and "bindRaceButtonPicker" in js
+    assert ".result-race-grid[hidden]" in css
+    assert "track-patch" in js and ".track-patch" in css
+    assert "本日のレース" in js and "前回開催" in js
+    assert "raceDateSelect" in js and "/api/race-dates" in js
+    assert "date: state.selectedRaceDate" in js
+    block = _rule_block(css, ".result-race-button")
+    assert block and "min-height" in block
+
+
+def test_context_trend_prioritizes_yesterday_without_hiding_long_term_sample():
+    js = CODE["app.js"]
+    assert "前日の傾向" in js
+    assert "中長期の傾向" in js
+    assert "前日＋中長期傾向でこのレースを予想" in js
+    assert "recent.items" in js
+
+
+def test_provisional_chip_means_weight_not_announced():
+    """F5: 「暫定印」は馬体重未発表のときだけ。項目不足には使わない。"""
+    js = CODE["app.js"]
+    # 「暫定印」の出現はすべて weight_announced の文脈であること
+    for m in re.finditer(r"暫定印", js):
+        ctx = js[max(0, m.start() - 90):m.start() + 30]
+        assert "weight_announced" in ctx, f"馬体重以外の文脈で使っている: {ctx!r}"
+    # カバレッジ不足には別の言葉を使う
+    assert "一部の項目が使えません" in js
+    # 終了レースは「終了」チップのみ
+    assert "'<span class=\"chip\">終了</span>'" in js
 
 
 def test_no_personal_names_or_titles():
@@ -268,11 +490,12 @@ def test_marks_do_not_show_raw_scores_in_the_list():
 
     数値は「なぜ◎か」を開いたときだけ出す。
     """
-    # 一覧行 (.row 内) にスコア文字列を差し込んでいない
-    row = re.search(r"<button class=\"row\">(.*?)</button>", JS, re.S)
-    assert row is not None
-    assert "fmtScore" not in row.group(1)
-    assert "scorebar" in row.group(1)
+    # 一覧行 (.row 内) にスコア文字列を差し込んでいない。
+    # 行は button ではなく div[role=button] (button の入れ子を避けるため)。
+    row = re.search(r'<div class="row" role="button".*?whyBlock', JS, re.S)
+    assert row is not None, "行のテンプレートが見つからない"
+    assert "fmtScore" not in row.group(0)
+    assert "scorebar" in row.group(0)
 
 
 def test_upset_badge_is_gold_not_alert():
@@ -345,5 +568,348 @@ def test_static_serving_returns_index_and_assets():
 def test_all_api_endpoints_are_wired_in_the_ui():
     """UI が §8 の5経路すべてを使っていること (未配線の画面を残さない)。"""
     for path in ("/api/races/today", "/api/features", "/api/leaderboard",
-                 "/api/predict", "/api/backtest", "/api/configs"):
+                 "/api/predict", "/api/backtest", "/api/configs",
+                 "/api/smappy/qr", "/api/result-item-review"):
         assert path in JS, path
+
+# ---------------------------------------------------------------------------
+# D-2: 文字色のコントラストを機械的に固定する
+# ---------------------------------------------------------------------------
+# 実測で落ちていたのは --ink-faint (#8B9486, 白地 3.14:1) と、文字に使っていた
+# --gold (#A8811C, gold-soft 上 3.09:1)。どちらも最小サイズ本文で使われていた。
+# 目視では気づけないので、パレットの比を計算して閉じる。
+AA_NORMAL = 4.5      # WCAG 2.1 AA: 通常サイズ本文
+AA_LARGE = 3.0       # 大きい文字 (>=18.66px bold / >=24px) と UI 部品の境界
+
+
+def _srgb(v: float) -> float:
+    v /= 255.0
+    return v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
+
+
+def _lum(hex_colour: str) -> float:
+    h = hex_colour.lstrip("#")
+    r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
+    return 0.2126 * _srgb(r) + 0.7152 * _srgb(g) + 0.0722 * _srgb(b)
+
+
+def contrast(fg: str, bg: str) -> float:
+    a, b = _lum(fg), _lum(bg)
+    hi, lo = max(a, b), min(a, b)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def _palette() -> dict:
+    return dict(re.findall(r"--([a-z0-9-]+):\s*(#[0-9A-Fa-f]{6})", CSS))
+
+
+def test_body_text_colours_meet_wcag_aa():
+    """本文に使う色が card / paper の両方で AA を満たすこと。"""
+    pal = _palette()
+    for bg_key in ("card", "paper"):
+        bg = pal[bg_key]
+        for fg_key in ("ink", "ink-soft", "ink-faint", "gold-text", "turf-700",
+                       "minus", "alert", "turf-500"):
+            got = contrast(pal[fg_key], bg)
+            assert got >= AA_NORMAL, f"{fg_key} on {bg_key} = {got:.2f}"
+
+
+def test_the_faint_tier_stays_a_tier():
+    """--ink-faint は AA を満たしつつ --ink-soft より薄いこと (階層を潰さない)。"""
+    pal = _palette()
+    faint = contrast(pal["ink-faint"], pal["card"])
+    soft = contrast(pal["ink-soft"], pal["card"])
+    assert AA_NORMAL <= faint < soft, (faint, soft)
+
+
+def test_soft_backgrounds_carry_readable_text():
+    """淡色の下地 (注意・警告・turf) に載る文字が AA を満たすこと。
+
+    B-2 で自信度を turf 系へ移し、gold を注意専用にした。両方を検査する。
+    """
+    pal = _palette()
+    pairs = [("gold-text", "gold-soft"), ("turf-700", "turf-100")]
+    for fg, bg in pairs:
+        got = contrast(pal[fg], pal[bg])
+        assert got >= AA_NORMAL, f"{fg} on {bg} = {got:.2f}"
+
+
+def test_no_small_text_uses_a_failing_colour():
+    """最小サイズの文字に AA 未満の色を新設しないこと。
+
+    ルール単位で「font-size:var(--fs-min)」と色指定が同居する宣言を集め、
+    その色が card 上で AA を満たすかを見る。
+    """
+    pal = _palette()
+    bad = []
+    for rule in re.findall(r"\{([^}]*)\}", CSS):
+        if "var(--fs-min)" not in rule:
+            continue
+        m = re.search(r"(?<!-)color:\s*var\(--([a-z0-9-]+)\)", rule)
+        if not m:
+            continue
+        key = m.group(1)
+        if key not in pal:
+            continue          # 固定色 (#... 直書き) は下の例外表で扱う
+        if contrast(pal[key], pal["card"]) < AA_NORMAL:
+            bad.append((key, rule.strip()[:60]))
+    assert bad == [], bad
+
+
+# ---------------------------------------------------------------------------
+# E-1: オッズの再取得トリガー / C-5: 初回導線
+# ---------------------------------------------------------------------------
+def test_odds_are_refetched_when_the_snapshot_time_changes():
+    """再取得のトリガーが馬体重発表だけになっていないこと。
+
+    以前は `weight_announced` の立ち上がりだけで、「09:50時点」のオッズが
+    **最も動く発走直前まで** 残っていた。取得時刻の変化でも取り直す。
+    """
+    js = CODE["app.js"]
+    assert "odds_as_of" in js
+    assert "r.odds_as_of !== shownAsOf" in js, "取得時刻の比較が無い"
+    assert 'id="refreshBtn"' in js, "手動更新ボタンが無い"
+
+
+def test_live_revision_refreshes_prediction_and_date_rolls_over():
+    js = CODE["app.js"]
+    assert "r.live_revision !== before.live_revision" in js
+    assert "weightPublished || oddsChanged || revisionChanged" in js
+    assert "日付が変わりました。本日のレース一覧へ切り替えました。" in js
+    assert "速報確認" in js
+
+
+def test_first_run_routes_to_creation():
+    """マイAI 0件を検出したら、レースを選ばせる前に作成へ誘導すること。"""
+    js, html = CODE["app.js"], CODE["index.html"]
+    assert 'id="firstRun"' in html
+    assert "maybeInviteFirstRun" in js
+    # 一覧の描画より前に判定を走らせる (レース選択後に空を告げない)
+    assert js.index("maybeInviteFirstRun()") < js.index("function maybeInviteFirstRun")
+
+
+def test_my_ai_builder_is_closed_when_there_are_no_races_today():
+    """非開催日に設定だけ作れてしまう導線を残さないこと。"""
+    js, css = CODE["app.js"], CODE["app.css"]
+    assert "todayRaceCount" in js
+    assert "key === 'build' && state.todayRaceCount === 0" in js
+    assert "本日の開催レースがないため、マイAIの作成・編集は開催日に利用できます。" in js
+    assert "syncBuildAvailability()" in js
+    assert "nav.tabs button:disabled" in css
+
+
+def test_tab_bar_uses_labels_only():
+    """漢字1文字のアイコンを置かないこと (「比」は初見で意味が取れない)。"""
+    html = CODE["index.html"]
+    nav = html[html.index("<nav class=\"tabs\">"):html.index("</nav>")]
+    assert 'class="ic"' not in nav, nav
+    for ch in ("日", "作", "比"):
+        assert f">{ch}<" not in nav, ch
+
+
+# ---------------------------------------------------------------------------
+# C-3 (再発): 買い目の表記を UI が組み立て直さない
+# ---------------------------------------------------------------------------
+def test_the_ui_never_builds_bet_text_itself():
+    """UI は `combos` を読まず、サーバの `texts` だけを表示・コピーすること。
+
+    表示だけ直してコピー経路を直し忘れ、コピーすると馬単が馬連と同じ
+    「11-10」になっていた。**公式サイトへ手入力する経路そのもの**なので、
+    方向が落ちると違う馬券を買うことになる。
+    `combos` を UI から一切参照させないことで、両方の経路を1つの規則で閉じる。
+    """
+    js = CODE["app.js"]
+    assert ".combos" not in js, "UI が combos を読んでいる (表記を組み立て直す危険)"
+    assert js.count("t.texts") >= 2, "表示とコピーの両方が texts を使っていない"
+
+
+def test_bet_text_keeps_the_direction_for_ordered_types():
+    """順序固定の券種は矢印を保つこと (サーバ側の正本を直接検査)。"""
+    from builder import betslip
+    marks = [{"mark": m, "horse_num": n}
+             for m, n in zip(["◎", "○", "▲"], ["05", "11", "02"])]
+    slip = betslip.build(marks)
+    by = {t["label"]: t for t in slip}
+    # 順序なしの券種は **組の中も並びも馬番順**。公式サイトの入力は馬番順のマス目で、
+    # 「5-2」のように軸を先に出すと転記でずれる
+    assert by["馬連"]["texts"] == ["2-5", "5-11"], by["馬連"]["texts"]
+    # 馬単は並べ替えない — 並び自体が着順の指定
+    assert by["馬単"]["texts"] == ["5→2", "5→11"], by["馬単"]["texts"]
+    # 手入力用の平文でも方向が残る
+    text = betslip.as_text(slip)
+    assert "馬単 5→2" in text, text
+    assert "馬単 5-2" not in text, text
+
+
+def test_shared_access_expiry_and_mobile_admin_flow_are_visible():
+    js = CODE["app.js"]
+    assert "scheduleAuthExpiry(status.server_now)" in js
+    assert "利用期限が終了しました" in js
+    assert "管理者ログイン" in js
+    assert "MAIBuilderを使う" in js
+    assert "この画面をスマホで開いたまま" in js
+    assert "招待URLを共有" in js
+    assert "effective_status" in js
+    assert "再招待が必要です" in js
+
+
+def test_board_shows_only_used_ai_and_manages_saved_ai_history():
+    js = CODE["app.js"]
+    assert "config_id: state.config && state.config.id" in js
+    assert "if (!d.n_races_finished)" in js
+    assert "レース結果が確定すると、使用したAI・項目の分析を表示します" in js
+    assert "/api/user-leaderboard?range=" in js
+    assert "data-performance-range" in CODE["index.html"]
+    assert "前回開催" in CODE["index.html"]
+    assert "直近7日" in CODE["index.html"]
+    assert "利用者別" in js
+    assert "購入確認済み" in js
+    assert "未確認" in js
+    assert "あなたの購入記録（1記録ごとの内訳）" in js
+    assert "発走前QR登録のレース別内訳" in js
+    assert "最新・要確認" in js and "購入未確認" in js
+    assert "${visible}/${rows.length}件表示" in js
+    assert "不的中" in js and "settlement-breakdown" in js
+    assert "data-filter=\"focus\"" in js
+    assert "track-patch" in js and "start_time" in js
+    assert "そのほかのAI" in js
+    assert "if (h.key === 'board') go('board', false)" in js
+    assert "h.key !== 'races' && h.key !== 'board'" in js
+    assert "if (d.range === 'today' && d.date) $('#hdrDate').textContent = formatDate(d.date)" in js
+    assert "clearStale('#boardWarn');" in js
+    assert "if (purchaseOk && usersOk) clearStale('#boardWarn');" in js
+    assert 'id="userLeaderboard"' in CODE["index.html"]
+    assert "使用したAI・項目の分析" in CODE["index.html"]
+    assert "/api/configs?include_archived=1" in js
+    assert "/api/configs/archive" in js
+    assert "名前変更" in js and "保管済み" in js
+    # 0/50 の同じ文言を各AIカードに繰り返さない。
+    roi_start = js.index("function roiRow(e)")
+    roi_end = js.index("function initBet", roi_start)
+    assert "判定できません" not in js[roi_start:roi_end]
+
+
+def test_finished_race_result_does_not_require_my_ai():
+    """終了レースはAI作成画面へ送らず、結果専用リクエストで開く。"""
+    js = CODE["app.js"]
+    assert "async function loadRaceResult()" in js
+    assert "result_only: true" in js
+    assert "if (noAi && !noRace)" in js
+    assert "確定結果・払戻" in js
+    assert "終了レースの結果を見る" in js
+    assert "race_not_finished" in Path("builder/api.py").read_text(encoding="utf-8")
+
+
+def test_finished_race_allows_manual_purchase_record_and_history_delete():
+    """締切後はJRA送信せず、購入記録の追加・本人による削除ができる。"""
+    js = CODE["app.js"]
+    api_source = Path("builder/api.py").read_text(encoding="utf-8")
+    assert "購入した買い目を後から記録" in js
+    assert "'/api/purchases/record'" in js
+    assert "'/api/purchases/delete'" in js
+    assert "購入済みの買い目として保存" in js
+    assert "data-purchase-delete" in js
+    assert 'path == "/api/purchases/record"' in api_source
+    assert 'path == "/api/purchases/delete"' in api_source
+
+
+def test_unknown_going_is_presented_as_waiting_for_announcement():
+    js = CODE["app.js"]
+    assert "r.condition_label === '不明'" in js
+    assert "馬場発表待ち" in js
+
+
+def test_context_trend_button_stays_inside_mobile_card():
+    css = Path("web/app.css").read_text(encoding="utf-8")
+    # .cta is declared later with width:100%, so the scoped selector must be more
+    # specific or the horizontal margins make this button overflow the card.
+    assert ".trend-card .trend-apply{width:calc(100% - 24px)" in css
+
+
+def test_prediction_ai_switcher_does_not_expand_every_saved_ai_by_default():
+    js = CODE["app.js"]
+    css = Path("web/app.css").read_text(encoding="utf-8")
+    assert 'id="aiSwitchSelect"' in js
+    assert 'id="aiSwitchApply"' in js
+    assert "現在使用中" in js and "ほかのマイAIに切り替える" in js
+    assert '<details class="ai-manage-details">' in js
+    assert "名前変更・保管" in js
+    assert ".ai-current-card" in css and ".ai-switcher" in css
+
+
+def test_started_races_are_not_shown_as_predictable_and_live_screens_refresh():
+    js = CODE["app.js"]
+    assert "if (r.started) return '<span class=\"chip wait\">結果取込待ち</span>'" in js
+    assert "!r.finished && !r.started" in js
+    assert "発走済みです。確定結果の取込後に開けるようになります。" in js
+    assert "startScreenPolling('board')" in js
+    assert "startScreenPolling('races')" in js
+    assert "document.addEventListener('visibilitychange'" in js
+    assert "const latest = await getJSON('/api/races/today')" in js
+    assert "if (analysis && analysis.open) await loadLeaderboardContent()" in js
+    assert "if (aiAnalysis.open) loadLeaderboardContent()" in js
+
+
+def test_all_race_item_review_is_mobile_compact_and_shows_conditions():
+    """36レースを個別遷移せず、馬場・距離と代表項目を一覧できる。"""
+    js = CODE["app.js"]
+    css = Path("web/app.css").read_text(encoding="utf-8")
+    assert "/api/result-item-review?date=" in js
+    assert "buildResultItemReviewFromPredictions" in js
+    assert "Math.min(4" in js and "result_only: true" in js
+    assert "の項目別振り返り" in js
+    assert "r.surface_label" in js and "r.distance" in js
+    assert "マイAIで選ぶ項目" in js and "この組み合わせで評価" in js
+    assert "複数項目を組み合わせた振り返り用マイAI" in js
+    assert '<details class="review-race">' in js
+    assert "data-review-track" in js
+    assert ".review-winner" in css and "text-overflow:ellipsis" in css
+    # 旧サービスへのフォールバック中は、新APIの404で大きな再起動通知を重ねない。
+    assert "!path.startsWith('/api/result-item-review')" in js
+    assert "項目別振り返りは現在利用できます" in js
+    assert "allFinished ? '本日の結果'" in js
+    assert "全${state.races.length}レース終了" in js
+
+
+def test_live_scratches_are_visible_and_removed_from_betting():
+    js = CODE["app.js"]
+    assert "取消・除外を反映しました" in js
+    assert "AI評価・買い目・スマッピーQRの対象から外れています" in js
+    assert "r.n_scratched" in js and "取消・除外 ${Number(r.n_scratched)}頭" in js
+    assert "開催変更情報が90秒以内に確認できるまで" in js
+    assert "p.live_source_checked_at || p.live_updated_at" in js
+
+
+# ---------------------------------------------------------------------------
+# CSS の重複定義 (同じセレクタを2回書くと、後の方が黙って勝つ)
+# ---------------------------------------------------------------------------
+def test_no_selector_is_defined_twice():
+    """同じセレクタを2箇所で定義しないこと。
+
+    一括編集で範囲を取り違えて 150 行ほど複製し、`.bs-k{width:5.2em}` が
+    後方から `.bs-k{font-weight:700}` を上書きしていた。**画面は崩れるが
+    エラーは出ない**ので、機械的に閉じる。
+    (`:hover` などの疑似クラスや複合セレクタは対象外 — 意図的に複数書く)
+    """
+    sels = re.findall(r"^(\.[a-z0-9-]+)\{", CSS, re.M)
+    dups = sorted({x for x in sels if sels.count(x) > 1})
+    assert dups == [], f"重複しているセレクタ: {dups}"
+
+
+def test_no_orphan_class_in_the_css():
+    """使われていないクラスを残さないこと (死んだ規則が判断を狂わせる)。
+
+    JS のテンプレートと HTML の両方を見て、どこからも参照されないクラス名を探す。
+    レイアウト用の一般クラスは除外する。
+    """
+    used = CODE["app.js"] + CODE["index.html"]
+    # 汎用のレイアウトクラスと、**JS が動的に組み立てる名前** は文字列検索で
+    # 見つからないので除外する (枠色は `w${waku}` で作る)。
+    skip = {"screen", "active", "hidden", "on", "num", "card", "note", "cta"}
+    dynamic = re.compile(r"^w[1-8]$")
+    orphans = []
+    for sel in sorted(set(re.findall(r"^\.([a-z][a-z0-9-]+)", CSS, re.M))):
+        if sel in skip or sel in used or dynamic.match(sel):
+            continue
+        orphans.append(sel)
+    assert orphans == [], f"どこからも使われていないクラス: {orphans}"

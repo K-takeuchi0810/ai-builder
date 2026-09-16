@@ -8,24 +8,38 @@
 </head>
 <body>
 
+<div class="auth-gate" id="authGate" hidden>
+  <section class="auth-card" id="authPanel" aria-live="polite"></section>
+</div>
+
 <header class="app">
   <div class="brand">
     <span class="logo">M<em>·AI·</em>Builder</span>
     <span class="date num" id="hdrDate">—</span>
+    <button class="user-pill" id="userPill" hidden></button>
   </div>
   <div class="screen-title">
     <h1 id="screenTitle">きょうのレース</h1>
     <span class="sub" id="screenSub">予想できるレースから選べます</span>
   </div>
+  <!-- 発走時刻を常に視界に置くための縮小ヘッダ (予想画面をスクロールしたとき) -->
+  <div class="mini-head" id="miniHead" hidden></div>
 </header>
+
+<!-- ?demo=1 のときだけ表示。通常URLでは JS が DOM から除去する -->
+<div class="demo-banner" id="demoBanner" hidden>デモ演出中(実際の印ではありません)</div>
+<!-- --preview 起動時のみ。過去の開催日を発走前として表示していることを常時知らせる -->
+<div class="preview-banner" id="previewBanner" hidden></div>
 
 <main>
 
   <!-- ============ 画面1: きょうのレース ============ -->
   <section class="screen active" id="scr-races">
     <div id="racesWarn"></div>
-    <div class="card" id="raceList"></div>
-    <p class="note" style="margin-top:10px">「馬体重の発表待ち」のレースは、発表(発走の約50分前)後に自動で予想できるようになります。</p>
+    <!-- C-5: マイAI未作成なら、レースを選ばせる前にここで作成へ誘導する -->
+    <div id="firstRun"></div>
+    <div id="raceList"></div>
+    <p class="note" id="raceLiveNote" style="margin-top:10px">「馬体重の発表待ち」のレースは、発表(発走の約50分前)後に自動で予想できるようになります。</p>
   </section>
 
   <!-- ============ 画面2: マイAIをつくる ============ -->
@@ -35,17 +49,35 @@
       選んだ項目がそのまま予想の根拠になります。<b>所要2〜3分。</b>
     </div>
 
-    <div class="section-label">STEP 1 — 重視する項目</div>
-    <div class="param-chips" id="step1chips"></div>
+    <div id="starterBox"></div>
 
-    <div class="section-label">STEP 2 — 過去レースの成績(条件 × さかのぼる範囲)</div>
-    <div class="card step2" id="step2list"></div>
+    <div class="section-label">重視する項目</div>
+    <div id="step1groups"></div>
+
+    <!-- C-1: 以前は「STEP 1」「STEP 2」と並列に置いていたが、STEP1「直近3走の
+         平均着順」と STEP2「平均着順」の役割が区別できなかった。STEP2 は条件と
+         期間を自分で組む上級者向けなので、初期は閉じた「詳細設定」に格下げする。 -->
+    <div class="adv">
+      <button class="adv-head" id="advHead" aria-expanded="false" aria-controls="advBody">
+        <span class="adv-t">詳細設定 — 過去成績の集計を自分で組む</span>
+        <span class="adv-n" id="advCount"></span>
+        <span class="adv-caret">&#9662;</span>
+      </button>
+      <div class="adv-body" id="advBody" hidden>
+        <p class="adv-desc">
+          上の項目はあらかじめ決まった集計です(例:「直近3走の平均着順」は直近3走に固定)。
+          ここでは<b>どの条件のレースを・どこまでさかのぼって</b>集計するかを自分で決められます。
+          決めなくても予想はできます。
+        </p>
+        <div class="card step2" id="step2list"></div>
+      </div>
+    </div>
 
     <div class="ai-name">
       <div class="section-label" style="margin-top:0">マイAIの名前</div>
       <input type="text" id="aiName" value="参加者AI 1" aria-label="マイAIの名前">
     </div>
-    <button class="cta" id="saveBtn" disabled>このマイAIで予想する</button>
+    <button class="cta" id="saveBtn" disabled>マイAIを保存して成績をみる</button>
     <p class="cta-reason" id="saveReason">項目を1つ以上選んでください</p>
 
     <div class="bt-result hidden" id="btResult"></div>
@@ -54,13 +86,11 @@
 
   <!-- ============ 画面3: 予想 ============ -->
   <section class="screen" id="scr-predict">
-    <!-- マイAI未作成 -->
     <div class="empty hidden" id="predEmpty">
       <div class="t">まだマイAIがありません</div>
       <div class="d">重視したい項目を選ぶと、あなた専用の予想AIができます。<br>所要2〜3分です。</div>
       <button class="cta" data-go="build">マイAIをつくる</button>
     </div>
-    <!-- レース未選択 -->
     <div class="empty hidden" id="predNoRace">
       <div class="t">レースが選ばれていません</div>
       <div class="d">きょうのレースから選べます。</div>
@@ -69,50 +99,77 @@
 
     <div id="predBody" class="hidden">
       <div class="race-head" id="raceHead"></div>
-      <div id="predWarn" class="warns" style="margin-top:12px"></div>
+      <div id="contextTrend"></div>
+      <div id="markLegend"></div>
       <div class="card marks" id="markList"></div>
+      <div id="predWarn" class="warns" style="margin-top:12px"></div>
       <div class="demo-strip hidden" id="demoStrip">
         <button class="demo-btn" id="demoBtn">▶ 馬体重発表をシミュレート(デモ演出)</button>
       </div>
-      <p class="note disclaimer">印は参加者が選んだ項目にもとづく分析です。過去の成績は将来の結果を保証しません。</p>
+      <!-- 買い目 (印の並べ替え)。QR は JRA 公式サイトでのみ作成できる -->
+      <div id="betSlip"></div>
+      <p class="note disclaimer" id="predictDisclaimer">印は選んだ項目にもとづく分析です。過去の成績は将来の結果を保証しません。</p>
     </div>
   </section>
 
-  <!-- ============ 画面4: 本日の成績比較 ============ -->
+  <!-- ============ 画面4: 本日の成績 ============ -->
   <section class="screen" id="scr-board">
     <div class="board-hero">
-      <div class="h">本日の成績比較</div>
-      <div class="s" id="boardSub">◎的中数で並べています</div>
+      <div class="h">今日の成績</div>
+      <div class="s" id="boardSub">購入確認済みの買い目を基準に集計します</div>
+    </div>
+    <div class="performance-range" role="group" aria-label="成績の集計期間">
+      <button type="button" class="on" aria-pressed="true" data-performance-range="today">今日</button>
+      <button type="button" data-performance-range="previous">前回開催</button>
+      <button type="button" data-performance-range="7d">直近7日</button>
+      <button type="button" data-performance-range="all">累計</button>
     </div>
     <div id="boardWarn"></div>
-    <div class="card board" id="boardList"></div>
-    <p class="note" style="margin-top:10px">
-      「人気を出し抜いた的中」= 1番人気ではない馬を◎にして的中したレース。
-      基準の「1番人気AI」との差として見てください。
-    </p>
-    <p class="note" id="boardRule" style="margin-top:6px"></p>
-    <p class="note" style="margin-top:6px">
-      市場人気は基準の「1番人気AI」専用です。マイAIは選んだ項目だけで印を決めます。
-    </p>
+    <div id="purchaseSummary"></div>
+    <div id="userLeaderboard"></div>
+    <div id="purchaseList"></div>
+    <details class="ai-analysis">
+      <summary>使用したAI・項目の分析</summary>
+      <p class="ai-analysis-note" id="aiBoardSub">AIの成績は、利用者別成績を補足する参考情報です。</p>
+      <div id="boardList"></div>
+      <!-- 回収率ランキング。当日36レースでは最小50に届かないので表示期間で集計する -->
+      <div id="roiRanking"></div>
+      <div class="card rule-card">
+        <div class="rule-title">AIの並び順</div>
+        <p class="rule-body" id="boardRule">—</p>
+        <p class="rule-note">
+          「◎的中」= 本命(◎)にした馬が1着になったこと。<br>
+          「人気を出し抜いた的中」= 1番人気ではない馬を◎にして的中したこと。
+          基準の「1番人気AI」との差として見てください。
+        </p>
+        <p class="rule-note">市場人気は基準の「1番人気AI」専用です。マイAIは選んだ項目だけで印を決めます。</p>
+        <p class="rule-note" id="boardRoiNote"></p>
+      </div>
+    </details>
   </section>
 
 </main>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<div class="legend" id="legend" role="dialog" aria-modal="true" aria-labelledby="legendTitle">
-  <div class="box">
-    <h3 id="legendTitle">自信度の見かた</h3>
-    <p>鉄板級 / 有力 / 混戦 — 1位と2位の差で決まります。差が大きいほど「鉄板級」、小さいほど「混戦」です。</p>
-    <button id="legendClose">閉じる</button>
+<!-- 用語・印の説明を出すボトムシート -->
+<div class="sheet-wrap" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+  <div class="sheet">
+    <div class="sheet-head">
+      <h3 id="sheetTitle">—</h3>
+      <button class="sheet-close" id="sheetClose" aria-label="閉じる">✕</button>
+    </div>
+    <div class="sheet-body" id="sheetBody"></div>
   </div>
 </div>
 
+<!-- C-6: 以前は「日・作・◎・比」の漢字1文字をアイコンに使っていた。◎以外は
+     アイコンとして機能せず、「比」は初見で意味が取れない。ラベルだけにする。 -->
 <nav class="tabs">
-  <button class="on" data-scr="races"><span class="ic">日</span>レース</button>
-  <button data-scr="build"><span class="ic">作</span>マイAI</button>
-  <button data-scr="predict"><span class="ic">◎</span>予想</button>
-  <button data-scr="board"><span class="ic">比</span>成績</button>
+  <button class="on" data-scr="races">レース</button>
+  <button data-scr="build">マイAI</button>
+  <button data-scr="predict">予想</button>
+  <button data-scr="board">成績</button>
 </nav>
 
 <script src="/web/app.js"></script>

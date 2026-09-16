@@ -86,7 +86,7 @@ def test_ranking_order_and_baseline_has_no_rank():
     got = lb.build_leaderboard(daily, PRESET, configs=_configs())
     entries = got["entries"]
 
-    # ①◎的中数の降順 → A が先頭
+    # ①◎的中率の降順 → A が先頭
     assert entries[0]["name"] == "AI-A" and entries[0]["rank"] == 1
     # ベースラインには順位数字を付けない (参加者と競わせない)
     base = next(e for e in entries if e["is_baseline"])
@@ -114,18 +114,105 @@ def test_unfinished_races_are_excluded():
     assert by["AI-A"]["show_rate"] is None        # 0% と誤読させない
 
 
+def test_empty_applied_map_does_not_show_unused_saved_ais():
+    daily = _daily([_race("R1", winner="3")])
+    got = lb.build_leaderboard(daily, PRESET, configs=_configs(), applied={})
+    mine = [e for e in got["entries"] if not e["is_baseline"]]
+    assert mine == []
+    assert got["scoped_to_applied"] is True
+
+
+def test_only_the_ai_actually_applied_to_each_race_is_shown():
+    daily = _daily([_race("R1", winner="3"), _race("R2", winner="3")])
+    got = lb.build_leaderboard(daily, PRESET, configs=_configs(),
+                               applied={"R1": "a"})
+    mine = [e for e in got["entries"] if not e["is_baseline"]]
+    assert [e["config_id"] for e in mine] == ["a"]
+    assert mine[0]["races"] == 1
+
+
 def test_show_rate_and_no_roi_key():
     daily = _daily([_race(f"R{i}", winner="3") for i in range(4)])
     got = lb.build_leaderboard(daily, PRESET, configs=_configs())
     by = {e["name"]: e for e in got["entries"]}
     assert by["AI-A"]["show_rate"] == 1.0        # ◎が毎回1着なら複勝率100%
-    # 回収率・ROI は集計しない (設計書 §2)
+    # 回収率は 2026-07-27 の判断で表示に変更。ただし **不確かさが必ず付く**
     for e in got["entries"]:
-        assert "roi" not in e and "return" not in " ".join(e.keys())
+        st = e["roi_stats"]
+        assert set(("races", "enough", "roi", "ci", "top_share",
+                    "long_run_ceiling", "min_races")) <= set(st)
+        # 4レースしかないので数値を出さない判定
+        assert st["enough"] is False and st["ci"] is None
+        assert e["roi_rank"] is None
     # 判断C: 順位規則を画面に出せるよう、4段すべてを文章で返す
     rule = got["ranking_rule"]
-    for part in ("◎的中数", "出し抜", "複勝率", "同順位"):
+    for part in ("◎的中率", "出し抜", "複勝率", "同順位"):
         assert part in rule, part
     # 対抗戦・煽り系の語彙を混ぜない (設計書 v0.3 §1 DON'T)
     for banned in ("対抗戦", "勝負", "優勝"):
         assert banned not in rule
+
+
+# ---------------------------------------------------------------------------
+# 回収率ランキング (2026-07-27 の判断で追加)
+# ---------------------------------------------------------------------------
+def test_roi_needs_enough_races_before_a_number_appears():
+    """最小レース数に届くまで回収率の数値と順位を出さないこと。"""
+    from builder import roi
+    daily = _daily([_race(f"R{i}", winner="3") for i in range(4)])
+    got = lb.build_leaderboard(daily, PRESET, configs=_configs())
+    for e in got["entries"]:
+        assert e["roi_stats"]["races"] <= 4
+        assert e["roi_stats"]["enough"] is False
+        assert e["roi_rank"] is None
+    assert got["roi_min_races"] == roi.MIN_RACES_FOR_ROI
+    assert "控除率" in got["roi_note"] and "誤差" not in got["roi_note"]
+    assert got["roi_long_run_ceiling"] == 0.8
+
+
+def test_roi_ranking_treats_overlapping_intervals_as_tied():
+    """信頼区間が重なる相手は同順位にすること。
+
+    1日36レースでは回収率は「◎に30倍が来たか」でほぼ決まる。区間が重なって
+    いるのに順位を確定させると、運の差を実力の差として見せることになる。
+    """
+    from builder import roi
+    wide_a = {"enough": True, "roi": 1.20, "ci": [0.30, 2.10]}
+    wide_b = {"enough": True, "roi": 0.90, "ci": [0.20, 1.60]}
+    far = {"enough": True, "roi": 0.10, "ci": [0.02, 0.18]}
+    entries = [{"name": "A", "roi_stats": wide_a},
+               {"name": "B", "roi_stats": wide_b},
+               {"name": "C", "roi_stats": far}]
+    roi.rank(entries)
+    by = {e["name"]: e for e in entries}
+    assert by["A"]["roi_rank"] == 1
+    assert by["B"]["roi_rank"] == 1, "区間が重なるのに順位を分けている"
+    assert by["C"]["roi_rank"] == 3
+    assert by["B"]["roi_tied_with_leader"] is True
+    assert by["C"]["roi_tied_with_leader"] is False
+
+
+def test_roi_ranking_skips_the_baseline_and_insufficient_entries():
+    from builder import roi
+    entries = [
+        {"name": "基準", "is_baseline": True,
+         "roi_stats": {"enough": True, "roi": 0.78, "ci": [0.70, 0.86]}},
+        {"name": "A", "roi_stats": {"enough": True, "roi": 0.50, "ci": [0.40, 0.60]}},
+        {"name": "B", "roi_stats": {"enough": False, "roi": 3.0, "ci": None}},
+    ]
+    roi.rank(entries)
+    by = {e["name"]: e for e in entries}
+    assert by["基準"]["roi_rank"] is None, "基準に順位を付けている"
+    assert by["A"]["roi_rank"] == 1
+    assert by["B"]["roi_rank"] is None, "レース数不足に順位を付けている"
+
+
+def test_unit_returns_uses_the_win_payout():
+    """単勝払戻から1単位あたりの収益列を作ること。"""
+    from builder import roi
+    race_hit = {"tan": {"03": 450}}
+    race_miss = {"tan": {"07": 220}}
+    got = roi.unit_returns([("03", race_hit), ("03", race_miss)])
+    assert list(got) == [4.5, 0.0]
+    # 払戻が無い (未確定) レースは 0
+    assert list(roi.unit_returns([("01", {})])) == [0.0]

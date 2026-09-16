@@ -1,8 +1,41 @@
-# ai-builder — 競馬予想「戦略ビルダー」
+# ai-builder — MAIBuilder と探索ツール
+
+このリポジトリには**2系統**が入っている。
+
+## 1. MAIBuilder (主) — 項目を選んで自分の予想AIを作る
+
+重視する項目を選んで「マイAI」を組み立て、印 (◎○▲△×) とその根拠 (寄与分解) を
+確認する個人利用主体の分析ツール。
+
+**データ元は JRA-VAN Data Lab. (有料・利用者ごとに契約と利用キーが必要)。**
+自分以外に使わせる場合は利用規約 第7条の範囲になるので、先に
+`docs/SHARED_OPERATIONS.md` の「先に確認すること」を読むこと。
+
+```
+build_daily.bat     # 当日朝の準備 (約5分)
+serve.bat           # サーバ起動 → http://127.0.0.1:8780/
+```
+
+> システムの `python` では動きません (32bit・numpy 無し)。上の `.bat` が
+> `keiba-yosou` の 64bit venv を使います。詳細は USAGE.md §0。
+
+→ **使い方: [docs/USAGE.md](docs/USAGE.md)**
+/ 設計: [docs/MAIBUILDER_DESIGN_v0.3.md](docs/MAIBUILDER_DESIGN_v0.3.md)
+/ 共有公開: [docs/SHARED_OPERATIONS.md](docs/SHARED_OPERATIONS.md)
+/ 判断の根拠: [docs/evidence/20260726_FINDINGS_preset_weights.md](docs/evidence/20260726_FINDINGS_preset_weights.md)
+
+> **回収率商品ではない。** 35,036 + 119,069 + 63,525 候補を探索して単勝市場を上回る
+> out-of-sample エッジは検出されず、的中率でも1番人気に勝てない (約20% vs 33%)。
+> 印と寄与分解は分析の可視化であり、賭け金の判断根拠にしない。
+> 「人気(市場)」は参加者AIから除外され、基準の「1番人気AI」専用。
+
+## 2. 探索ツール (従) — セグメント別の指標を眺める
+
+以下はピボット前の診断ツール。`python -m builder.server` (既定ポート8770) と
+`builder/explore.py` 系。MAIBuilder とは別物で、通常の利用では使わない。
 
 セグメント別の **的中率 / 回収率 / calibration gap** を、**hold-out 分離 + Wilson CI +
-過学習ガード**付きで探索する read-only 診断ツール。netkeiba の予想ビルダー的な
-「条件を組んで指標を見る」体験を、`keiba-yosou` の検証規律の上で実現する。
+過学習ガード**付きで探索する read-only 診断ツール。
 
 > **重要**: 本ツールは観察・探索専用。見つけた「戦略」を **買い目に自動適用しない**。
 > keiba-yosou の P12 事故 (TEST 通年 184% → PRODUCTION 45% 暴落) の教訓から、実採用には

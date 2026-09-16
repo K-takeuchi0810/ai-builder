@@ -6,12 +6,17 @@
 **対抗戦・ポイント制は不採用** (判断C、v0.3 で確定)。語彙は「成績比較」
 「基準との差」で統一し、勝負・煽り系の表現は使わない。
 
-## 順位規則 (判断C で確定)
+## 順位規則 (判断C で確定 / 2026-07-27 に母数の扱いを修正)
 
-    ① ◎的中数 (win_hits)
+    ① ◎的中 **率** (win_rate)   ← 絶対数ではなく率
     ② 人気を出し抜いた的中数 (upset_hits) = ◎が1番人気と違い、かつ的中した数
     ③ ◎複勝率 (show_rate)
     ④ それでも同点なら **同順位** で表示する
+
+第1キーを的中数から的中率に変えた理由: レースごとに適用AIを切り替えられる
+ようになり、AI ごとに対象レース数が違う。絶対数を第1キーにすると
+**多くのレースに使われたAIが機械的に上位** になり、成績の比較にならない。
+的中数は画面に併記する (どちらも見えるようにする)。
 
 ## 1番人気ベースライン
 
@@ -21,21 +26,33 @@
 市場人気はこのベースライン専用。マイAI のスコアには一切混入しない
 (判断A、`configs.normalize_config` が単一の入口で落とす)。
 
-回収率は集計しない (設計書 v0.3 §3: 回収率は表示しない。ROI キーを持たない)。
+## 回収率 (2026-07-27 の判断で追加)
+
+当初は「回収率を表示しない」方針だった (実測で再現するエッジが0件、回収率で
+浮上した3件は◎勝率 2.6〜8.0% の大穴くじだった)。ビルダー同士を回収率で
+比較したいという判断が入り、表示することになった。
+
+ただし **点推定だけでは順位を決めない**。`roi.py` が信頼区間・最小レース数・
+控除率上限・最大配当の占有率を必ず添え、区間が重なる相手は同順位にする。
+1日36レースでは回収率は「誰かの◎に30倍が来たか」でほぼ決まるため。
 """
 
 from __future__ import annotations
 
 from . import configs as cf
+from . import labels as lb
+from . import roi as roimod
 from . import model
 from . import predict_service as svc
 
 
 def _blank() -> dict:
-    return {"races": 0, "win_hits": 0, "show_hits": 0, "upset_hits": 0}
+    # picks: 回収率の計算に使う (◎の馬番, レース) の並び
+    return {"races": 0, "win_hits": 0, "show_hits": 0, "upset_hits": 0, "picks": []}
 
 
-def _tally(acc: dict, pick: str | None, favorite: str | None, order: dict) -> None:
+def _tally(acc: dict, pick: str | None, favorite: str | None, order: dict,
+           race: dict | None = None) -> None:
     """1 レース分を加算する。pick=◎の馬番。"""
     if pick is None:
         return
@@ -43,6 +60,8 @@ def _tally(acc: dict, pick: str | None, favorite: str | None, order: dict) -> No
     if not isinstance(o, int) or o <= 0:
         return                      # 結果未確定 (or 取消) は集計対象外
     acc["races"] += 1
+    if race is not None:
+        acc["picks"].append((pick, race))
     won = o == 1
     if won:
         acc["win_hits"] += 1
@@ -60,15 +79,20 @@ def _entry(name: str, acc: dict, *, config_id: str | None = None,
         "name": name,
         "races": n,
         "win_hits": acc["win_hits"],
+        # C-4: 順位の第1キーは率。母数が違う AI を絶対数で並べない
+        "win_rate": round(acc["win_hits"] / n, 4) if n else None,
         "upset_hits": acc["upset_hits"],
         "show_rate": round(acc["show_hits"] / n, 4) if n else None,
         "is_baseline": is_baseline,
+        # 回収率は **点推定だけでは順位を決められない** ので、信頼区間・
+        # 最小レース数・控除率上限・最大配当の占有率を一緒に持たせる (roi.py)。
+        "roi_stats": roimod.summarize(roimod.unit_returns(acc["picks"])),
     }
 
 
 def _sort_key(e: dict):
-    # ①◎的中数 ②出し抜き数 ③複勝率 の降順
-    return (-e["win_hits"], -e["upset_hits"], -(e["show_rate"] or 0.0))
+    # ①◎的中率 ②出し抜き数 ③複勝率 の降順 (率が第1キー。C-4)
+    return (-(e["win_rate"] or 0.0), -e["upset_hits"], -(e["show_rate"] or 0.0))
 
 
 def _assign_ranks(entries: list[dict]) -> None:
@@ -90,22 +114,27 @@ def _assign_ranks(entries: list[dict]) -> None:
 
 def build_leaderboard(daily: dict, preset: dict, *,
                       configs: list[dict] | None = None,
-                      as_of: str | None = None) -> dict:
+                      as_of: str | None = None,
+                      applied: dict | None = None,
+                      owner_id: str | None = None) -> dict:
     """当日の確定レースから順位表を作る。
 
     daily: matrix_daily の当日行列。preset: プリセット重み。
     configs: [{"id","name","config"}] (省略時は保存済み全設定を使う)。
+    applied: {race_id: config_id}。**指定された場合は「そのレースに実際に
+        適用したAI」だけを集計する** — 使っていないレースの成績を混ぜないため。
+        対象レース数が AI ごとに違うので、各行の races を必ず表示すること。
     """
     races = [r for r in daily.get("races", [])
              if any(h.get("order") == 1 for h in r.get("horses", []))]
 
     if configs is None:
         configs = []
-        store = cf._load_store()
-        for cid, entry in store.items():
-            got = cf.get_config(cid)
+        for listed in cf.list_configs(owner_id=owner_id):
+            cid = listed["id"]
+            got = cf.get_config(cid, owner_id=owner_id)
             if got:
-                configs.append({"id": cid, "name": entry.get("name") or cid,
+                configs.append({"id": cid, "name": listed.get("name") or cid,
                                 "config": got["config"]})
 
     accs = {c["id"]: _blank() for c in configs}
@@ -118,25 +147,44 @@ def build_leaderboard(daily: dict, preset: dict, *,
         rows = {h["num"]: h["x"] for h in r["horses"]}
         order = {h["num"]: h.get("order") for h in r["horses"]}
         favorite = next((h["num"] for h in r["horses"] if h.get("pop") == 1), None)
-        _tally(base, favorite, favorite, order)      # ベースライン = 1番人気を◎とする
+        _tally(base, favorite, favorite, order, race=r)   # ベースライン = 1番人気を◎
+        # 適用AIの指定があるレースは、その1つだけを集計する
+        target = applied.get(r.get("race_id")) if applied is not None else None
         for c in configs:
+            if applied is not None and not target:
+                continue
+            if target and c["id"] != target:
+                continue
             ranked = model.score_columns_detailed(
                 rows, columns_by_id[c["id"]], weights_by_id[c["id"]])["ranked"]
             pick = ranked[0][0] if ranked else None
-            _tally(accs[c["id"]], pick, favorite, order)
+            _tally(accs[c["id"]], pick, favorite, order, race=r)
 
     entries = [_entry(c["name"], accs[c["id"]], config_id=c["id"]) for c in configs]
+    if applied is not None:
+        entries = [e for e in entries if e["races"] > 0]
     entries.append(_entry("1番人気AI", base, is_baseline=True))
     entries.sort(key=_sort_key)
     _assign_ranks(entries)
+    # 回収率の順位は別軸で付ける (区間が重なる相手は同順位)
+    roimod.rank(entries)
 
     return {
         "as_of": as_of or daily.get("date"),
         "date": daily.get("date"),
         "n_races_finished": len(races),
-        # 判断C: 規則を画面に明記する (ポイント制は不採用)
-        "ranking_rule": "並び順は ①◎的中数 → ②人気を出し抜いた的中数 → ③◎複勝率 "
-                        "の順です。それでも同じなら同順位で並びます。",
+        # 判断C: 規則を画面に明記する (ポイント制は不採用)。
+        # 文言は labels.RANKING_RULE が正本 (board が空でも UI が出せるよう
+        # /api/features からも供給される)。
+        "ranking_rule": lb.RANKING_RULE,
+        # 適用AI指定があると AI ごとに対象レース数が変わる。UI は races を必ず出す
+        "scoped_to_applied": applied is not None,
+        "roi_note": ("回収率は当たり外れの偶然に大きく左右されます。"
+                     f"{roimod.MIN_RACES_FOR_ROI}レース未満は数値を出しません。"
+                     f"単勝の控除率は{int(roimod.TAKEOUT * 100)}%なので、"
+                     f"長期の回収率は約{int(roimod.LONG_RUN_CEILING * 100)}%が上限です。"),
+        "roi_min_races": roimod.MIN_RACES_FOR_ROI,
+        "roi_long_run_ceiling": roimod.LONG_RUN_CEILING,
         "entries": entries,
         "marks": svc.MARKS,
     }

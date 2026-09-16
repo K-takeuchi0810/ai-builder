@@ -42,6 +42,18 @@ PRESET_TRAIN_TO = os.environ.get("BUILDER_PRESET_TRAIN_TO", "20250630")
 # バックテスト再生 (§7) の既定表示期間 = 学習に使っていない期間
 DISPLAY_BACKTEST_FROM = os.environ.get("BUILDER_DISPLAY_FROM", "20250701")
 
+# 封印期間の開始日。**項目を選び直しているあいだは見せない**期間。
+#
+# 表示期間 (20250701〜) はプリセット重みの学習には使っていないので、重みから見れば
+# out-of-sample。しかし **参加者の項目選び** から見ればそうではない。良い数字が
+# 出るまで選び直せば、その数字は選び直した回数のぶんだけ楽観側に寄る。
+# 182,594 候補を機械で探索して out-of-sample のエッジが出なかったのと同じことが、
+# 手作業でも起きる (docs/evidence/20260726_FINDINGS_preset_weights.md)。
+#
+# 既定 20260401 は、表示期間 3,702 レースを 調整側 2,586 / 封印側 1,116 に分ける
+# (実測)。両側とも MIN_RACES_FOR_RATE=100 を大きく超える。
+DISPLAY_HOLDOUT_FROM = os.environ.get("BUILDER_HOLDOUT_FROM", "20260401")
+
 # 列ごとの「ゲート通過レース数」がこれ未満なら警告 (係数が少数レースに過適合)
 MIN_RACES_PER_COLUMN = int(os.environ.get("BUILDER_MIN_RACES_PER_COLUMN", "500"))
 

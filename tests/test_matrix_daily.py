@@ -6,9 +6,11 @@ DB 層はモックして高速・CIセーフに保つ。実 DB 経路は skip ga
 from __future__ import annotations
 
 import contextlib
+from datetime import datetime
 import importlib.util
 import json
 import os
+import sqlite3
 import sys
 
 import pytest
@@ -187,7 +189,26 @@ def test_start_time_is_formatted_for_display(tmp_path, monkeypatch):
     _patch_db(monkeypatch, [_fake_race()], _fake_horses(8))
     daily = md.build_daily("20260801", SPECS)
     assert daily["races"][0]["start_time"] == "15:45"
-    assert md.today_status(daily)[0]["start_time"] == "15:45"
+    status = md.today_status(daily)[0]
+    assert status["start_time"] == "15:45"
+    assert status["date"] == "20260801"
+
+
+def test_race_started_uses_server_time_and_today_status_exposes_it(tmp_path, monkeypatch):
+    before = datetime(2026, 8, 2, 9, 59)
+    at_start = datetime(2026, 8, 2, 10, 0)
+    race = {"date": "20260802", "start_time": "10:00"}
+    assert md.race_started(race, now=before) is False
+    assert md.race_started(race, now=at_start) is True
+
+    monkeypatch.setattr(config, "CORNER_INDEX_PATH", tmp_path / "corner.json")
+    raw = _fake_race()
+    raw["race_month_day"] = "0802"
+    raw["start_time"] = "1000"
+    _patch_db(monkeypatch, [raw], _fake_horses(8))
+    daily = md.build_daily("20260802", SPECS)
+    assert md.today_status(daily, now=before)[0]["started"] is False
+    assert md.today_status(daily, now=at_start)[0]["started"] is True
 
 
 def test_odds_as_of_comes_from_db_not_wall_clock(tmp_path, monkeypatch):
@@ -214,6 +235,165 @@ def test_odds_as_of_comes_from_db_not_wall_clock(tmp_path, monkeypatch):
     assert md.today_status(daily)[0]["odds_as_of"] == "2026-08-01T15:31:07"
 
 
+def test_latest_weather_only_update_does_not_erase_announced_going():
+    """天候だけのWE更新（馬場0）より前にある発表済み馬場を引き継ぐ。"""
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute("""CREATE TABLE weather_going (
+        race_year TEXT, race_month_day TEXT, track_code TEXT, kaiji TEXT,
+        nichiji TEXT, announced_time TEXT, weather_code TEXT,
+        going_turf TEXT, going_dirt TEXT)""")
+    conn.executemany("INSERT INTO weather_going VALUES (?,?,?,?,?,?,?,?,?)", [
+        ("2026", "0816", "07", "02", "08", "00000000", "1", "1", "1"),
+        # 実データと同じく、後続行は天候だけ変わり馬場欄が0。
+        ("2026", "0816", "07", "02", "08", "08160655", "2", "0", "0"),
+        ("2026", "0816", "07", "02", "08", "08160851", "1", "0", "0"),
+    ])
+    race = {"race_year": "2026", "race_month_day": "0816", "track_code": "07",
+            "kaiji": "02", "nichiji": "08", "weather_code": "0",
+            "turf_condition": "0", "dirt_condition": "0"}
+    got = md._with_latest_weather(conn, race)
+    assert got["weather_code"] == "1"
+    assert got["turf_condition"] == "1" and got["dirt_condition"] == "1"
+    assert got["condition_as_of"] == "00000000"
+
+
+def test_effective_race_changes_expose_metadata_and_change_feature_context():
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.executescript("""
+      CREATE TABLE start_time_changes (
+        race_year TEXT,race_month_day TEXT,track_code TEXT,kaiji TEXT,nichiji TEXT,
+        race_num TEXT,announced_time TEXT,new_start_time TEXT,old_start_time TEXT);
+      CREATE TABLE course_changes (
+        race_year TEXT,race_month_day TEXT,track_code TEXT,kaiji TEXT,nichiji TEXT,
+        race_num TEXT,announced_time TEXT,new_distance INTEGER,new_track_type_code TEXT,
+        old_distance INTEGER,old_track_type_code TEXT,reason_code TEXT);
+    """)
+    key = ("2026", "0801", "04", "03", "05", "01")
+    conn.execute("INSERT INTO start_time_changes VALUES (?,?,?,?,?,?,?,?,?)",
+                 (*key, "08010900", "1550", "1545"))
+    conn.execute("INSERT INTO course_changes VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                 (*key, "08010901", 1600, "23", 1800, "11", "1"))
+
+    changed = md._with_latest_race_changes(conn, _fake_race())
+    assert changed["start_time"] == "1550"
+    assert changed["original_start_time"] == "1545"
+    assert changed["distance"] == 1600 and changed["track_type_code"] == "23"
+    assert changed["course_change"]["old_surface_label"] == "芝"
+    assert changed["course_change"]["new_surface_label"] == "ダート"
+
+    horses = _fake_horses(2)
+    before = md._feature_context(matrix._seg(_fake_race()), horses)
+    after = md._feature_context(matrix._seg(changed), horses)
+    assert before != after
+
+
+def test_today_status_calls_unannounced_going_waiting_not_unknown(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "CORNER_INDEX_PATH", tmp_path / "corner.json")
+    race = _fake_race()
+    race["turf_condition"] = "0"
+    _patch_db(monkeypatch, [race], _fake_horses(8))
+    status = md.today_status(md.build_daily("20260801", SPECS))[0]
+    assert status["ready"] is True
+    assert status["condition_announced"] is False
+    assert status["condition_label"] == "馬場発表待ち"
+
+
+def test_refresh_live_merges_odds_weight_and_current_features(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "CORNER_INDEX_PATH", tmp_path / "corner.json")
+    initial = _fake_horses(4, weight="")
+    for horse in initial:
+        horse["win_odds"] = 0
+        horse["win_popularity"] = 0
+    _patch_db(monkeypatch, [_fake_race()], initial)
+    daily = md.build_daily("20260801", SPECS)
+    before_revision = daily["races"][0]["live_revision"]
+
+    live = _fake_horses(4, weight="486")
+    for index, horse in enumerate(live, 1):
+        horse["win_odds"] = 30 + index
+        horse["win_popularity"] = index
+        horse["odds_fetched_at"] = "2026-08-01T14:31:00"
+        horse["burden_weight"] = 555
+        horse["weight_change_sign"] = "+"
+        horse["weight_change_diff"] = "4"
+    sys.modules["scripts.backtest"].horses_for_race = lambda conn, race: live
+
+    refreshed = md.refresh_live(daily)
+    race = refreshed["races"][0]
+    horse = race["horses"][0]
+    assert daily["races"][0]["weight_announced"] is False  # atomic copy; old readers are safe
+    assert race["weight_announced"] is True
+    assert race["odds_as_of"] == "2026-08-01T14:31:00"
+    assert race["live_revision"] != before_revision
+    assert race["live_updated_at"]
+    assert horse["odds"] == 3.1 and horse["pop"] == 1
+    assert horse["horse_weight"] == 486 and horse["horse_weight_change"] == 4
+    assert horse["burden_weight"] == 55.5
+    assert horse["x"]["popularity"] == 1
+    status = md.today_status(refreshed)[0]
+    assert status["live_revision"] == race["live_revision"]
+    assert status["live_updated_at"] == race["live_updated_at"]
+
+
+def test_refresh_live_recomputes_going_and_jockey_and_excludes_scratch(monkeypatch):
+    """馬場・騎手変更は採点を更新し、AV馬は正規化母集団から除外する。"""
+    race = _fake_race()
+    race["turf_condition"] = "2"
+    live = _fake_horses(2)
+    live[0].update({"jockey_code": "NEW01", "jockey_short_name": "新騎手"})
+    live[1].update({"jockey_code": "KEEP2", "jockey_short_name": "騎手2"})
+    _patch_db(monkeypatch, [race], live)
+    monkeypatch.setattr(md, "_inactive_horses", lambda conn, r: {
+        "02": {"label": "出走取消", "announced_time": "08011000",
+               "horse_name": "テストホース2"}
+    })
+    calls = []
+
+    def compute(conn, horse, current_race, cache):
+        calls.append((horse["horse_num"], current_race["turf_condition"]))
+        return {
+            "jockey_win_rate": 0.42 if horse["jockey_code"] == "NEW01" else 0.1,
+            "same_going_runs": 4,
+            "same_going_top3": 3 if current_race["turf_condition"] == "2" else 0,
+        }
+
+    monkeypatch.setattr(model, "_compute_features", compute)
+    cols = matrix._columns([
+        {"key": "popularity"}, {"key": "jockey_win_rate"}, {"key": "fit_going"},
+    ])
+    daily = {
+        "version": md.DAILY_VERSION, "date": "20260801", "columns": cols,
+        "races": [{
+            "race_id": md._race_id(race), "date": "20260801", "race_num": "01",
+            "race_name": "テスト", "start_time": "15:45",
+            "seg": {"track": "04", "surface": "turf", "distance": 1800,
+                    "condition": "firm"},
+            "horses": [
+                {"num": "01", "name": "テストホース1", "x": {
+                    "popularity": 1, "jockey_win_rate": 0.01, "fit_going": 0.0}},
+                {"num": "02", "name": "テストホース2", "x": {
+                    "popularity": 2, "jockey_win_rate": 0.02, "fit_going": 0.0}},
+            ],
+            "tan": {}, "trusted": True, "weight_announced": True,
+            "live_feature_context": "old-context",
+        }],
+    }
+    got = md.refresh_live(daily)
+    out = got["races"][0]
+    assert calls == [("01", "2")]  # 取消馬は再採点しない
+    assert out["horses"][0]["jockey"] == "新騎手"
+    assert out["horses"][0]["x"]["jockey_win_rate"] == 0.42
+    assert out["horses"][0]["x"]["fit_going"] == 0.75
+    assert out["horses"][1]["scratched"] is True
+    assert out["scratched_horses"][0]["label"] == "出走取消"
+    prepared = matrix.prepare_races(got)[0]
+    assert set(prepared["z"]) == {"01"}
+    status = md.today_status(got)[0]
+    assert status["n_horses"] == 1 and status["n_scratched"] == 1
+
+
 def test_today_status_carries_display_fields(tmp_path, monkeypatch):
     """一覧表示に必要な条件と「結果待ち」判定を返すこと。"""
     monkeypatch.setattr(config, "CORNER_INDEX_PATH", tmp_path / "corner.json")
@@ -234,6 +414,39 @@ def test_daily_version_is_in_cache_filename(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "CORNER_INDEX_PATH", tmp_path / "corner.json")
     p = md._daily_path("20260801", matrix._columns(SPECS))
     assert f"daily_v{md.DAILY_VERSION}_20260801_" in p.name
+
+
+def test_historical_daily_falls_back_to_latest_compatible_version(tmp_path, monkeypatch):
+    """版更新前の開催結果を購入履歴から消さないこと。"""
+    monkeypatch.setattr(config, "CORNER_INDEX_PATH", tmp_path / "corner.json")
+    directory = tmp_path / "daily"
+    directory.mkdir()
+    columns_hash = matrix._col_hash(matrix._columns(SPECS))
+    old = {"version": md.DAILY_VERSION - 2, "date": "20260801", "races": [{"race_id": "R4"}]}
+    newer = {"version": md.DAILY_VERSION - 1, "date": "20260801", "races": [{"race_id": "R5"}]}
+    (directory / f"daily_v{md.DAILY_VERSION - 2}_20260801_{columns_hash}.json").write_text(
+        json.dumps(old), encoding="utf-8")
+    (directory / f"daily_v{md.DAILY_VERSION - 1}_20260801_{columns_hash}.json").write_text(
+        json.dumps(newer), encoding="utf-8")
+    # 列構成が異なるファイルは、新しくても選ばない。
+    (directory / f"daily_v{md.DAILY_VERSION - 1}_20260801_other.json").write_text(
+        json.dumps({"date": "20260801", "races": [{"race_id": "WRONG"}]}),
+        encoding="utf-8")
+
+    got = md.load_historical_daily("20260801", SPECS)
+    assert got["races"][0]["race_id"] == "R5"
+
+
+def test_historical_daily_prefers_current_version(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "CORNER_INDEX_PATH", tmp_path / "corner.json")
+    directory = tmp_path / "daily"
+    directory.mkdir()
+    columns_hash = matrix._col_hash(matrix._columns(SPECS))
+    current = {"version": md.DAILY_VERSION, "date": "20260801",
+               "races": [{"race_id": "CURRENT"}]}
+    (directory / f"daily_v{md.DAILY_VERSION}_20260801_{columns_hash}.json").write_text(
+        json.dumps(current), encoding="utf-8")
+    assert md.load_historical_daily("20260801", SPECS) == current
 
 
 def test_output_shape_is_compatible_with_matrix_helpers(tmp_path, monkeypatch):

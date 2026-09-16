@@ -10,3 +10,4 @@ __pycache__/
 # 探索の生成物 (保存戦略 JSON 等) は必要になったら別途 track する
 /out/
 *.local.json
+/deploy/windows/shared.config.json

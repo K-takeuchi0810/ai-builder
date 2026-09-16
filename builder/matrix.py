@@ -384,7 +384,9 @@ def prepare_races(matrix: dict) -> list[dict]:
     cols = matrix["columns"]
     out = []
     for r in matrix["races"]:
-        hrows = r["horses"]
+        # AV速報で取消・除外になった馬は正規化母集団にもスコアにも入れない。
+        # フラグを残したまま除外するため、変更撤回時は次回refreshで復帰できる。
+        hrows = [hr for hr in r["horses"] if not hr.get("scratched")]
         nums = [hr["num"] for hr in hrows]
         z: dict[str, dict[str, float]] = {n: {} for n in nums}
         for c in cols:
