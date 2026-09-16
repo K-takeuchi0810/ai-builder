@@ -318,6 +318,35 @@ main{flex:1; padding:14px 14px 84px}
   font-size:var(--fs-min); color:#BFD2C6; background:rgba(255,255,255,.12);
   border:none; border-radius:999px; cursor:pointer}
 .ai-pick b{color:#fff}
+/* 選び直しの記録と封印期間。
+ * 良し悪しは言わない — 「この数字を信じてよいか」の材料だけを出す。 */
+.gen{margin-top:10px; padding:14px}
+.gen-h{font-size:.92rem}
+.gen-h b{color:var(--gold-text)}
+.gen-note{margin:8px 0 0; font-size:var(--fs-min); color:var(--ink-soft); line-height:1.8}
+.gen-note b{color:var(--ink)}
+.gen-list{margin:12px 0 0; padding:0; list-style:none; display:flex;
+  flex-direction:column; gap:6px}
+.gen-item{display:flex; align-items:center; gap:9px; font-size:var(--fs-min)}
+.gen-v{flex:none; width:2.4em; color:var(--ink-soft)}
+.gen-bar{flex:1; height:8px; border-radius:999px; background:var(--line-soft);
+  overflow:hidden}
+.gen-bar i{display:block; height:100%; background:var(--turf-500); border-radius:999px}
+.gen-n{flex:none; width:3em; text-align:right; font-weight:700}
+/* 封印期間 — 開けるまで数字を出さない */
+.hold{margin-top:10px; padding:14px; border:1.5px solid var(--gold); background:var(--gold-soft)}
+.hold.open{border-color:var(--turf-500); background:#fff}
+.hold-h{font-size:.92rem; font-weight:700; color:var(--gold-text)}
+.hold.open .hold-h{color:var(--ink)}
+.hold-n{margin-left:8px; font-size:var(--fs-min); font-weight:400}
+.hold-btn{width:100%; margin-top:12px; min-height:var(--tap); font-family:inherit;
+  font-size:.9rem; font-weight:700; cursor:pointer; border:none;
+  border-radius:var(--r-md); background:var(--gold-text); color:#fff}
+.hold-btn:disabled{background:var(--line); color:var(--ink-faint); cursor:default}
+.hold-once{padding:9px 11px; border-radius:var(--r-md); background:var(--gold-soft);
+  color:var(--gold-text)}
+.hold.open .hold-once{margin-top:10px}
+
 /* 買い目エディタ (参加者が自分で組む)。
  * 流れは公式サイトと同じ「券種 → 買い方 → 馬(枠)」。
  * どの券種・買い方が有利かは示さない — 点数だけを出す。 */

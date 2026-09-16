@@ -14,6 +14,7 @@
  * 使い方:
  *   node tests/dom_render.js <predict.json> [features.json]   … 予想画面
  *   node tests/dom_render.js --build <features.json>          … 作成画面
+ *   node tests/dom_render.js --backtest <backtest.json>       … 成績カード
  *
  * A-2 の反省: 予想画面しか描画していなかったため、作成画面に残っていた
  * 「button の中の button」(pchip の中の ⓘ) を検出できなかった。
@@ -30,6 +31,11 @@ function makeEl(id) {
     id,
     innerHTML: '',
     textContent: '',
+    // 入力要素として読まれることがある (buildConfig が #aiName.value を trim する)。
+    // undefined のままだと描画が例外で落ち、**中身が空なだけに見える**。
+    value: '',
+    checked: false,
+    disabled: false,
     hidden: false,
     dataset: {},
     classList: {
@@ -151,6 +157,18 @@ if (process.argv[2] === '--point-edit') {
 if (process.argv[2] === '--result-review') {
   sandbox.__review = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
   process.stdout.write(vm.runInContext('resultItemReviewHtml(__review)', ctx));
+  return;
+}
+
+const BACKTEST = process.argv[2] === '--backtest';
+if (BACKTEST) {
+  const bt = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
+  sandbox.__routes = { '/api/backtest': bt };
+  vm.runInContext('state.config = {id:"t", name:"テストAI", version:1};', ctx);
+  vm.runInContext('loadBacktest();', ctx);
+  setImmediate(() => {
+    process.stdout.write(JSON.stringify({ btResult: el('#btResult').innerHTML }));
+  });
   return;
 }
 

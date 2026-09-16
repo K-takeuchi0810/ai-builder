@@ -694,25 +694,46 @@ def _spearman(pairs: list[tuple[int, int]]) -> float | None:
     return 1.0 - (6.0 * d2 / denom) if denom else None
 
 
+def _side() -> dict:
+    """1つの期間ぶんの集計入れ物 (調整側 / 封印側で別々に持つ)。"""
+    return {"acc": _blank(), "base": _blank(),
+            "by_cond": {}, "base_by_cond": {},
+            "roi_picks": [], "base_roi_picks": []}
+
+
+def _side_report(side: dict) -> dict:
+    return {
+        "races": side["acc"]["races"],
+        "your_ai": _summarize(side["acc"]),
+        "baseline_favorite": _summarize(side["base"]),
+        "by_condition": _condition_report(side["by_cond"], side["base_by_cond"]),
+        # 回収率。点推定だけでは判断できないので roi.py が不確かさを添える
+        "roi_stats": _roi.summarize(_roi.unit_returns(side["roi_picks"])),
+        "baseline_roi_stats": _roi.summarize(_roi.unit_returns(side["base_roi_picks"])),
+    }
+
+
 def backtest(matrix: dict, user_config: dict, preset: dict, *,
-             date_from: str | None = None, date_to: str = "99999999") -> dict:
+             date_from: str | None = None, date_to: str = "99999999",
+             holdout_from: str | None = None,
+             include_holdout: bool = False) -> dict:
     """設計書 §7 バックテスト再生。既定期間は学習に使っていない表示期間。
 
     返すのは的中率系 (◎単勝的中率 / ◎複勝率 / 印内的中率 / 順位相関) と
     1番人気ベースライン。回収率はメイン指標にしない。
+
+    ## 封印期間
+
+    `holdout_from` 以降は **調整側の数字に混ぜない**。参加者はバックテストの数字を
+    見ながら項目を選び直すので、見ている期間の成績は選び直した回数のぶんだけ
+    楽観側に寄る。封印側は `include_holdout=True` のときだけ返す
+    — **返さなければ UI から漏れようがない** ので、隠す責任をここに置く。
     """
     date_from = date_from or cfgmod.DISPLAY_BACKTEST_FROM
     columns = cf.selected_columns(user_config)
     weights = cf.column_weights(user_config, preset.get("weights") or {})
 
-    acc, base = _blank(), _blank()
-    # 条件別の内訳 (芝ダート / 距離帯)。参加者が「このレースに向くAIか」を
-    # 判断できる材料を出すため。**重みは条件別に分けない** (R3-c の凍結)。
-    by_cond: dict[str, dict] = {}
-    base_by_cond: dict[str, dict] = {}
-    # 回収率は蓄積しないと意味を持たない。表示期間 (数千レース) で集計する。
-    roi_picks: list = []
-    base_roi_picks: list = []
+    tune, seal = _side(), _side()
 
     for race in matrix.get("races", []):
         if not (date_from <= race["date"] <= date_to):
@@ -724,11 +745,13 @@ def backtest(matrix: dict, user_config: dict, preset: dict, *,
         if not any(o == 1 for o in order.values()):
             continue                              # 結果未確定は除外
 
+        side = seal if (holdout_from and race["date"] >= holdout_from) else tune
+
         ranked = model.score_columns_detailed(rows, columns, weights)["ranked"]
         picks = [num for num, _ in ranked]
-        _tally(acc, picks, order)
+        _tally(side["acc"], picks, order)
         if picks:
-            roi_picks.append((picks[0], race))
+            side["roi_picks"].append((picks[0], race))
 
         surface, band = condition_key(race.get("seg"))
         keys = [k for k in (surface, band,
@@ -740,33 +763,44 @@ def backtest(matrix: dict, user_config: dict, preset: dict, *,
             fav_order = sorted(race["horses"],
                                key=lambda h: (h.get("pop") is None, h.get("pop") or 99))
             fav_picks = [h["num"] for h in fav_order]
-            _tally(base, fav_picks, order)
-            base_roi_picks.append((fav_picks[0], race))
+            _tally(side["base"], fav_picks, order)
+            side["base_roi_picks"].append((fav_picks[0], race))
 
         for k in keys:
-            _tally(by_cond.setdefault(k, _blank()), picks, order)
+            _tally(side["by_cond"].setdefault(k, _blank()), picks, order)
             if fav_picks:
-                _tally(base_by_cond.setdefault(k, _blank()), fav_picks, order)
+                _tally(side["base_by_cond"].setdefault(k, _blank()), fav_picks, order)
 
     warnings = []
-    if acc["races"] == 0:
+    if tune["acc"]["races"] == 0:
         # 0 レースで的中率 None を返すと「成績が悪い」と誤読されるので必ず警告する
         warnings.append({
             "code": "no_races_in_period",
             "message": f"{date_from}〜{date_to} に対象レースがありません",
             "hint": "期間を広げるか、その期間の行列を構築してください",
         })
-    return {"period": [date_from, date_to],
-            "note": "過去の的中率は将来の成績を保証しません",
-            "config_hash": cf.config_hash(user_config),
-            "warnings": warnings,
-            "your_ai": _summarize(acc), "baseline_favorite": _summarize(base),
-            "min_races_for_rate": MIN_RACES_FOR_RATE,
-            "by_condition": _condition_report(by_cond, base_by_cond),
-            # 回収率。点推定だけでは判断できないので roi.py が不確かさを添える
-            "roi_stats": _roi.summarize(_roi.unit_returns(roi_picks)),
-            "baseline_roi_stats": _roi.summarize(_roi.unit_returns(base_roi_picks)),
-            "roi_note": _roi_note()}
+
+    tuning = _side_report(tune)
+    out = {"period": [date_from, date_to],
+           "note": "過去の的中率は将来の成績を保証しません",
+           "config_hash": cf.config_hash(user_config),
+           "warnings": warnings,
+           "min_races_for_rate": MIN_RACES_FOR_RATE,
+           # 調整側 (参加者が見ながら選び直してよい期間) を従来のキーで返す
+           "your_ai": tuning["your_ai"],
+           "baseline_favorite": tuning["baseline_favorite"],
+           "by_condition": tuning["by_condition"],
+           "roi_stats": tuning["roi_stats"],
+           "baseline_roi_stats": tuning["baseline_roi_stats"],
+           "roi_note": _roi_note()}
+    if holdout_from:
+        # **点数だけは常に出す。** 何レース封印されているかは隠す必要がない
+        out["holdout"] = {"from": holdout_from,
+                          "races": seal["acc"]["races"],
+                          "revealed": bool(include_holdout)}
+        if include_holdout:
+            out["holdout"].update(_side_report(seal))
+    return out
 
 
 def _tally(acc: dict, picks: list[str], order: dict) -> None:

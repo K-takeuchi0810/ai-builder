@@ -1096,16 +1096,57 @@ def handle_smappy_qr(payload: dict, *, owner_id: str | None = None) -> tuple[dic
     }, 200
 
 
-def handle_backtest(payload: dict) -> tuple[dict, int]:
+def handle_backtest(payload: dict, owner_id: str | None = None) -> tuple[dict, int]:
+    """バックテスト。**封印期間は明示的に開けるまで返さない。**
+
+    参加者はこの数字を見ながら項目を選び直すので、見ている期間の成績は
+    選び直した回数のぶんだけ楽観側に寄る。封印側を返さないことで、
+    「うっかり見えてしまう」経路を塞ぐ (隠す責任は predict_service に置く)。
+
+    `config_id` が付いていれば、その世代の調整側スコアを記録する。
+    あとから「何世代目でどう動いたか」を画面に出すため。
+    """
     user_cfg = payload.get("config") or {}
     period = payload.get("period") or {}
     src = _STATE.get("backtest_matrix") or _STATE["daily"]
     if not src.get("races"):
         return {"error": "no_backtest_data",
                 "hint": "起動時に --backtest-from/--backtest-to を指定してください"}, 409
-    return svc.backtest(src, user_cfg, _STATE["preset"],
-                        date_from=period.get("from"),
-                        date_to=period.get("to", "99999999")), 200
+
+    config_id = str(payload.get("config_id") or "")
+    reveal = bool(payload.get("reveal"))
+    revealed = None
+    if reveal:
+        if not config_id:
+            return {"error": "config_id_required",
+                    "message": "封印期間を開けるには保存済みのマイAIが必要です"}, 400
+        cur = cf.get_config(config_id, owner_id=owner_id)
+        if not cur:
+            return {"error": "config_not_found", "config_id": config_id}, 404
+        revealed = cf.reveal_holdout(config_id, cur["version"], owner_id=owner_id)
+
+    got = svc.backtest(src, user_cfg, _STATE["preset"],
+                       date_from=period.get("from"),
+                       date_to=period.get("to", "99999999"),
+                       holdout_from=cfgmod.DISPLAY_HOLDOUT_FROM,
+                       include_holdout=bool(revealed))
+
+    if config_id:
+        cur = cf.get_config(config_id, owner_id=owner_id)
+        if cur:
+            ai = got.get("your_ai") or {}
+            cf.record_score(config_id, cur["version"],
+                            {"races": ai.get("races"),
+                             "win_rate": ai.get("hit_rate_win"),
+                             "show_rate": ai.get("hit_rate_show")},
+                            owner_id=owner_id)
+            got["generations"] = cur["version"]
+            got["score_history"] = cf.score_history(config_id, owner_id=owner_id)
+        state = cf.holdout_state(config_id, owner_id=owner_id)
+        if state and got.get("holdout") is not None:
+            got["holdout"]["revealed_at_version"] = state.get("version")
+            got["holdout"]["revealed_at"] = state.get("at")
+    return got, 200
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -1351,7 +1392,7 @@ class Handler(BaseHTTPRequestHandler):
             return _json(self, got or {"error": "purchase_not_found"},
                          200 if got else 404)
         if path == "/api/backtest":
-            return _json(self, *handle_backtest(payload))
+            return _json(self, *handle_backtest(payload, session.get("user_id")))
         if path == "/api/leaderboard":
             return _json(self, *handle_leaderboard(
                 payload.get("applied") if isinstance(payload.get("applied"), dict) else {},

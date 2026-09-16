@@ -1748,3 +1748,142 @@ def test_config_list_puts_the_newest_first(tmp_path, monkeypatch):
     cf.save_config({"name": "A", "step1": ["draw_position"], "step2": []},
                    owner_id="user-a")
     assert [x["name"] for x in cf.list_configs(owner_id="user-a")] == ["A", "B"]
+
+
+# ---------------------------------------------------------------------------
+# 封印期間と世代カウンタ (選び直しによる楽観バイアスを見えるようにする)
+# ---------------------------------------------------------------------------
+def _split_matrix(n_tune=4, n_seal=3):
+    """封印開始日をまたぐ行列。"""
+    races = [_race(f"T{i}", date="20260301") for i in range(n_tune)]
+    races += [_race(f"H{i}", date="20260501") for i in range(n_seal)]
+    return {"columns": [], "races": races}
+
+
+def test_backtest_keeps_the_holdout_out_of_the_tuning_numbers():
+    """封印期間のレースを調整側の集計に混ぜないこと。
+
+    参加者はこの数字を見ながら項目を選び直すので、見ている期間の成績は
+    選び直した回数のぶんだけ楽観側に寄る。
+    """
+    m = _split_matrix(n_tune=4, n_seal=3)
+    got = svc.backtest(m, USER_CFG, PRESET, date_from="20250701",
+                       holdout_from="20260401")
+    assert got["your_ai"]["races"] == 4
+    assert got["holdout"]["races"] == 3
+    assert got["holdout"]["from"] == "20260401"
+    # 分けない場合の合計と一致する
+    whole = svc.backtest(m, USER_CFG, PRESET, date_from="20250701")
+    assert whole["your_ai"]["races"] == 7
+
+
+def test_backtest_does_not_return_the_holdout_scores_until_asked():
+    """**封印側の成績は返さない。** 返さなければ画面から漏れようがない。"""
+    m = _split_matrix()
+    got = svc.backtest(m, USER_CFG, PRESET, date_from="20250701",
+                       holdout_from="20260401")
+    holdout = got["holdout"]
+    assert holdout["revealed"] is False
+    for leaked in ("your_ai", "baseline_favorite", "by_condition",
+                   "roi_stats", "baseline_roi_stats"):
+        assert leaked not in holdout, leaked
+    # 条件別や回収率にも封印側が混ざっていないこと
+    assert got["roi_stats"]["races"] == got["your_ai"]["races"]
+
+
+def test_backtest_returns_the_holdout_when_revealed():
+    m = _split_matrix()
+    got = svc.backtest(m, USER_CFG, PRESET, date_from="20250701",
+                       holdout_from="20260401", include_holdout=True)
+    holdout = got["holdout"]
+    assert holdout["revealed"] is True
+    assert holdout["your_ai"]["races"] == 3
+    assert holdout["baseline_favorite"]["races"] == 3
+    assert "roi_stats" in holdout
+
+
+def test_backtest_without_a_holdout_date_behaves_as_before():
+    m = _split_matrix()
+    got = svc.backtest(m, USER_CFG, PRESET, date_from="20250701")
+    assert "holdout" not in got
+    assert got["your_ai"]["races"] == 7
+
+
+def _prepare_backtest(monkeypatch, tmp_path):
+    monkeypatch.setattr(cfgmod, "PRESET_WEIGHTS_PATH", tmp_path / "p.json")
+    monkeypatch.setitem(api._STATE, "backtest_matrix", _split_matrix())
+    monkeypatch.setitem(api._STATE, "preset", PRESET)
+
+
+def test_handle_backtest_records_a_score_for_each_generation(tmp_path, monkeypatch):
+    """世代ごとの調整側スコアを残すこと。
+
+    「選ぶほど数字が上がる」形そのものが過学習の痕跡になる。
+    """
+    _prepare_backtest(monkeypatch, tmp_path)
+    saved = cf.save_config(dict(USER_CFG, name="A"), owner_id="u1")
+    got, status = api.handle_backtest(
+        {"config": USER_CFG, "config_id": saved["id"]}, owner_id="u1")
+    assert status == 200
+    assert got["generations"] == 1
+    assert [h["version"] for h in got["score_history"]] == [1]
+    assert got["score_history"][0]["races"] == 4          # 調整側だけ
+
+    # 2世代目を保存して再取得すると履歴が伸びる
+    cf.save_config(dict(USER_CFG, name="A", step1=["burden_weight"]),
+                   config_id=saved["id"], owner_id="u1")
+    got2, _ = api.handle_backtest(
+        {"config": USER_CFG, "config_id": saved["id"]}, owner_id="u1")
+    assert got2["generations"] == 2
+    assert [h["version"] for h in got2["score_history"]] == [1, 2]
+
+
+def test_the_same_generation_is_recorded_once(tmp_path, monkeypatch):
+    """同じ世代を何度取得しても履歴が増えないこと (行列が伸びれば上書き)。"""
+    _prepare_backtest(monkeypatch, tmp_path)
+    saved = cf.save_config(dict(USER_CFG, name="A"), owner_id="u1")
+    for _ in range(3):
+        got, _ = api.handle_backtest(
+            {"config": USER_CFG, "config_id": saved["id"]}, owner_id="u1")
+    assert [h["version"] for h in got["score_history"]] == [1]
+
+
+def test_revealing_the_holdout_is_recorded_and_cannot_be_undone(tmp_path, monkeypatch):
+    """開封を記録すること。一度見たら、その数字を見ながら選び直せてしまう。"""
+    _prepare_backtest(monkeypatch, tmp_path)
+    saved = cf.save_config(dict(USER_CFG, name="A"), owner_id="u1")
+    got, status = api.handle_backtest(
+        {"config": USER_CFG, "config_id": saved["id"], "reveal": True}, owner_id="u1")
+    assert status == 200
+    assert got["holdout"]["your_ai"]["races"] == 3
+    assert got["holdout"]["revealed_at_version"] == 1
+
+    # 世代を進めても「v1 で開封済み」は残る
+    cf.save_config(dict(USER_CFG, name="A", step1=["burden_weight"]),
+                   config_id=saved["id"], owner_id="u1")
+    later, _ = api.handle_backtest(
+        {"config": USER_CFG, "config_id": saved["id"]}, owner_id="u1")
+    assert later["holdout"]["revealed_at_version"] == 1
+    # 開封済みでも、頼まない限り成績は返さない
+    assert "your_ai" not in later["holdout"]
+
+
+def test_revealing_needs_a_saved_config(tmp_path, monkeypatch):
+    _prepare_backtest(monkeypatch, tmp_path)
+    got, status = api.handle_backtest({"config": USER_CFG, "reveal": True},
+                                      owner_id="u1")
+    assert status == 400 and got["error"] == "config_id_required"
+    got, status = api.handle_backtest(
+        {"config": USER_CFG, "config_id": "nope", "reveal": True}, owner_id="u1")
+    assert status == 404 and got["error"] == "config_not_found"
+
+
+def test_another_owner_cannot_reveal_or_read_the_history(tmp_path, monkeypatch):
+    _prepare_backtest(monkeypatch, tmp_path)
+    saved = cf.save_config(dict(USER_CFG, name="A"), owner_id="u1")
+    api.handle_backtest({"config": USER_CFG, "config_id": saved["id"]}, owner_id="u1")
+    got, status = api.handle_backtest(
+        {"config": USER_CFG, "config_id": saved["id"], "reveal": True}, owner_id="u2")
+    assert status == 404, got
+    assert cf.score_history(saved["id"], owner_id="u2") == []
+    assert cf.holdout_state(saved["id"], owner_id="u2") == {}

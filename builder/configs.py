@@ -215,6 +215,77 @@ def save_config(cfg: dict, config_id: str | None = None,
             "hash": config_hash(n)}
 
 
+# ---------------------------------------------------------------------------
+# 選び直しの記録 (過学習を見えるようにする)
+# ---------------------------------------------------------------------------
+# バックテストの数字を見ながら項目を選び直すと、その数字は **選び直した回数の
+# ぶんだけ楽観側に寄る**。182,594 候補を機械で探索して out-of-sample のエッジが
+# 出なかったのと同じことが手作業でも起きる。
+# 世代ごとの調整側スコアを残しておけば、「選ぶほど上がっていく」形そのものが
+# 過学習の痕跡として画面に出せる。
+SCORE_HISTORY_LIMIT = 50
+
+
+def record_score(config_id: str, version: int, score: dict,
+                 owner_id: str | None = None) -> dict | None:
+    """その世代の調整側スコアを残す。同じ世代は上書きする (行列は伸びるため)。"""
+    with _STORE_LOCK:
+        store = _load_store()
+        entry = store.get(config_id)
+        if not entry or not _owned(entry, owner_id):
+            return None
+        history = [x for x in (entry.get("scores") or [])
+                   if int(x.get("version") or 0) != int(version)]
+        history.append({
+            "version": int(version),
+            "races": int(score.get("races") or 0),
+            "win_rate": score.get("win_rate"),
+            "show_rate": score.get("show_rate"),
+            "at": int(time.time()),
+        })
+        history.sort(key=lambda x: x["version"])
+        entry["scores"] = history[-SCORE_HISTORY_LIMIT:]
+        store[config_id] = entry
+        _save_store(store)
+        return entry["scores"][-1]
+
+
+def score_history(config_id: str, owner_id: str | None = None) -> list[dict]:
+    entry = _load_store().get(config_id)
+    if not entry or not _owned(entry, owner_id):
+        return []
+    return list(entry.get("scores") or [])
+
+
+def holdout_state(config_id: str, owner_id: str | None = None) -> dict:
+    """封印期間を開封したか。開封後の選び直しは封印の意味を失う。"""
+    entry = _load_store().get(config_id)
+    if not entry or not _owned(entry, owner_id):
+        return {}
+    return dict(entry.get("holdout_revealed") or {})
+
+
+def reveal_holdout(config_id: str, version: int,
+                   owner_id: str | None = None) -> dict | None:
+    """封印期間を開けたことを記録する。**取り消せない。**
+
+    一度見たら、その数字を見ながら選び直せてしまう。記録を残すことで
+    「この設定の封印は v3 で開封済み」と画面に出し続けられる。
+    """
+    with _STORE_LOCK:
+        store = _load_store()
+        entry = store.get(config_id)
+        if not entry or not _owned(entry, owner_id):
+            return None
+        got = entry.get("holdout_revealed")
+        if not got:
+            got = {"version": int(version), "at": int(time.time())}
+            entry["holdout_revealed"] = got
+            store[config_id] = entry
+            _save_store(store)
+        return dict(got)
+
+
 def get_config(config_id: str, version: int | None = None,
                owner_id: str | None = None) -> dict | None:
     entry = _load_store().get(config_id)
@@ -271,6 +342,9 @@ def list_configs(owner_id: str | None = None, *, include_archived: bool = False)
             "hash": cur["hash"],
             "archived": bool(entry.get("archived")),
             "updated_at": int(entry.get("updated_at") or entry.get("created_at") or 0),
+            # 何回作り直したか。数字が良くなるまで選び直した痕跡になる
+            "generations": len(entry.get("versions") or []),
+            "holdout_revealed": dict(entry.get("holdout_revealed") or {}),
         })
     out.sort(key=lambda e: (e["archived"], -e["updated_at"], e["name"]))
     return out

@@ -903,3 +903,121 @@ def test_the_handoff_also_shows_what_was_selected(tmp_path):
         assert dls, entry["key"]
         got = [x["text"].strip() for x in dls[0]["children"] if x["tag"] == "dt"]
         assert got == [pk["label"] for pk in entry["picks"]], entry["key"]
+
+
+# ---------------------------------------------------------------------------
+# 封印期間と世代カウンタの描画
+# ---------------------------------------------------------------------------
+def _render_backtest(bt: dict, tmp_path=None) -> dict:
+    """成績カードを実際に描画する。"""
+    tmp = Path(tmp_path or ROOT / "out")
+    tmp.mkdir(parents=True, exist_ok=True)
+    f = tmp / "_backtest.json"
+    f.write_text(json.dumps(bt, ensure_ascii=False), encoding="utf-8")
+    res = subprocess.run(["node", str(ROOT / "tests" / "dom_render.js"),
+                          "--backtest", str(f)],
+                         capture_output=True, text=True, encoding="utf-8",
+                         cwd=str(ROOT), timeout=60)
+    assert res.returncode == 0, f"描画に失敗: {res.stderr[-2000:]}"
+    return json.loads(res.stdout)
+
+
+def _bt_fixture(**over) -> dict:
+    got = {
+        "period": ["20250701", "99999999"],
+        "note": "過去の的中率は将来の成績を保証しません",
+        "warnings": [],
+        "min_races_for_rate": 100,
+        "your_ai": {"races": 2586, "hit_rate_win": 0.191,
+                    "hit_rate_show": 0.42, "hit_rate_in_marks": 0.71},
+        "baseline_favorite": {"races": 2586, "hit_rate_win": 0.326,
+                              "hit_rate_show": 0.63, "hit_rate_in_marks": 0.86},
+        "by_condition": [],
+        "roi_stats": {"races": 2586, "enough": False},
+        "baseline_roi_stats": {"races": 2586, "enough": False},
+        "roi_note": "",
+    }
+    got.update(over)
+    return got
+
+
+def test_the_sealed_period_shows_its_size_but_no_score(tmp_path):
+    """封印中は**レース数だけ**出し、成績は出さないこと。
+
+    数字を見ながら選び直すと、その数字は選び直した回数のぶんだけ楽観側に寄る。
+    """
+    bt = _bt_fixture(holdout={"from": "20260401", "races": 1116, "revealed": False})
+    out = _render_backtest(bt, tmp_path)
+    t = Tree()
+    t.feed(out["btResult"])
+    hold = t.find("hold")
+    assert hold, "封印期間のカードが無い"
+    txt = t.all_text(hold[0])
+    assert "1116" in txt
+    assert "封印期間の成績を見る" in txt, txt
+    # 成績の行そのものが無いこと
+    assert not t.find("bt2-row", hold[0]), "封印中に成績を描いている"
+
+
+def test_the_sealed_period_shows_both_sides_once_revealed(tmp_path):
+    """開封後は、このAIと基準の両方を数字で出すこと。
+
+    以前ここで `h.your_ai.your_ai` を読んでいて **両方とも「—」** になっていた。
+    """
+    bt = _bt_fixture(holdout={
+        "from": "20260401", "races": 1116, "revealed": True,
+        "revealed_at_version": 3,
+        "your_ai": {"races": 1116, "hit_rate_win": 0.187, "hit_rate_show": 0.41},
+        "baseline_favorite": {"races": 1116, "hit_rate_win": 0.328,
+                              "hit_rate_show": 0.64},
+    })
+    out = _render_backtest(bt, tmp_path)
+    t = Tree()
+    t.feed(out["btResult"])
+    hold = t.find("hold")
+    assert hold and "open" in hold[0]["cls"], "開封後のカードになっていない"
+    rows = t.find("bt2-row", hold[0])
+    assert rows, "成績の行が無い"
+    txt = " ".join(t.all_text(r) for r in rows)
+    assert "19%" in txt or "19 %" in txt, txt      # 18.7% → 19%
+    assert "33%" in txt or "33 %" in txt, txt      # 32.8% → 33%
+    assert "—" not in txt, f"数字が出ていない: {txt}"
+    # 開封済みであることが残る
+    assert "v3" in t.all_text(hold[0])
+    assert not t.find("hold-btn", hold[0]), "開封後にボタンが残っている"
+
+
+def test_the_generation_list_appears_from_the_second_one(tmp_path):
+    """2世代目から、世代ごとの数字を並べること。1世代目では出さない。"""
+    one = _render_backtest(_bt_fixture(
+        generations=1,
+        score_history=[{"version": 1, "races": 2586, "win_rate": 0.12}]), tmp_path)
+    t = Tree()
+    t.feed(one["btResult"])
+    assert not t.find("gen"), "1世代目で選び直しの記録を出している"
+
+    many = _render_backtest(_bt_fixture(
+        generations=3,
+        score_history=[{"version": 1, "races": 2586, "win_rate": 0.121},
+                       {"version": 2, "races": 2586, "win_rate": 0.196},
+                       {"version": 3, "races": 2586, "win_rate": 0.191}]), tmp_path)
+    t = Tree()
+    t.feed(many["btResult"])
+    gen = t.find("gen")
+    assert gen, "選び直しの記録が無い"
+    items = t.find("gen-item", gen[0])
+    assert len(items) == 3, len(items)
+    txt = t.all_text(gen[0])
+    assert "3世代目" in txt, txt
+    for want in ("12%", "20%", "19%"):
+        assert want in txt, (want, txt)
+
+
+def test_nothing_extra_is_shown_without_a_holdout(tmp_path):
+    """封印期間が無い応答 (旧形式) でも壊れないこと。"""
+    out = _render_backtest(_bt_fixture(), tmp_path)
+    t = Tree()
+    t.feed(out["btResult"])
+    assert not t.find("hold")
+    assert not t.find("gen")
+    assert t.find("bt2-row"), "通常の成績は出ること"

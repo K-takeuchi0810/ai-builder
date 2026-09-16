@@ -1109,7 +1109,10 @@ async function loadBacktest() {
   const box = $('#btResult');
   let bt;
   try {
-    bt = await postJSON('/api/backtest', { config: buildConfig() });
+    bt = await postJSON('/api/backtest', {
+      config: buildConfig(),
+      config_id: state.config ? state.config.id : undefined,
+    });
   } catch (err) {
     box.classList.add('hidden');
     return;
@@ -1138,11 +1141,109 @@ async function loadBacktest() {
     </div>
     ${btRoiBlock(bt)}
     ${condBreakdown(bt)}
+    ${generationBlock(bt)}
+    ${holdoutBlock(bt)}
     <p class="note" style="margin-top:8px">${esc(bt.note || '')}</p>
     <button class="cta" data-go="races">レースを選んで予想する</button>`;
   bindTerms();
   bindGo();
+  bindHoldout();
 }
+
+/* ======================= 選び直しの記録と封印期間 =========================
+ *
+ * バックテストの数字を見ながら項目を選び直すと、その数字は **選び直した回数の
+ * ぶんだけ楽観側に寄る**。182,594 候補を機械で探索して out-of-sample のエッジが
+ * 出なかったのと同じことが手作業でも起きる。
+ * ここでやるのは2つだけ:
+ *   1. 何世代目かと、世代ごとの数字の動きを見せる (上がっていく形が痕跡)
+ *   2. 封印期間の成績は **開けるまで出さない** (サーバが返さない)
+ * どちらも「この数字を信じてよいか」を判断する材料であって、良し悪しは言わない。 */
+
+function generationBlock(bt) {
+  const n = bt.generations || 0;
+  const hist = bt.score_history || [];
+  if (n < 2) return '';
+  const rows = hist.filter((h) => h.win_rate != null).map((h) => {
+    const w = Math.round(h.win_rate * 100);
+    return `<li class="gen-item"><span class="gen-v">v${h.version}</span>
+      <span class="gen-bar"><i style="width:${Math.max(2, w * 2)}%"></i></span>
+      <span class="gen-n num">${w}%</span></li>`;
+  }).join('');
+  return `<div class="card gen">
+    <div class="gen-h">この設定は <b>${n}世代目</b> です</div>
+    <p class="gen-note">数字を見ながら選び直すと、上の成績は<b>選び直した回数のぶんだけ
+      良く出ます</b>。下は世代ごとの「◎が1着だった割合」です。
+      右肩上がりなら、その分だけ差し引いて読んでください。</p>
+    <ol class="gen-list">${rows}</ol>
+  </div>`;
+}
+
+function holdoutBlock(bt) {
+  const h = bt.holdout;
+  if (!h || !h.races) return '';
+  // 開封済みかどうかは **成績が返ってきているか** で判定する
+  // (サーバは頼まれるまで your_ai を返さない)
+  const opened = !!h.your_ai;
+  const wasOpened = h.revealed_at_version != null;
+  if (opened) {
+    const you = h.your_ai || {}, base = h.baseline_favorite || {};
+    return `<div class="card hold open">
+      <div class="hold-h">封印期間の成績 <span class="hold-n">${h.races}レース</span></div>
+      <p class="gen-note">${esc(ymd(h.from))}以降は、項目を選んでいるあいだ
+        見えていなかった期間です。<b>上の成績との差が、選び直しで得た見かけの分</b>です。</p>
+      <div class="bt2">
+        <div class="bt2-head"><span></span>
+          <span class="bt2-pair"><span>このAI</span><span class="bt2-sep"></span>
+            <span>1番人気AI</span></span><span>差</span></div>
+        ${btRow('◎が1着だった割合', you.hit_rate_win, base.hit_rate_win)}
+        ${btRow('◎が3着以内', you.hit_rate_show, base.hit_rate_show)}
+      </div>
+      <p class="gen-note hold-once">この設定の封印は開封済みです
+        (v${h.revealed_at_version})。<b>これ以降に項目を選び直すと、封印の意味は
+        失われます</b> — 見た数字に合わせて選べてしまうためです。</p>
+    </div>`;
+  }
+  return `<div class="card hold">
+    <div class="hold-h">封印期間 <span class="hold-n">${h.races}レース</span></div>
+    <p class="gen-note">${esc(ymd(h.from))}以降は<b>上の成績に入っていません</b>。
+      項目を選び終えてから開けると、選び直しの影響を受けていない数字で確かめられます。</p>
+    ${wasOpened
+      ? `<p class="gen-note hold-once">この設定は v${h.revealed_at_version} で
+          開封済みです。以降の選び直しは封印の意味を失っています。</p>`
+      : ''}
+    <button class="hold-btn" id="holdBtn">封印期間の成績を見る</button>
+    <p class="gen-note">一度見ると取り消せません。</p>
+  </div>`;
+}
+
+function bindHoldout() {
+  const btn = $('#holdBtn');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    if (!state.config) { toast('先にマイAIを保存してください'); return; }
+    btn.disabled = true;
+    btn.textContent = '開けています…';
+    try {
+      const bt = await postJSON('/api/backtest', {
+        config: buildConfig(), config_id: state.config.id, reveal: true,
+      });
+      renderHoldout(bt);
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = '封印期間の成績を見る';
+      toast('封印期間を開けませんでした');
+    }
+  });
+}
+
+function renderHoldout(bt) {
+  const card = $('#btResult .hold');
+  if (!card) return;
+  card.outerHTML = holdoutBlock(bt);
+  bindTerms();
+}
+
 /* B-1 回帰: 自分の値を 1.2rem 太字、基準を 0.72rem 淡色で出していたため、
  * **数字の強弱が実際の優劣と逆** になっていた (19% が大きく、基準 33% が小さい)。
  * 基準を同格に並べ、差を主表示にする。 */
