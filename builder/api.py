@@ -53,6 +53,7 @@ from . import matrix as mxmod
 from . import matrix_daily as md
 from . import model
 from . import odds as live_odds
+from . import live_schedule
 from . import live_status
 from . import purchases
 from . import predict_service as svc
@@ -118,9 +119,63 @@ def _refresh_interval(daily: dict) -> float:
     return _LIVE_REFRESH_INTERVAL_SECONDS
 
 
+# 取り込みの稼働時間帯は開催日ごとに決まる。1リクエストごとに DB を引かないよう、
+# 日付単位で短時間だけ覚えておく (窓の境界は1日のあいだ動かない)。
+_FEED_WINDOW_TTL_SECONDS = 600.0
+_FEED_WINDOW_CACHE: dict[str, tuple[float, dict]] = {}
+
+
+def _feed_window(date: str) -> dict:
+    """その開催日の取り込み稼働窓 (live_schedule の判定)。取れなければ空。"""
+    if not date:
+        return {}
+    now = time.monotonic()
+    got = _FEED_WINDOW_CACHE.get(date)
+    if got and now - got[0] < _FEED_WINDOW_TTL_SECONDS:
+        return got[1]
+    try:
+        with mxmod.open_conn() as conn:
+            decided = live_schedule.decide(conn, date)
+    except Exception:
+        logger.debug("取り込み稼働窓を判定できませんでした: %s", date, exc_info=True)
+        decided = {}
+    _FEED_WINDOW_CACHE[date] = (now, decided)
+    while len(_FEED_WINDOW_CACHE) > 8:
+        _FEED_WINDOW_CACHE.pop(next(iter(_FEED_WINDOW_CACHE)))
+    return decided
+
+
+def _feed_expected(date: str, *, now: datetime | None = None) -> bool | None:
+    """いま取り込みが動いているはずか。判定できなければ None。
+
+    開催が無い日・時間帯は 90秒の閾値では必ず「鮮度切れ」になる。
+    それを異常として出すと **平日は常に警告が出たまま** になり、
+    本当に止まったときに区別がつかない。
+    """
+    decided = _feed_window(date)
+    if not decided:
+        return None
+    if not decided.get("enabled"):
+        return False
+    start, end = decided.get("start_at"), decided.get("end_at")
+    if not start or not end:
+        return False
+    try:
+        at = now or datetime.now()
+        return (datetime.fromisoformat(start) <= at <= datetime.fromisoformat(end))
+    except (TypeError, ValueError):
+        return None
+
+
 def _live_feed_status(date: str | None = None) -> dict:
-    """開催変更(0B14)が最後に正常確認できた時刻と鮮度を返す。"""
-    return live_status.source("0B14", target=str(date or _STATE.get("date") or ""))
+    """開催変更(0B14)が最後に正常確認できた時刻と鮮度を返す。
+
+    取り込みが動かない時間帯は `state="idle"` / `fresh=None` になり、
+    画面は「更新中」を出さない (出しても直しようがないため)。
+    """
+    target = str(date or _STATE.get("date") or "")
+    return live_status.source("0B14", target=target,
+                              expected=_feed_expected(target))
 
 
 def _as_upcoming(obj: dict) -> dict:
