@@ -40,7 +40,25 @@ def record_success(sources: dict[str, str], *, now: datetime | None = None) -> d
 
 
 def source(source: str, *, target: str = "", now: float | None = None,
-           max_age_seconds: int = QR_MAX_AGE_SECONDS) -> dict:
+           max_age_seconds: int = QR_MAX_AGE_SECONDS,
+           expected: bool | None = None) -> dict:
+    """取得元の鮮度。**取り込みが動くはずの時間帯かどうかを分けて返す。**
+
+    `max_age_seconds` は開催中の速報間隔 (90秒) を前提にした閾値なので、
+    開催が無い日や時間帯には必ず「鮮度切れ」になる。それをそのまま `fresh=False`
+    として返していたため、**平日は常に警告が出たままになり、本当に取り込みが
+    止まったときに区別がつかなかった**。
+
+    `expected=False` (取り込みが動かない時間帯) のときは `fresh` を None にし、
+    `state` を "idle" にする。`expected` を渡さなければ従来どおりの bool を返す
+    (取得タスク側の `due()` は挙動を変えない)。
+
+    state:
+      fresh   … 期待どおり新しい
+      stale   … 動くはずの時間帯なのに古い ← **これだけが異常**
+      idle    … 取り込みが動かない時間帯 (開催なし等)。鮮度は判定しない
+      unknown … 一度も記録が無い
+    """
     row = ((load().get("sources") or {}).get(source) or {})
     checked_at = str(row.get("checked_at") or "")
     age = None
@@ -50,14 +68,26 @@ def source(source: str, *, target: str = "", now: float | None = None,
     except (TypeError, ValueError):
         pass
     target_ok = not target or str(row.get("target") or "") == str(target)
-    fresh = age is not None and age <= max_age_seconds and target_ok
+    is_fresh = age is not None and age <= max_age_seconds and target_ok
+
+    if expected is False:
+        state, fresh = "idle", None
+    elif age is None:
+        state, fresh = "unknown", is_fresh
+    elif is_fresh:
+        state, fresh = "fresh", True
+    else:
+        state, fresh = "stale", False
     return {
         "source": source, "checked_at": checked_at or None,
         "target": row.get("target") or None,
         "age_seconds": round(age, 1) if age is not None else None,
-        "max_age_seconds": max_age_seconds, "fresh": fresh,
+        "max_age_seconds": max_age_seconds,
+        "expected": expected, "state": state, "fresh": fresh,
     }
 
 
 def due(source_key: str, seconds: int, *, now: float | None = None) -> bool:
+    """次の取得に行くべきか。**取得タスク側から呼ばれるので expected は渡さない**
+    (呼ばれている時点で取り込みの時間帯にいる)。"""
     return not source(source_key, now=now, max_age_seconds=seconds)["fresh"]

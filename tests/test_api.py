@@ -1887,3 +1887,56 @@ def test_another_owner_cannot_reveal_or_read_the_history(tmp_path, monkeypatch):
     assert status == 404, got
     assert cf.score_history(saved["id"], owner_id="u2") == []
     assert cf.holdout_state(saved["id"], owner_id="u2") == {}
+
+
+# ---------------------------------------------------------------------------
+# 速報フィードの「動くはずの時間帯か」の判定
+# ---------------------------------------------------------------------------
+from datetime import datetime as _dt
+
+
+def _window(monkeypatch, decided: dict):
+    """live_schedule の判定を差し替え、日付キャッシュを空にする。"""
+    api._FEED_WINDOW_CACHE.clear()
+    monkeypatch.setattr(api, "_feed_window", lambda date: decided)
+
+
+def test_the_feed_is_not_expected_outside_a_race_day(monkeypatch):
+    """開催が無い日は取り込みが動かないので、鮮度を判定しない。"""
+    _window(monkeypatch, {"enabled": False, "reason": "no_official_race"})
+    assert api._feed_expected("20260917") is False
+
+
+def test_the_feed_is_expected_only_inside_the_window(monkeypatch):
+    """開催日でも、稼働時間帯の外では判定しない。"""
+    _window(monkeypatch, {"enabled": True,
+                          "start_at": "2026-09-19T07:00:00",
+                          "end_at": "2026-09-19T21:00:00"})
+    inside = _dt(2026, 9, 19, 12, 0, 0)
+    before = _dt(2026, 9, 19, 6, 0, 0)
+    after = _dt(2026, 9, 19, 22, 0, 0)
+    other_day = _dt(2026, 9, 17, 12, 0, 0)
+    assert api._feed_expected("20260919", now=inside) is True
+    assert api._feed_expected("20260919", now=before) is False
+    assert api._feed_expected("20260919", now=after) is False
+    assert api._feed_expected("20260919", now=other_day) is False
+
+
+def test_an_undecidable_window_does_not_claim_anything(monkeypatch):
+    """判定できないときは None。**勝手に「正常」とも「異常」とも言わない。**"""
+    _window(monkeypatch, {})
+    assert api._feed_expected("20260919") is None
+    _window(monkeypatch, {"enabled": True, "start_at": None, "end_at": None})
+    assert api._feed_expected("20260919") is False
+
+
+def test_the_feed_status_reports_idle_instead_of_a_false_warning(monkeypatch):
+    """開催が無い日は state=idle / fresh=None で返すこと。
+
+    画面は `live_source_fresh === false` で「速報情報を更新中」を出すので、
+    ここが False のままだと平日じゅう警告が出続ける。
+    """
+    _window(monkeypatch, {"enabled": False, "reason": "no_official_race"})
+    got = api._live_feed_status("20260917")
+    assert got["state"] == "idle"
+    assert got["fresh"] is None
