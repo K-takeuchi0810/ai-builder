@@ -20,11 +20,15 @@ import copy
 from datetime import datetime
 import hashlib
 import json
+import logging
 from pathlib import Path
 import re
+import time
 
 from . import config, matrix as mx, model, payouts as payout_data
 from .keiba_bridge import _ensure_keiba_on_path, open_conn
+
+logger = logging.getLogger(__name__)
 
 # v2: UI が必要とする start_time / 確定状態を各レースに持たせた。
 # v3: 枠番 (waku) を各馬に持たせた。UI が馬番から計算していたため誤った枠色が
@@ -261,9 +265,9 @@ def _inactive_horses(conn, race: dict) -> dict[str, dict]:
     }
 
 
-def _feature_context(seg: dict, horses: list[dict]) -> str:
-    """馬場・騎手・負担重量に依存する当日再計算の入力指紋。"""
-    payload = {
+def _feature_context_parts(seg: dict, horses: list[dict]) -> dict:
+    """当日再計算の入力。**指紋と中身を同じ場所から作る** (ずれないように)。"""
+    return {
         "condition": seg.get("condition"),
         "track": seg.get("track"),
         "surface": seg.get("surface"),
@@ -274,8 +278,34 @@ def _feature_context(seg: dict, horses: list[dict]) -> str:
             str(h.get("burden_weight") or ""),
         ] for h in horses),
     }
-    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _feature_context(seg: dict, horses: list[dict]) -> str:
+    """馬場・騎手・負担重量に依存する当日再計算の入力指紋。"""
+    raw = json.dumps(_feature_context_parts(seg, horses), ensure_ascii=False,
+                     sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def _context_changes(before: dict | None, after: dict) -> list[str]:
+    """指紋が変わった原因を、変わった項目名で返す。
+
+    当日再計算は1レースあたり十数秒・約400本のDB問い合わせを要する。
+    **何がきっかけで回っているのかが分からないと、頻度も妥当性も判断できない。**
+    騎手欄は頭数ではなく「何頭ぶん変わったか」を出す (全件を記録しない)。
+    """
+    if not before:
+        return ["(前回の記録なし)"]
+    out = []
+    for key in ("condition", "track", "surface", "distance"):
+        if before.get(key) != after.get(key):
+            out.append(f"{key}:{before.get(key)}→{after.get(key)}")
+    old_j = {tuple(x) for x in (before.get("jockeys") or [])}
+    new_j = {tuple(x) for x in (after.get("jockeys") or [])}
+    moved = len(new_j - old_j)
+    if moved:
+        out.append(f"jockeys:{moved}頭ぶん")
+    return out or ["(項目の差は検出できず)"]
 
 
 def _waku(horse: dict) -> int | None:
@@ -544,10 +574,21 @@ def refresh_live(daily: dict, *, recompute_features: bool = True) -> dict:
                 conn, _with_latest_race_changes(conn, db_race)
             )
             live_seg = mx._seg(live_race)
+            next_parts = _feature_context_parts(live_seg, live_horses)
             next_feature_context = _feature_context(live_seg, live_horses)
             recompute_live_features = recompute_features and (
                 cached.get("live_feature_context") != next_feature_context
             )
+            if recompute_live_features:
+                # **なぜ回ったのかを残す。** 1レースの再計算は十数秒・約400本の
+                # DB問い合わせになるので、頻度が分からないと費用を見積もれない。
+                logger.info(
+                    "当日特徴量を再計算: race=%s 頭数=%d 理由=%s",
+                    _race_id(db_race), len(live_horses),
+                    " / ".join(_context_changes(cached.get("live_feature_parts"),
+                                                next_parts)),
+                )
+                recompute_started = time.monotonic()
             inactive = _inactive_horses(conn, db_race)
             feature_cache: dict = {}
             live_by_num = {
@@ -596,6 +637,10 @@ def refresh_live(daily: dict, *, recompute_features: bool = True) -> dict:
             cached.update(_change_metadata(live_race))
             cached["condition_as_of"] = live_race.get("condition_as_of")
             cached["live_feature_context"] = next_feature_context
+            cached["live_feature_parts"] = next_parts
+            if recompute_live_features:
+                logger.info("当日特徴量を再計算: race=%s 完了 %.1f秒",
+                            _race_id(db_race), time.monotonic() - recompute_started)
             cached["scratched_horses"] = [
                 {"horse_num": number, **info} for number, info in sorted(inactive.items())
             ]
