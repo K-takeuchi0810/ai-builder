@@ -477,3 +477,70 @@ def test_real_db_daily_build_smoke(tmp_path, monkeypatch):
         assert set(h["x"]) == {c["id"] for c in daily["columns"]}
     st = md.today_status(daily)
     assert len(st) == len(daily["races"])
+
+
+# ---------------------------------------------------------------------------
+# 当日特徴量の再計算が「なぜ回ったか」を残す
+# ---------------------------------------------------------------------------
+# 1レースの再計算は実測で 8〜12 秒・約400本のDB問い合わせ。24レースで約250秒かかる。
+# ライブ更新は25秒間隔なので、毎周回ると**実質ずっと回り続ける**。
+# 頻度と理由が分からないと、妥当な費用かどうかを判断できない。
+def _parts(**over):
+    got = {"condition": "良", "track": "05", "surface": "芝", "distance": 1600,
+           "jockeys": [["01", "J1", "55"], ["02", "J2", "54"]]}
+    got.update(over)
+    return got
+
+
+def test_the_context_fingerprint_is_stable_for_the_same_input():
+    """同じ入力なら指紋が変わらないこと。
+
+    ここが揺れると、変わっていないのに毎周再計算が走る。
+    """
+    seg = {"condition": "良", "track": "05", "surface": "芝", "distance": 1600}
+    horses = [{"horse_num": "1", "jockey_code": "J1", "burden_weight": 55},
+              {"horse_num": "2", "jockey_code": "J2", "burden_weight": 54}]
+    first = md._feature_context(seg, horses)
+    assert first == md._feature_context(seg, horses)
+    # 並び順が違っても同じ (sorted しているため)
+    assert first == md._feature_context(seg, list(reversed(horses)))
+
+
+def test_the_context_changes_only_for_the_inputs_it_declares():
+    """馬場・騎手・負担重量が変われば指紋も変わること。"""
+    seg = {"condition": "良", "track": "05", "surface": "芝", "distance": 1600}
+    horses = [{"horse_num": "1", "jockey_code": "J1", "burden_weight": 55}]
+    base = md._feature_context(seg, horses)
+    assert md._feature_context({**seg, "condition": "稍重"}, horses) != base
+    assert md._feature_context(
+        seg, [{**horses[0], "jockey_code": "J9"}]) != base
+    assert md._feature_context(
+        seg, [{**horses[0], "burden_weight": 57}]) != base
+    # オッズや馬体重は指紋に入っていない (入れると毎周回ってしまう)
+    assert md._feature_context(
+        seg, [{**horses[0], "odds": 3.5, "horse_weight": 480}]) == base
+
+
+def test_the_reason_for_a_recompute_is_reported():
+    """何がきっかけで再計算したのかを項目名で返すこと。"""
+    base = _parts()
+    assert md._context_changes(base, _parts(condition="稍重")) == ["condition:良→稍重"]
+    assert md._context_changes(
+        base, _parts(jockeys=[["01", "J9", "55"], ["02", "J2", "54"]])) \
+        == ["jockeys:1頭ぶん"]
+    # 複数同時
+    got = md._context_changes(
+        base, _parts(condition="重", jockeys=[["01", "J9", "55"]]))
+    assert "condition:良→重" in got and any("jockeys" in x for x in got)
+
+
+def test_a_first_run_says_so_instead_of_inventing_a_cause():
+    """前回の記録が無いときは「差分」を捏造しないこと。"""
+    assert md._context_changes(None, _parts()) == ["(前回の記録なし)"]
+    assert md._context_changes({}, _parts()) == ["(前回の記録なし)"]
+
+
+def test_an_unchanged_context_is_not_reported_as_a_diff():
+    """指紋が同じなら差分は出ない (そもそも再計算されない)。"""
+    base = _parts()
+    assert md._context_changes(base, base) == ["(項目の差は検出できず)"]
