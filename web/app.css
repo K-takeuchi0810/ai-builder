@@ -760,6 +760,9 @@ main{flex:1; padding:14px 14px 84px}
 .result-race-button:disabled{cursor:not-allowed; opacity:.55}
 .result-race-title{grid-column:1/-1; overflow:hidden; color:var(--ink-soft); font-size:.78rem;
   line-height:1.35; text-overflow:ellipsis; white-space:nowrap}
+/* 芝ダート・距離と馬場状態。塊の途中では折り返さず、狭いときは2行になる */
+.result-race-cond{grid-column:1/-1; color:var(--ink); font-size:.78rem; font-weight:700; line-height:1.35}
+.result-race-cond span{white-space:nowrap}
 .race-picker p{margin:8px 0 0; color:var(--ink-soft); font-size:var(--fs-min)}
 .race-item{display:flex; align-items:center; gap:12px; padding:13px 14px; min-height:var(--tap);
   border-bottom:1px solid var(--line-soft); background:var(--card); width:100%; text-align:left;
