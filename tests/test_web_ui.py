@@ -927,3 +927,28 @@ def test_no_orphan_class_in_the_css():
             continue
         orphans.append(sel)
     assert orphans == [], f"どこからも使われていないクラス: {orphans}"
+
+
+def test_no_inline_style_attributes_under_the_csp():
+    """CSP (style-src 'self') は style 属性を無視する。書いても効かない指定を残さない。
+
+    以前はスコアバーが常に満タン・寄与バーが幅0になり、余白の指定も効いていなかった。
+    """
+    for name in ("index.html", "app.js"):
+        assert 'style="' not in CODE[name], f"{name} に style 属性が残っている"
+    js = CODE["app.js"]
+    assert "data-w=" in js and "applyBarWidths" in js
+    assert "el.style.width" in js and "MutationObserver" in js
+
+
+def test_race_list_shows_only_the_latest_requested_day():
+    """読み込みが重なっても、遅れて返った「本日」が選んだ過去日を上書きしないこと。"""
+    js = CODE["app.js"]
+    start = js.index("async function loadRaces")
+    body = js[start:js.index("\nfunction raceButtonPicker", start)]
+    assert "++state.raceLoadSeq" in body
+    assert body.count("if (superseded()) return;") >= 3   # カタログ・一覧・失敗の各応答
+    assert "state.listWanted = requestedDate" in body
+    # 自動更新・タブ復帰は「最後に頼んだ日」で判定する
+    assert js.count("wantsTodayList()") >= 3
+    assert "state.listDate === state.todayDate" not in js

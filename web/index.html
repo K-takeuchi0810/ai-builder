@@ -39,7 +39,7 @@
     <!-- C-5: マイAI未作成なら、レースを選ばせる前にここで作成へ誘導する -->
     <div id="firstRun"></div>
     <div id="raceList"></div>
-    <p class="note" id="raceLiveNote" style="margin-top:10px">「馬体重の発表待ち」のレースは、発表(発走の約50分前)後に自動で予想できるようになります。</p>
+    <p class="note mt-10" id="raceLiveNote">「馬体重の発表待ち」のレースは、発表(発走の約50分前)後に自動で予想できるようになります。</p>
   </section>
 
   <!-- ============ 画面2: マイAIをつくる ============ -->
@@ -74,14 +74,14 @@
     </div>
 
     <div class="ai-name">
-      <div class="section-label" style="margin-top:0">マイAIの名前</div>
+      <div class="section-label mt-0">マイAIの名前</div>
       <input type="text" id="aiName" value="参加者AI 1" aria-label="マイAIの名前">
     </div>
     <button class="cta" id="saveBtn" disabled>マイAIを保存して成績をみる</button>
     <p class="cta-reason" id="saveReason">項目を1つ以上選んでください</p>
 
     <div class="bt-result hidden" id="btResult"></div>
-    <p class="note" style="margin-top:10px">※ 名前は自由につけられます(あとから変更できます)。</p>
+    <p class="note mt-10">※ 名前は自由につけられます(あとから変更できます)。</p>
   </section>
 
   <!-- ============ 画面3: 予想 ============ -->
@@ -102,7 +102,7 @@
       <div id="contextTrend"></div>
       <div id="markLegend"></div>
       <div class="card marks" id="markList"></div>
-      <div id="predWarn" class="warns" style="margin-top:12px"></div>
+      <div id="predWarn" class="warns mt-12"></div>
       <div class="demo-strip hidden" id="demoStrip">
         <button class="demo-btn" id="demoBtn">▶ 馬体重発表をシミュレート(デモ演出)</button>
       </div>

@@ -1633,7 +1633,10 @@ def test_user_leaderboard_handler_passes_all_shared_user_names(monkeypatch):
     assert captured["names"][api.ADMIN_OWNER_ID] == "管理者"
 
 
-def test_race_date_catalog_ignores_empty_days_and_links_previous(monkeypatch):
+def test_race_date_catalog_ignores_empty_days_and_links_previous(tmp_path, monkeypatch):
+    # 本物の daily フォルダのファイルで過去日のキャッシュが効かないよう、空のフォルダを見せる
+    monkeypatch.setattr(api.cfgmod, "CORNER_INDEX_PATH", tmp_path / "corner.json")
+    monkeypatch.setattr(api, "_CATALOG_ITEM_CACHE", {})
     monkeypatch.setitem(api._STATE, "date", "20260814")
     monkeypatch.setattr(api, "_built_dates",
                         lambda: ["20260808", "20260809", "20260813", "20260814"])
@@ -1651,6 +1654,39 @@ def test_race_date_catalog_ignores_empty_days_and_links_previous(monkeypatch):
     assert [item["date"] for item in got["dates"]] == ["20260808", "20260809"]
     assert got["previous"]["date"] == "20260809"
     assert got["next"] is None
+
+
+def test_race_date_catalog_reuses_past_days_until_their_file_changes(tmp_path, monkeypatch):
+    """ページを開くたびに全開催日のキャッシュを読み直さないこと (以前は毎回約8秒)。"""
+    from builder import matrix_daily as mdmod
+    d = tmp_path / "daily"
+    d.mkdir()
+    past = d / f"daily_v{mdmod.DAILY_VERSION}_20260808_abc.json"
+    past.write_text("{}", encoding="utf-8")
+    (d / f"daily_v{mdmod.DAILY_VERSION}_20260814_abc.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(api.cfgmod, "CORNER_INDEX_PATH", tmp_path / "corner.json")
+    monkeypatch.setattr(api, "_CATALOG_ITEM_CACHE", {})
+    monkeypatch.setitem(api._STATE, "date", "20260814")
+    race = _race("R1")
+    loads = []
+
+    def historical(date, _specs):
+        loads.append(date)
+        return {"date": date, "races": [dict(race, date=date)]}
+    monkeypatch.setattr(api.md, "load_historical_daily", historical)
+    monkeypatch.setattr(api, "_daily_for_date",
+                        lambda date: {"date": date, "races": [dict(race, date=date)]})
+    monkeypatch.setattr(api.md, "today_status", lambda daily: daily["races"])
+
+    first = api._race_date_catalog()
+    first["dates"][0]["race_count"] = 99          # 呼び出し側の書き換えがキャッシュに残らない
+    second = api._race_date_catalog()
+    assert loads == ["20260808"]                  # 当日は毎回、過去日は1回だけ
+    assert second["previous"] == {"date": "20260808", "race_count": 1, "finished_count": 0}
+
+    past.write_text('{"changed": true}', encoding="utf-8")   # 再構築されたら読み直す
+    api._race_date_catalog()
+    assert loads == ["20260808", "20260808"]
 
 
 def test_performance_ranges_use_purchase_dates_and_previous_race_day(monkeypatch):
