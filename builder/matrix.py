@@ -249,7 +249,9 @@ def build_matrix(from_date: str, to_date: str, specs: list[dict],
                 if _cache_usable(mp, cached, _month_end(ym), today):
                     all_races.extend(cached["races"])
                     continue
-            lo, hi = f"{ym}01", f"{ym}31"
+            # 実在する月末まで。"YYYYMM31" は 30 日の月で実在しない日付になり、keiba-yosou の
+            # guard_analysis_window が ValueError で止める (2026-10-16、9 月の作り直しで発覚)
+            lo, hi = f"{ym}01", _month_end(ym)
             races = _races_for_range(conn, lo, hi, cols, need_compute, need_past, max_age)
             tmp = mp.with_suffix(".json.tmp")             # 原子的書き込み (部分ファイルを残さない)
             tmp.write_text(json.dumps({"month": ym, "races": races, **_stamp(_month_end(ym), today)},

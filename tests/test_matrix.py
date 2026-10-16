@@ -168,7 +168,7 @@ def test_build_matrix_monthly_checkpoint(tmp_path, monkeypatch):
 
     # 2 か月ぶん構築 → Jan, Feb の 2 回だけ _races_for_range が呼ばれる
     m = matrix.build_matrix("20240101", "20240228", specs)
-    assert calls == [("20240101", "20240131"), ("20240201", "20240231")]
+    assert calls == [("20240101", "20240131"), ("20240201", "20240229")]   # 実在する月末まで
     assert len(m["races"]) == 2
     monthfiles = list((tmp_path / "months").glob("m_*.json"))
     assert len(monthfiles) == 2                       # 月ごとにチェックポイント保存
@@ -271,3 +271,21 @@ def test_cache_usable_rules():
     assert matrix._stamp("20261031", "20261016") == {"complete": False, "built_on": "20261016"}
     assert matrix._stamp("20260930", "20261016") == {"complete": True, "built_on": "20261016"}
     assert matrix._month_end("202602") == "20260228" and matrix._month_end("202402") == "20240229"
+
+
+
+def test_month_range_ends_on_a_real_day(tmp_path, monkeypatch):
+    """各月は実在する月末までを読む。30 日の月に 31 日を渡すと keiba-yosou の期間の検査が止める。"""
+    today = ["20261016"]
+    _calls, _races = _fake_env(tmp_path, monkeypatch, today)
+    seen = []
+
+    def strict_range(conn, lo, hi, cols, nc, npast, ma):
+        from datetime import datetime
+        datetime.strptime(hi, "%Y%m%d")                 # 実在しない日付なら ValueError
+        seen.append((lo, hi))
+        return []
+
+    monkeypatch.setattr(matrix, "_races_for_range", strict_range)
+    matrix.build_matrix("20260901", "20261016", [{"key": "popularity"}])
+    assert seen == [("20260901", "20260930"), ("20261001", "20261031")]
