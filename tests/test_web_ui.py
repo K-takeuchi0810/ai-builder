@@ -431,6 +431,20 @@ def test_race_list_has_jump_affordances():
     assert block and "min-height" in block
 
 
+def test_result_race_buttons_show_course_and_going():
+    """結果一覧のボタンでも、詳細を開かずに芝ダート・距離・馬場状態が分かること。"""
+    js, css = CODE["app.js"], CSS
+    start = js.index("function raceButtonPicker")
+    picker = js[start:js.index("function bindRaceButtonPicker", start)]
+    assert "result-race-cond" in picker
+    assert "race.surface_label" in picker and "race.distance" in picker
+    assert "race.condition_label" in picker
+    # 馬場状態の発表前に「不明」を出さない
+    assert "condition_announced === false" in picker
+    block = _rule_block(css, ".result-race-cond span")
+    assert block and "white-space:nowrap" in block
+
+
 def test_context_trend_prioritizes_yesterday_without_hiding_long_term_sample():
     js = CODE["app.js"]
     assert "前日の傾向" in js

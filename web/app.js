@@ -370,11 +370,19 @@ function raceButtonPicker(races, historical, counts) {
       .map((race) => {
         const waiting = race.started && !race.finished;
         const status = race.finished ? '確定' : (waiting ? '結果待ち' : '開催前');
+        // 詳細を開かなくてもコースが分かるように、一覧にも芝ダート・距離・馬場状態を出す。
+        // 3列で幅が狭いので、折り返すのはコースと馬場状態の間だけにする。
+        const course = `${race.surface_label || ''}${race.distance ? `${Number(race.distance)}m` : ''}`;
+        const going = (race.condition_announced === false || race.condition_label === '不明')
+          ? '' : (race.condition_label || '');
+        const cond = [course, going].filter(Boolean);
         return `<button type="button" class="result-race-button${race.finished ? ' finished' : ''}"
           data-race="${esc(race.race_id)}"${waiting ? ' disabled' : ''}
-          aria-label="${esc(`${track} ${Number(race.race_num)}R ${raceTitleOf(race)} ${status}`)}">
+          aria-label="${esc(`${track} ${Number(race.race_num)}R ${raceTitleOf(race)} ${cond.join(' ')} ${status}`)}">
           <span><b>${Number(race.race_num)}R</b><small class="num">${esc(race.start_time || '--:--')}</small></span>
-          <span class="result-race-title">${esc(raceTitleOf(race))}</span><em>${status}</em></button>`;
+          <span class="result-race-title">${esc(raceTitleOf(race))}</span>
+          ${cond.length ? `<span class="result-race-cond num">${cond.map((part) => `<span>${esc(part)}</span>`).join(' ')}</span>` : ''}
+          <em>${status}</em></button>`;
       }).join('');
     return `<div class="result-race-grid" id="result-races-${index}" role="tabpanel"
       data-result-group="${esc(track)}"${on ? '' : ' hidden'}>${buttons}</div>`;
