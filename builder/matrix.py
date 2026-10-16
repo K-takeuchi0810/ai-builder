@@ -12,10 +12,13 @@ read-only: keiba-yosou は model 経由 (compute_features / horse_past_runs) で
 
 from __future__ import annotations
 
+import calendar
 import hashlib
 import json
 import math
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from . import axes as ax
 from . import config, model
@@ -123,6 +126,39 @@ def _months(from_date: str, to_date: str) -> list[str]:
     return out
 
 
+def _today_jst() -> str:
+    """JST の今日 (YYYYMMDD)。キャッシュの「完了した月か」の判定に使う。テストで差し替える。"""
+    return datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y%m%d")
+
+
+def _month_end(ym: str) -> str:
+    y, m = int(ym[:4]), int(ym[4:6])
+    return f"{ym}{calendar.monthrange(y, m)[1]:02d}"
+
+
+def _mtime_jst(path: Path) -> str:
+    return datetime.fromtimestamp(path.stat().st_mtime, ZoneInfo("Asia/Tokyo")).strftime("%Y%m%d")
+
+
+def _cache_usable(path: Path, data: dict, through: str, today: str) -> bool:
+    """キャッシュを再利用してよいか。through はキャッシュが覆う最後の日 (月なら月末、範囲なら to_date)。
+
+    2026-10-16 まで月のキャッシュは「作った時点で途中・未来の月」でも永久に再利用していた。7 月に作った
+    2026-08〜12 の月が空 (32 バイト) のまま残り、共有サービスの「これまでの成績」が 2026-07-25 で止まって
+    7/26〜10/16 の JRA 768 レースが抜けていた。
+    - complete (覆う期間がすべて過ぎてから作った) なら再利用する
+    - 途中で作ったもの (complete=False) は、作った当日 (built_on == today) だけ再利用する
+    - 印の無い古いキャッシュは、ファイルの更新日が through より後 (期間が終わってから作った) なら完了とみなす
+    """
+    if "complete" in data:
+        return bool(data["complete"]) or data.get("built_on") == today
+    return _mtime_jst(path) > through
+
+
+def _stamp(through: str, today: str) -> dict:
+    return {"complete": through < today, "built_on": today}
+
+
 def _races_for_range(conn, lo: str, hi: str, cols: list[dict],
                      need_compute: bool, need_past: bool, max_age) -> list[dict]:
     """[lo,hi] の JRA 確定レースを特徴量行列レコードに変換 (build_matrix の中核)。"""
@@ -181,14 +217,19 @@ def build_matrix(from_date: str, to_date: str, specs: list[dict],
     - 無ければ **月 (YYYYMM) 単位で構築し、各月を out/matrix/months/ に逐次保存**。途中でクラッシュ
       しても次回は未完の月から再開でき、最大でも「その月ぶん (~15分)」しか失わない。
     - 全月そろったら範囲キャッシュを書き出して返す。
+    - 範囲・月のキャッシュは、覆う期間が終わる前に作ったものを作った当日しか再利用しない (_cache_usable)。
+      途中の月・未来の月を空や途中のまま永久に使い続けないため。
 
     戻り: {"from","to","columns","races":[{date, seg, horses:[{num,order,odds,pop,x}],
            tan:{num:yen}, trusted}]}
     """
     cols = _columns(specs)
+    today = _today_jst()
     range_path = _cache_path(from_date, to_date, cols)
     if range_path.exists() and not rebuild:
-        return json.loads(range_path.read_text(encoding="utf-8"))
+        cached = json.loads(range_path.read_text(encoding="utf-8"))
+        if _cache_usable(range_path, cached, to_date, today):
+            return cached
 
     _ensure_keiba_on_path()
     from scripts.backtest import popularity_config  # type: ignore
@@ -204,19 +245,22 @@ def build_matrix(from_date: str, to_date: str, specs: list[dict],
         for ym in _months(from_date, to_date):
             mp = month_dir / f"m_{ym}_{chash}.json"
             if mp.exists() and not rebuild:
-                all_races.extend(json.loads(mp.read_text(encoding="utf-8"))["races"])
-                continue
+                cached = json.loads(mp.read_text(encoding="utf-8"))
+                if _cache_usable(mp, cached, _month_end(ym), today):
+                    all_races.extend(cached["races"])
+                    continue
             lo, hi = f"{ym}01", f"{ym}31"
             races = _races_for_range(conn, lo, hi, cols, need_compute, need_past, max_age)
             tmp = mp.with_suffix(".json.tmp")             # 原子的書き込み (部分ファイルを残さない)
-            tmp.write_text(json.dumps({"month": ym, "races": races}, ensure_ascii=False),
-                           encoding="utf-8")
+            tmp.write_text(json.dumps({"month": ym, "races": races, **_stamp(_month_end(ym), today)},
+                                      ensure_ascii=False), encoding="utf-8")
             tmp.replace(mp)
             all_races.extend(races)
 
     # 月キャッシュはフル月ぶん保存するが、返却は要求範囲 [from,to] にクリップする。
     races_out = [r for r in all_races if from_date <= r["date"] <= to_date]
-    matrix = {"from": from_date, "to": to_date, "columns": cols, "races": races_out}
+    matrix = {"from": from_date, "to": to_date, "columns": cols, "races": races_out,
+              **_stamp(to_date, today)}
     _CACHE_DIR.mkdir(parents=True, exist_ok=True)
     tmp = range_path.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(matrix, ensure_ascii=False), encoding="utf-8")
