@@ -1188,3 +1188,12 @@ button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visi
 @media (prefers-reduced-motion: reduce){
   *{transition:none !important; animation:none !important}
 }
+
+/* 余白の個別調整。CSP (style-src 'self') は HTML の style 属性を無視するので、
+   style="margin-top:…" ではなくこのクラスで付ける。単一クラスの規則より後ろに置いて勝たせる。 */
+.mt-0{margin-top:0}
+.mt-6{margin-top:6px}
+.mt-8{margin-top:8px}
+.mt-9{margin-top:9px}
+.mt-10{margin-top:10px}
+.mt-12{margin-top:12px}

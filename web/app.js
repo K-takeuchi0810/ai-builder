@@ -22,6 +22,8 @@ const state = {
   todayDate: null,       // サーバが返した開催日（端末時計では決めない）
   todayRaceCount: null,  // null=未確認。0 の日はマイAIの作成・編集を開かない
   listDate: null,        // 一覧で現在表示している日
+  listWanted: null,      // 一覧で最後に頼んだ日 (null=サーバの当日)。応答前から切り替わる
+  raceLoadSeq: 0,        // 一覧の読み込みの通し番号。最後に頼んだ分だけを画面に出す
   features: null,
   contextTrend: null,
   glossary: {},          // term key → {term, desc}
@@ -61,6 +63,24 @@ const isoHM = (s) => {
   const m = /T(\d{2}):(\d{2})/.exec(String(s || ''));
   return m ? `${m[1]}:${m[2]}` : null;
 };
+/* バーの長さ。CSP (style-src 'self') は innerHTML の style 属性を無視するので、
+ * style="width:…%" と書くとスコアバーは常に満タン、寄与バーは幅0になっていた。
+ * 幅は data-w (0〜100) に持たせ、DOM に入った時点で CSSOM から付ける
+ * (el.style への代入は CSP の対象外)。描画の前に走るので一瞬満タンに見えることもない。 */
+function applyBarWidths(root) {
+  const nodes = root.matches && root.matches('[data-w]') ? [root] : [];
+  nodes.concat(Array.from(root.querySelectorAll ? root.querySelectorAll('[data-w]') : []))
+    .forEach((el) => {
+      const w = Math.min(100, Math.max(0, Number(el.dataset.w) || 0));
+      el.style.width = `${w}%`;
+    });
+}
+if (typeof MutationObserver === 'function' && document.body) {   // DOM テストの簡易環境には無い
+  new MutationObserver((records) => {
+    records.forEach((r) => r.addedNodes.forEach((n) => { if (n.nodeType === 1) applyBarWidths(n); }));
+  }).observe(document.body, { childList: true, subtree: true });
+}
+
 /* "20250701" → "2025年7月1日"。日付整形はここだけ (表記ゆれを作らない)。 */
 function ymd(s) {
   const m = /^(\d{4})(\d{2})(\d{2})$/.exec(String(s || ''));
@@ -154,7 +174,7 @@ function openMarkSheet() {
 function go(key, push = true) {
   if (key === 'build' && state.todayRaceCount === 0) {
     key = 'races';
-    state.listDate = state.todayDate;
+    state.listWanted = state.todayDate;
     toast('本日の開催レースがないため、マイAIの作成・編集は開催日に利用できます。');
     history.replaceState({ scr: 'races', raceId: state.selectedRaceId }, '', '#races');
     push = false;
@@ -236,11 +256,18 @@ function groupMissing(ids) {
   return [...names];
 }
 
-async function loadRaces(force = false, requestedDate = state.listDate) {
+async function loadRaces(force = false, requestedDate = state.listWanted) {
+  // 一覧の読み込みは重なる (起動直後・30秒ごとの更新・タブ復帰・日付の切替)。応答は
+  // 頼んだ順に返るとは限らず、以前は遅れて返った「本日」が、利用者が選んだ過去日を
+  // 上書きしていた。最後に頼んだ読み込みの結果だけを画面に出す。
+  const seq = ++state.raceLoadSeq;
+  const superseded = () => seq !== state.raceLoadSeq;
+  state.listWanted = requestedDate || null;
   let data;
   if (!state.raceDateCatalog || force) {
     try { state.raceDateCatalog = await getJSON('/api/race-dates'); }
     catch (err) { /* 一覧本体は開催日カタログが取れなくても表示する */ }
+    if (superseded()) return;
   }
   if (!state.todayDate && state.raceDateCatalog && state.raceDateCatalog.today) {
     state.todayDate = state.raceDateCatalog.today;
@@ -250,8 +277,10 @@ async function loadRaces(force = false, requestedDate = state.listDate) {
     if (requestedDate) params.set('date', requestedDate);
     if (force && (!requestedDate || requestedDate === state.todayDate)) params.set('refresh', '1');
     data = await getJSON(`/api/races/today${params.size ? `?${params}` : ''}`);
+    if (superseded()) return;
     clearStale('#racesWarn');
   } catch (err) {
+    if (superseded()) return;
     if (err.status === 409) {
       $('#raceList').innerHTML = `<div class="empty"><div class="t">この日のデータを取得できませんでした</div>
         <div class="d">「開催なし」ではなく、データがまだ準備できていない状態です。</div>
@@ -1143,7 +1172,7 @@ async function loadBacktest() {
     ${condBreakdown(bt)}
     ${generationBlock(bt)}
     ${holdoutBlock(bt)}
-    <p class="note" style="margin-top:8px">${esc(bt.note || '')}</p>
+    <p class="note mt-8">${esc(bt.note || '')}</p>
     <button class="cta" data-go="races">レースを選んで予想する</button>`;
   bindTerms();
   bindGo();
@@ -1167,7 +1196,7 @@ function generationBlock(bt) {
   const rows = hist.filter((h) => h.win_rate != null).map((h) => {
     const w = Math.round(h.win_rate * 100);
     return `<li class="gen-item"><span class="gen-v">v${h.version}</span>
-      <span class="gen-bar"><i style="width:${Math.max(2, w * 2)}%"></i></span>
+      <span class="gen-bar"><i data-w="${Math.max(2, w * 2)}"></i></span>
       <span class="gen-n num">${w}%</span></li>`;
   }).join('');
   return `<div class="card gen">
@@ -1546,7 +1575,7 @@ function renderPredict(p, prev) {
           ${(m.few_past_runs && !allThin) ? `<div class="thin-horse">参照できた過去走が`
             + `${Number(m.n_past_runs)}走のみ。評価の確かさは低めです</div>` : ''}
         </div>
-        <div class="scorebar"><div class="bar"><i style="width:${w}%"></i></div></div>
+        <div class="scorebar"><div class="bar"><i data-w="${w}"></i></div></div>
       </div>
       ${whyBlock(m)}
     </div>`;
@@ -1677,7 +1706,7 @@ function whyBlock(m) {
       const share = (total > 0 && nUsable > 1) ? Math.round((a / total) * 100) : null;
       const vt = c.value_text ? `<small>${esc(c.value_text)}</small>` : '';
       return `<div class="lbl">${esc(c.label)}${vt}${thinNote(c)}${itemCover(c)}</div>
-        <div class="cbar"><i class="${cls}" style="width:${w}%"></i></div>
+        <div class="cbar"><i class="${cls}" data-w="${w}"></i></div>
         <div class="v ${cls} num">${share == null ? '—' : `${share}%`}</div>`;
     }).join('');
   };
@@ -1971,6 +2000,12 @@ async function renderAiLeaderboardContent() {
       <div class="card board">${remaining.map(aiRow).join('')}</div></details>` : ''}`;
 }
 
+/* 自動更新するのは本日の一覧だけ。表示中の日 (listDate) ではなく最後に頼んだ日で
+ * 判定する — 過去日の応答を待つあいだに本日の更新を重ねると、そちらが勝ってしまう。 */
+function wantsTodayList() {
+  return !state.listWanted || state.listWanted === state.todayDate;
+}
+
 function startScreenPolling(key) {
   stopScreenPolling();
   state.screenPolling = setInterval(async () => {
@@ -1978,7 +2013,7 @@ function startScreenPolling(key) {
     state.screenRefreshing = true;
     try {
       if (key === 'board') await loadLeaderboard();
-      else if (key === 'races' && (!state.listDate || state.listDate === state.todayDate)) {
+      else if (key === 'races' && wantsTodayList()) {
         await loadRaces(false, state.todayDate);
       }
     } finally {
@@ -1995,7 +2030,7 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) return;
   const key = parseHash().key;
   if (key === 'board') loadLeaderboard();
-  else if (key === 'races' && (!state.listDate || state.listDate === state.todayDate)) {
+  else if (key === 'races' && wantsTodayList()) {
     loadRaces(false, state.todayDate);
   }
 });
@@ -2877,7 +2912,7 @@ function condBreakdown(bt) {
   }).join('');
   return `<div class="section-label">条件別の内訳</div>
     <div class="card cb">${rows}</div>
-    <p class="note" style="margin-top:6px">${bt.min_races_for_rate}レース未満の条件は`
+    <p class="note mt-6">${bt.min_races_for_rate}レース未満の条件は`
     + `数値を出しません (偶然に左右されるため)。</p>`;
 }
 
@@ -3800,7 +3835,7 @@ async function loadRoiRanking() {
     <div class="card rr">${rows || '<p class="roi-row muted">マイAIがありません</p>'}</div>
     ${roiRemaining.length ? `<details class="ai-more"><summary>そのほかのAI ${roiRemaining.length}件を表示</summary>
       <div class="card rr">${roiRemaining.map(renderRoi).join('')}</div></details>` : ''}
-    <p class="note" style="margin-top:6px">
+    <p class="note mt-6">
       ${esc(ymd((d.period || [])[0] || ''))}以降の全レースに同じ設定を当てはめた集計です。
       ${esc(d.roi_note || '')}</p>`;
 }
@@ -3818,7 +3853,7 @@ function btRoiBlock(bt) {
   const ci = s.enough && s.ci
     ? `<div class="bt2-foot">回収率の幅 ${pct(s.ci[0])}〜${pct(s.ci[1])}。`
       + `${esc(bt.roi_note || '')}</div>` : '';
-  return `<div class="card bt2" style="margin-top:9px">
+  return `<div class="card bt2 mt-9">
     <div class="bt2-row"><div class="bt2-k">回収率(単勝)</div>
       <div class="bt2-pair">${line}</div><div class="bt2-diff even"></div></div>
     ${ci}</div>`;

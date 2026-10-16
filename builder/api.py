@@ -318,6 +318,49 @@ def _built_dates() -> list[str]:
                    if (m := re.match(r"daily_v\d+_(\d{8})_", p.name))})
 
 
+# 開催日カタログの過去日の分。日付ナビを出すだけで全開催日の当日キャッシュ
+# (計数百MB) を毎回読み直していて、ページを開くたびにレース一覧が約8秒出なかった。
+# 過去日の件数はファイルの中身だけで決まる (時刻に依存しない) ので、同じファイルが
+# 同じ更新時刻・サイズのあいだは前回の集計を使う。
+_CATALOG_ITEM_CACHE: dict[str, tuple[tuple, dict | None]] = {}
+
+
+def _daily_files_signature(date: str) -> tuple:
+    d = md._daily_dir()
+    if not d.exists():
+        return ()
+    sig = []
+    for p in sorted(d.glob(f"daily_v*_{date}_*.json")):
+        try:
+            st = p.stat()
+        except OSError:
+            continue
+        sig.append((p.name, st.st_mtime_ns, st.st_size))
+    return tuple(sig)
+
+
+def _catalog_item(date: str, daily: dict) -> dict | None:
+    if not (daily.get("races") or []):
+        return None
+    statuses = md.today_status(daily)
+    return {
+        "date": date,
+        "race_count": len(statuses),
+        "finished_count": sum(1 for race in statuses if race.get("finished")),
+    }
+
+
+def _historical_catalog_item(date: str) -> dict | None:
+    sig = _daily_files_signature(date)
+    hit = _CATALOG_ITEM_CACHE.get(date)
+    if not (sig and hit and hit[0] == sig):
+        item = _catalog_item(date, md.load_historical_daily(date, _STATE.get("specs") or []))
+        if not sig:   # ファイルが無い日は覚えない (後から構築されたら拾い直す)
+            return item
+        hit = _CATALOG_ITEM_CACHE[date] = (sig, item)
+    return dict(hit[1]) if hit[1] else None
+
+
 def _race_date_catalog(today: str | None = None, *, limit: int = 12) -> dict:
     """構築済み日付のうち、実際にレースがある開催日だけを返す。"""
     current = str(today or _STATE.get("date") or "")
@@ -326,17 +369,10 @@ def _race_date_catalog(today: str | None = None, *, limit: int = 12) -> dict:
         # 日付ナビの生成では、レースの有無だけ分かればよい。全開催日を
         # DB再照合すると初回表示が重くなるため、過去日はキャッシュだけを読む。
         # 選択された日の画面・成績集計では _daily_for_date が確定値を再取得する。
-        daily = (_daily_for_date(date) if date == current else
-                 md.load_historical_daily(date, _STATE.get("specs") or []))
-        races = daily.get("races") or []
-        if not races:
-            continue
-        statuses = md.today_status(daily)
-        items.append({
-            "date": date,
-            "race_count": len(statuses),
-            "finished_count": sum(1 for race in statuses if race.get("finished")),
-        })
+        item = (_catalog_item(date, _daily_for_date(date)) if date == current
+                else _historical_catalog_item(date))
+        if item:
+            items.append(item)
     previous = next((item for item in reversed(items) if item["date"] < current), None)
     next_item = next((item for item in items if item["date"] > current), None)
     return {
