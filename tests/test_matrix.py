@@ -7,6 +7,7 @@ lightgbm + keiba.db のある環境でのみ実行 (skip gate)。
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import sys
 
@@ -167,7 +168,7 @@ def test_build_matrix_monthly_checkpoint(tmp_path, monkeypatch):
 
     # 2 か月ぶん構築 → Jan, Feb の 2 回だけ _races_for_range が呼ばれる
     m = matrix.build_matrix("20240101", "20240228", specs)
-    assert calls == [("20240101", "20240131"), ("20240201", "20240231")]
+    assert calls == [("20240101", "20240131"), ("20240201", "20240229")]   # 実在する月末まで
     assert len(m["races"]) == 2
     monthfiles = list((tmp_path / "months").glob("m_*.json"))
     assert len(monthfiles) == 2                       # 月ごとにチェックポイント保存
@@ -185,3 +186,106 @@ def test_build_matrix_monthly_checkpoint(tmp_path, monkeypatch):
     m3 = matrix.build_matrix("20240101", "20240131", specs)
     assert calls == []
     assert [r["date"] for r in m3["races"]] == ["20240101"]
+
+
+
+# ---------------------------------------------------------------------------
+# キャッシュの再利用の条件 (2026-10-16: 途中・未来の月を空のまま永久に使っていた)
+# ---------------------------------------------------------------------------
+def _fake_env(tmp_path, monkeypatch, today):
+    import contextlib
+    monkeypatch.setattr(matrix, "_CACHE_DIR", tmp_path)
+    monkeypatch.setattr(matrix, "open_conn", lambda: contextlib.nullcontext(None))
+    monkeypatch.setattr(matrix, "_today_jst", lambda: today[0])
+    monkeypatch.setattr(matrix, "_ensure_keiba_on_path", lambda: None)
+    import sys
+    import types
+    fake_bt = types.ModuleType("scripts.backtest")
+    fake_bt.popularity_config = lambda: {"max_snapshot_age_min": None}
+    monkeypatch.setitem(sys.modules, "scripts.backtest", fake_bt)
+    calls = []
+    races_by_month = {}
+
+    def fake_range(conn, lo, hi, cols, nc, npast, ma):
+        calls.append(lo[:6])
+        return [{"date": d, "seg": {}, "trusted": True, "tan": {}, "horses": []}
+                for d in races_by_month.get(lo[:6], [])]
+
+    monkeypatch.setattr(matrix, "_races_for_range", fake_range)
+    return calls, races_by_month
+
+
+def test_incomplete_month_is_rebuilt_on_a_later_day(tmp_path, monkeypatch):
+    """途中の月 (今月) は作った当日だけ再利用し、翌日以降は作り直す。過ぎた月は再利用する。"""
+    today = ["20261016"]
+    calls, races = _fake_env(tmp_path, monkeypatch, today)
+    races.update({"202609": ["20260920"], "202610": ["20261011"]})
+    specs = [{"key": "popularity"}]
+
+    m = matrix.build_matrix("20260901", "20261016", specs)
+    assert calls == ["202609", "202610"] and len(m["races"]) == 2
+    calls.clear()
+    matrix.build_matrix("20260901", "20261016", specs)          # 同じ日: 範囲のキャッシュをそのまま使う
+    assert calls == []
+
+    today[0] = "20261018"                                       # 2 日後: 10 月に新しいレース
+    races["202610"] = ["20261011", "20261017"]
+    calls.clear()
+    m2 = matrix.build_matrix("20260901", "20261018", specs)
+    assert calls == ["202610"]                                  # 9 月 (完了) は再利用、10 月 (途中) だけ作り直す
+    assert [r["date"] for r in m2["races"]] == ["20260920", "20261011", "20261017"]
+
+
+def test_legacy_cache_built_before_the_month_ended_is_rebuilt(tmp_path, monkeypatch):
+    """印の無い古い月のキャッシュは、更新日が月末より後なら使い、月末以前 (空の未来の月) なら作り直す。"""
+    import os
+    import time
+    today = ["20261016"]
+    calls, races = _fake_env(tmp_path, monkeypatch, today)
+    races.update({"202606": ["20260607"], "202608": ["20260802"]})
+    specs = [{"key": "popularity"}]
+    chash = matrix._col_hash(matrix._columns(specs))
+    months = tmp_path / "months"
+    months.mkdir()
+    old_jun = months / f"m_202606_{chash}.json"
+    old_jun.write_text(json.dumps({"month": "202606", "races": [
+        {"date": "20260607", "seg": {}, "trusted": True, "tan": {}, "horses": []}]}), encoding="utf-8")
+    empty_aug = months / f"m_202608_{chash}.json"
+    empty_aug.write_text(json.dumps({"month": "202608", "races": []}), encoding="utf-8")
+    jul26 = time.mktime((2026, 7, 26, 12, 0, 0, 0, 0, -1))      # どちらも 2026-07-26 に作った
+    os.utime(old_jun, (jul26, jul26))
+    os.utime(empty_aug, (jul26, jul26))
+
+    m = matrix.build_matrix("20260601", "20260831", specs)
+    assert calls == ["202607", "202608"]                        # 6 月は月末後に作ったので再利用
+    assert [r["date"] for r in m["races"]] == ["20260607", "20260802"]
+    saved = json.loads(empty_aug.read_text(encoding="utf-8"))
+    assert saved["complete"] is True and saved["built_on"] == "20261016"
+
+
+def test_cache_usable_rules():
+    p = None
+    assert matrix._cache_usable(p, {"complete": True, "built_on": "20260101"}, "20251231", "20261016")
+    assert matrix._cache_usable(p, {"complete": False, "built_on": "20261016"}, "20261031", "20261016")
+    assert not matrix._cache_usable(p, {"complete": False, "built_on": "20261015"}, "20261031", "20261016")
+    assert matrix._stamp("20261031", "20261016") == {"complete": False, "built_on": "20261016"}
+    assert matrix._stamp("20260930", "20261016") == {"complete": True, "built_on": "20261016"}
+    assert matrix._month_end("202602") == "20260228" and matrix._month_end("202402") == "20240229"
+
+
+
+def test_month_range_ends_on_a_real_day(tmp_path, monkeypatch):
+    """各月は実在する月末までを読む。30 日の月に 31 日を渡すと keiba-yosou の期間の検査が止める。"""
+    today = ["20261016"]
+    _calls, _races = _fake_env(tmp_path, monkeypatch, today)
+    seen = []
+
+    def strict_range(conn, lo, hi, cols, nc, npast, ma):
+        from datetime import datetime
+        datetime.strptime(hi, "%Y%m%d")                 # 実在しない日付なら ValueError
+        seen.append((lo, hi))
+        return []
+
+    monkeypatch.setattr(matrix, "_races_for_range", strict_range)
+    matrix.build_matrix("20260901", "20261016", [{"key": "popularity"}])
+    assert seen == [("20260901", "20260930"), ("20261001", "20261031")]
