@@ -9,6 +9,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import pathlib
 import sys
 
 import pytest
@@ -380,3 +381,75 @@ def test_rebuild_matrix_lists_stale_months(tmp_path, monkeypatch):
     _write_revisions(tmp_path, monkeypatch, [{"at": "2999-01-01T00:00:00+09:00", "kind": "x",
                                               "effective_from": "20260901"}])
     assert rebuild_matrix.stale_months("20260801", "20261016", specs) == ["202609", "202610"]
+
+
+
+def test_revision_times_are_compared_as_datetimes():
+    """+09:00 と +00:00 が混ざっても正しく比べる (文字列の比較だと 9 時間ずれる)。"""
+    revs = [{"at": "2026-10-14T13:36:00+00:00", "effective_from": "19860101"}]       # = 22:36 JST
+    assert matrix._revisions_after("2026-10-14T22:00:00+09:00", "20260831", revs)      # 改訂はキャッシュより後
+    assert not matrix._revisions_after("2026-10-14T23:00:00+09:00", "20260831", revs)  # 改訂はキャッシュより前
+    bad = [{"at": "not-a-time", "effective_from": "19860101"}]
+    assert matrix._revisions_after("2026-10-14T23:00:00+09:00", "20260831", bad) == bad   # 読めなければ古い扱い
+
+
+def test_range_built_at_is_the_oldest_month(tmp_path, monkeypatch):
+    """範囲のキャッシュの built_at は組み立てた月の最も古いもの (古い月を含む範囲を新しく見せない)。"""
+    today = ["20261016"]
+    _calls, races = _fake_env(tmp_path, monkeypatch, today)
+    _write_revisions(tmp_path, monkeypatch, [])
+    specs = [{"key": "popularity"}]
+    m = matrix.build_matrix("20260801", "20260930", specs)
+    chash = matrix._col_hash(matrix._columns(specs))
+    months = [json.loads(matrix._month_cache_path(ym, chash).read_text(encoding="utf-8"))["built_at"]
+              for ym in ("202608", "202609")]
+    assert m["built_at"] == min(months, key=matrix._as_dt)
+
+
+
+def test_unreadable_ledger_stops_rebuild_matrix(tmp_path, monkeypatch, capsys):
+    """台帳が在るのに読めないとき、rebuild_matrix は「作り直す月: 0」で黙って終わらず終了コード 2。
+    サービス側 (strict=False) は改訂なしとして続ける。"""
+    from builder import rebuild_matrix
+    today = ["20261016"]
+    _fake_env(tmp_path, monkeypatch, today)
+    _write_revisions(tmp_path, monkeypatch, [])
+    path = matrix._revisions_path()
+    path.write_text("{broken", encoding="utf-8")
+    assert matrix._load_revisions() == []
+    with pytest.raises(matrix.RevisionLedgerError):
+        matrix._load_revisions(strict=True)
+    monkeypatch.setattr(rebuild_matrix.specs, "maib_all_specs", lambda: [{"key": "popularity"}])
+    assert rebuild_matrix.main(["--from", "20260801", "--to", "20260831"]) == 2
+    assert "中止" in capsys.readouterr().out
+
+
+def test_rebuild_lock_refuses_a_second_run_and_is_removed(tmp_path, monkeypatch):
+    from builder import rebuild_matrix
+    today = ["20261016"]
+    _fake_env(tmp_path, monkeypatch, today)
+    _write_revisions(tmp_path, monkeypatch, [])
+    monkeypatch.setattr(rebuild_matrix.specs, "maib_all_specs", lambda: [{"key": "popularity"}])
+    lock = matrix.rebuild_lock_path()
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    lock.write_text("{}", encoding="utf-8")
+    assert rebuild_matrix.main(["--from", "20260801", "--to", "20260831", "--apply"]) == 3
+    lock.unlink()
+    assert rebuild_matrix.main(["--from", "20260801", "--to", "20260831", "--apply"]) == 0
+    assert not lock.exists()
+
+
+def test_atomic_write_retries_while_a_reader_holds_the_file(tmp_path, monkeypatch):
+    target = tmp_path / "m.json"
+    real = pathlib.Path.replace
+    fails = [2]
+
+    def flaky(self, dst):
+        if fails[0]:
+            fails[0] -= 1
+            raise PermissionError("in use")
+        return real(self, dst)
+    monkeypatch.setattr(pathlib.Path, "replace", flaky)
+    monkeypatch.setattr(matrix.time, "sleep", lambda s: None)
+    matrix._write_json_atomic(target, {"a": 1})
+    assert json.loads(target.read_text(encoding="utf-8")) == {"a": 1}

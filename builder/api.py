@@ -1602,6 +1602,9 @@ def main() -> int:
 
     if args.backtest_from and not args.no_backtest:
         from . import matrix as mx
+        if mx.rebuild_lock_path().exists():
+            logger.warning("builder.rebuild_matrix が作り直しの最中 (%s)。同じ月を同時に作らないよう、"
+                           "終わってから再起動する", mx.rebuild_lock_path())
         # 改訂で古くなった月は起動時に作り直さない (全期間の作り直しは数時間かかり、その間サービスが止まる)。
         # 作り直しは python -m builder.rebuild_matrix を夜間に流してから再起動する
         _STATE["backtest_matrix"] = mx.build_matrix(
