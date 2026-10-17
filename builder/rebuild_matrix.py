@@ -27,6 +27,19 @@ from datetime import datetime
 from . import config, matrix, specs
 
 
+LOCK_MAX_AGE_H = 12     # 全期間の作り直しは 5 時間ほど。これより古い印は残骸とみなす
+
+
+def _lock_is_abandoned(lock) -> bool:
+    if not lock.exists():
+        return False
+    try:
+        started = matrix._as_dt(json.loads(lock.read_text(encoding="utf-8"))["started_at"])
+    except (OSError, ValueError, KeyError, TypeError):
+        started = datetime.fromtimestamp(lock.stat().st_mtime, matrix._JST)      # 読めない印はファイルの時刻で
+    return (datetime.now(matrix._JST) - started).total_seconds() > LOCK_MAX_AGE_H * 3600
+
+
 def stale_months(from_date: str, to_date: str, spec_list: list[dict]) -> list[str]:
     """改訂か期間の途中で古くなっている月 (作り直す対象)。キャッシュの無い月も含む。"""
     chash = matrix._col_hash(matrix._columns(spec_list))
@@ -55,11 +68,16 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     lock = matrix.rebuild_lock_path()
     lock.parent.mkdir(parents=True, exist_ok=True)
+    if _lock_is_abandoned(lock):
+        # 強制終了・電源断で残った印。放っておくと無人の夜間実行が毎晩ここで止まる
+        print(f"{LOCK_MAX_AGE_H} 時間より前の作り直しの印を残骸として消す: {lock}", flush=True)
+        lock.unlink(missing_ok=True)
     try:
         fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
     except FileExistsError:
         print(f"中止: 別の作り直しが動いている ({lock}: {lock.read_text(encoding='utf-8', errors='replace')})。"
-              "動いていないのが確かなら、このファイルを消してから流す", flush=True)
+              f"動いていないのが確かなら、このファイルを消してから流す ({LOCK_MAX_AGE_H} 時間たてば自動で消す)",
+              flush=True)
         return 3
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(json.dumps({"pid": os.getpid(), "started_at": datetime.now(matrix._JST).isoformat(timespec="seconds"),

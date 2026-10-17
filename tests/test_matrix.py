@@ -453,3 +453,35 @@ def test_atomic_write_retries_while_a_reader_holds_the_file(tmp_path, monkeypatc
     monkeypatch.setattr(matrix.time, "sleep", lambda s: None)
     matrix._write_json_atomic(target, {"a": 1})
     assert json.loads(target.read_text(encoding="utf-8")) == {"a": 1}
+
+
+
+def test_abandoned_rebuild_lock_is_taken_over(tmp_path, monkeypatch):
+    """強制終了で残った古い印 (LOCK_MAX_AGE_H より前) は消して作り直す。新しい印は断る。"""
+    from datetime import datetime, timedelta
+    from builder import rebuild_matrix
+    today = ["20261016"]
+    _fake_env(tmp_path, monkeypatch, today)
+    _write_revisions(tmp_path, monkeypatch, [])
+    monkeypatch.setattr(rebuild_matrix.specs, "maib_all_specs", lambda: [{"key": "popularity"}])
+    lock = matrix.rebuild_lock_path()
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    old = (datetime.now(matrix._JST) - timedelta(hours=rebuild_matrix.LOCK_MAX_AGE_H + 1)).isoformat()
+    lock.write_text(json.dumps({"pid": 1, "started_at": old}), encoding="utf-8")
+    assert rebuild_matrix.main(["--from", "20260801", "--to", "20260831", "--apply"]) == 0
+    assert not lock.exists()
+    lock.write_text(json.dumps({"pid": 1, "started_at": datetime.now(matrix._JST).isoformat()}), encoding="utf-8")
+    assert rebuild_matrix.main(["--from", "20260901", "--to", "20260930", "--apply"]) == 3     # 9 月はまだ作っていない
+
+
+def test_reused_range_cache_names_the_stale_months(tmp_path, monkeypatch):
+    """範囲のキャッシュを reuse で返すとき、stale_by_revision は改訂の効く月の名前 (範囲の文字列ではない)。"""
+    today = ["20261016"]
+    _calls, races = _fake_env(tmp_path, monkeypatch, today)
+    races.update({"202608": ["20260802"], "202609": ["20260920"]})
+    _write_revisions(tmp_path, monkeypatch, [])
+    specs = [{"key": "popularity"}]
+    matrix.build_matrix("20260801", "20260930", specs)
+    _write_revisions(tmp_path, monkeypatch, [{"at": "2999-01-01T00:00:00+09:00", "effective_from": "20260915"}])
+    m = matrix.build_matrix("20260801", "20260930", specs, stale_data="reuse")
+    assert m["stale_by_revision"] == ["202609"]

@@ -355,7 +355,9 @@ def build_matrix(from_date: str, to_date: str, specs: list[dict],
                 if stale:
                     logger.warning("行列 %s〜%s は改訂 %d 件より前に作ったまま使う (作り直しは builder.rebuild_matrix)",
                                    from_date, to_date, len(stale))
-                    cached.setdefault("stale_by_revision", cached.get("stale_by_revision") or [f"{from_date}-{to_date}"])
+                    first = min(str(r["effective_from"]) for r in stale)
+                    months = [ym for ym in _months(from_date, to_date) if _month_end(ym) >= first]
+                    cached["stale_by_revision"] = sorted(set(cached.get("stale_by_revision") or []) | set(months))
                 return cached
 
     _ensure_keiba_on_path()
