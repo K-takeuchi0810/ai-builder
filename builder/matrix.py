@@ -15,7 +15,9 @@ from __future__ import annotations
 import calendar
 import hashlib
 import json
+import logging
 import math
+import os
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -28,6 +30,8 @@ from .keiba_bridge import open_conn, _ensure_keiba_on_path
 # v2: per-horse に decimal odds(win_odds/10) と win_popularity を追加 (バリューベット EV 用)。
 MATRIX_VERSION = 2
 _CACHE_DIR = Path(config.__file__).resolve().parent.parent / "out" / "matrix"
+logger = logging.getLogger(__name__)
+_JST = ZoneInfo("Asia/Tokyo")
 
 
 def _col_id(spec: dict) -> str:
@@ -156,7 +160,49 @@ def _cache_usable(path: Path, data: dict, through: str, today: str) -> bool:
 
 
 def _stamp(through: str, today: str) -> dict:
-    return {"complete": through < today, "built_on": today}
+    return {"complete": through < today, "built_on": today,
+            "built_at": datetime.now(_JST).isoformat(timespec="seconds")}
+
+
+def _built_at(path: Path, data: dict) -> str:
+    """キャッシュを作った時刻 (JST の ISO)。built_at の無い古いキャッシュはファイルの更新時刻。"""
+    return data.get("built_at") or datetime.fromtimestamp(path.stat().st_mtime, _JST).isoformat(timespec="seconds")
+
+
+def _load_revisions() -> list[dict]:
+    """keiba-yosou の「データの改訂の台帳」(KEIBA_DB_PATH の隣の data_revisions.json)。
+
+    keiba-yosou が過去のデータをまとめて直したとき (血統の表の作り直し・通過順位の backfill など) に
+    {"at": JST の ISO, "effective_from": YYYYMMDD, ...} を追記する (keiba-yosou の data_revisions.py)。
+    本番の DB はライブ取り込みで 1 分ごとに書き換わるので、DB の更新時刻ではこれは分からない。
+    読めなければ空 (改訂なし) として扱い、警告を残す。
+    """
+    path = config.KEIBA_DB_PATH.parent / "data_revisions.json"
+    if not path.exists():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        logger.warning("改訂の台帳 %s を読めない (改訂は無いものとして続ける)", path, exc_info=True)
+        return []
+    return [r for r in data if isinstance(r, dict) and r.get("at") and r.get("effective_from")]
+
+
+def _revisions_after(built_at: str, through: str, revisions: list[dict]) -> list[dict]:
+    """キャッシュを作った後に記録され、キャッシュが覆う期間 (〜through) に効く改訂。
+
+    effective_from は「この日以降のレースの特徴量が変わりうる最初の日」。過去の成績を集計する特徴量があるので、
+    その日より後のすべての月が影響を受ける (through >= effective_from なら古い)。
+    """
+    return [r for r in revisions if str(r["at"]) > built_at and str(r["effective_from"]) <= through]
+
+
+def _write_json_atomic(path: Path, data: dict) -> None:
+    """プロセス固有の tmp に書いてから置き換える (同じ tmp 名を 2 つのプロセスが書くと壊れたファイルが残る。
+    2026-10-16 にサービスと手動の作り直しが同じ月を同時に作りかけた)。"""
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(path)
 
 
 def _races_for_range(conn, lo: str, hi: str, cols: list[dict],
@@ -210,7 +256,7 @@ def _races_for_range(conn, lo: str, hi: str, cols: list[dict],
 
 
 def build_matrix(from_date: str, to_date: str, specs: list[dict],
-                 rebuild: bool = False) -> dict:
+                 rebuild: bool = False, stale_data: str = "rebuild") -> dict:
     """候補特徴量 specs について特徴量行列を構築。**月次チェックポイント**で中断に強い。
 
     - 完成済みの範囲キャッシュ (out/matrix/matrix_*.json) があればそれを読む (高速・後方互換)。
@@ -219,17 +265,30 @@ def build_matrix(from_date: str, to_date: str, specs: list[dict],
     - 全月そろったら範囲キャッシュを書き出して返す。
     - 範囲・月のキャッシュは、覆う期間が終わる前に作ったものを作った当日しか再利用しない (_cache_usable)。
       途中の月・未来の月を空や途中のまま永久に使い続けないため。
+    - keiba-yosou の改訂の台帳 (_load_revisions) に、キャッシュを作った後でその期間に効く改訂があれば古い。
+      stale_data="rebuild" (既定) なら作り直す。"reuse" なら使い続けて、戻りの "stale_by_revision" に月を並べ、
+      警告を残す (共有サービスの起動用: 改訂は全期間に効くことが多く、起動時に作り直すと数時間止まる。
+      作り直しは builder.rebuild_matrix で夜間に行う)。
 
     戻り: {"from","to","columns","races":[{date, seg, horses:[{num,order,odds,pop,x}],
            tan:{num:yen}, trusted}]}
     """
+    if stale_data not in ("rebuild", "reuse"):
+        raise ValueError(f"stale_data は rebuild か reuse: {stale_data!r}")
     cols = _columns(specs)
     today = _today_jst()
+    revisions = _load_revisions()
     range_path = _cache_path(from_date, to_date, cols)
     if range_path.exists() and not rebuild:
         cached = json.loads(range_path.read_text(encoding="utf-8"))
         if _cache_usable(range_path, cached, to_date, today):
-            return cached
+            stale = _revisions_after(_built_at(range_path, cached), to_date, revisions)
+            if not stale or stale_data == "reuse":
+                if stale:
+                    logger.warning("行列 %s〜%s は改訂 %d 件より前に作ったまま使う (作り直しは builder.rebuild_matrix)",
+                                   from_date, to_date, len(stale))
+                    cached.setdefault("stale_by_revision", ["range"])
+                return cached
 
     _ensure_keiba_on_path()
     from scripts.backtest import popularity_config  # type: ignore
@@ -240,6 +299,7 @@ def build_matrix(from_date: str, to_date: str, specs: list[dict],
 
     month_dir = _CACHE_DIR / "months"
     all_races: list[dict] = []
+    stale_kept: list[str] = []
     month_dir.mkdir(parents=True, exist_ok=True)
     with open_conn() as conn:
         for ym in _months(from_date, to_date):
@@ -247,26 +307,31 @@ def build_matrix(from_date: str, to_date: str, specs: list[dict],
             if mp.exists() and not rebuild:
                 cached = json.loads(mp.read_text(encoding="utf-8"))
                 if _cache_usable(mp, cached, _month_end(ym), today):
-                    all_races.extend(cached["races"])
-                    continue
+                    stale = _revisions_after(_built_at(mp, cached), _month_end(ym), revisions)
+                    if not stale or stale_data == "reuse":
+                        if stale:
+                            stale_kept.append(ym)
+                        all_races.extend(cached["races"])
+                        continue
             # 実在する月末まで。"YYYYMM31" は 30 日の月で実在しない日付になり、keiba-yosou の
             # guard_analysis_window が ValueError で止める (2026-10-16、9 月の作り直しで発覚)
             lo, hi = f"{ym}01", _month_end(ym)
             races = _races_for_range(conn, lo, hi, cols, need_compute, need_past, max_age)
-            tmp = mp.with_suffix(".json.tmp")             # 原子的書き込み (部分ファイルを残さない)
-            tmp.write_text(json.dumps({"month": ym, "races": races, **_stamp(_month_end(ym), today)},
-                                      ensure_ascii=False), encoding="utf-8")
-            tmp.replace(mp)
+            _write_json_atomic(mp, {"month": ym, "races": races, **_stamp(_month_end(ym), today)})
             all_races.extend(races)
 
     # 月キャッシュはフル月ぶん保存するが、返却は要求範囲 [from,to] にクリップする。
     races_out = [r for r in all_races if from_date <= r["date"] <= to_date]
     matrix = {"from": from_date, "to": to_date, "columns": cols, "races": races_out,
               **_stamp(to_date, today)}
+    if stale_kept:
+        # 古い月から組み立てた範囲は「新しく作った」扱いにしない (built_at を最も古い前提に戻す)
+        matrix["built_at"] = "1970-01-01T00:00:00+09:00"
+        matrix["stale_by_revision"] = stale_kept
+        logger.warning("改訂より前に作った月 %d 個 (%s〜%s) をそのまま使った。作り直しは "
+                       "python -m builder.rebuild_matrix", len(stale_kept), stale_kept[0], stale_kept[-1])
     _CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    tmp = range_path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(matrix, ensure_ascii=False), encoding="utf-8")
-    tmp.replace(range_path)
+    _write_json_atomic(range_path, matrix)
     return matrix
 
 

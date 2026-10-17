@@ -1602,8 +1602,14 @@ def main() -> int:
 
     if args.backtest_from and not args.no_backtest:
         from . import matrix as mx
+        # 改訂で古くなった月は起動時に作り直さない (全期間の作り直しは数時間かかり、その間サービスが止まる)。
+        # 作り直しは python -m builder.rebuild_matrix を夜間に流してから再起動する
         _STATE["backtest_matrix"] = mx.build_matrix(
-            args.backtest_from, args.backtest_to or date, _STATE["specs"])
+            args.backtest_from, args.backtest_to or date, _STATE["specs"], stale_data="reuse")
+        if _STATE["backtest_matrix"].get("stale_by_revision"):
+            logger.warning("バックテスト用行列に keiba-yosou の改訂より前の月がある: %s "
+                           "(python -m builder.rebuild_matrix で作り直してから再起動する)",
+                           _STATE["backtest_matrix"]["stale_by_revision"])
         logger.info("バックテスト用レース数: %d (%s〜%s)",
                     len(_STATE["backtest_matrix"].get("races", [])),
                     args.backtest_from, args.backtest_to or date)

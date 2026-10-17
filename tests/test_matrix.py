@@ -268,8 +268,9 @@ def test_cache_usable_rules():
     assert matrix._cache_usable(p, {"complete": True, "built_on": "20260101"}, "20251231", "20261016")
     assert matrix._cache_usable(p, {"complete": False, "built_on": "20261016"}, "20261031", "20261016")
     assert not matrix._cache_usable(p, {"complete": False, "built_on": "20261015"}, "20261031", "20261016")
-    assert matrix._stamp("20261031", "20261016") == {"complete": False, "built_on": "20261016"}
-    assert matrix._stamp("20260930", "20261016") == {"complete": True, "built_on": "20261016"}
+    st = matrix._stamp("20261031", "20261016")
+    assert (st["complete"], st["built_on"]) == (False, "20261016") and st["built_at"].endswith("+09:00")
+    assert matrix._stamp("20260930", "20261016")["complete"] is True
     assert matrix._month_end("202602") == "20260228" and matrix._month_end("202402") == "20240229"
 
 
@@ -289,3 +290,93 @@ def test_month_range_ends_on_a_real_day(tmp_path, monkeypatch):
     monkeypatch.setattr(matrix, "_races_for_range", strict_range)
     matrix.build_matrix("20260901", "20261016", [{"key": "popularity"}])
     assert seen == [("20260901", "20260930"), ("20261001", "20261031")]
+
+
+
+# ---------------------------------------------------------------------------
+# keiba-yosou の改訂の台帳 (2026-10-18: DB の中身の修正がキャッシュに反映されなかった)
+# ---------------------------------------------------------------------------
+def _write_revisions(tmp_path, monkeypatch, revisions):
+    dbp = tmp_path / "keiba" / "keiba.db"
+    dbp.parent.mkdir(parents=True, exist_ok=True)
+    (dbp.parent / "data_revisions.json").write_text(json.dumps(revisions), encoding="utf-8")
+    monkeypatch.setattr(matrix.config, "KEIBA_DB_PATH", dbp)
+
+
+def test_revision_after_the_cache_rebuilds_affected_months_only(tmp_path, monkeypatch):
+    """キャッシュを作った後の改訂は、effective_from 以降の月だけを古くする (その前の月は使い続ける)。"""
+    today = ["20261016"]
+    calls, races = _fake_env(tmp_path, monkeypatch, today)
+    races.update({"202608": ["20260802"], "202609": ["20260920"]})
+    _write_revisions(tmp_path, monkeypatch, [])
+    specs = [{"key": "popularity"}]
+    matrix.build_matrix("20260801", "20260930", specs)
+    assert calls == ["202608", "202609"]
+
+    _write_revisions(tmp_path, monkeypatch, [{"at": "2999-01-01T00:00:00+09:00", "kind": "backfill",
+                                              "effective_from": "20260901"}])
+    calls.clear()
+    m = matrix.build_matrix("20260801", "20260930", specs)
+    assert calls == ["202609"]                          # 8 月は改訂の範囲外なので使い回す
+    assert "stale_by_revision" not in m
+
+
+def test_reuse_mode_keeps_stale_months_and_reports_them(tmp_path, monkeypatch):
+    """サービスの起動 (stale_data="reuse") は古い月を作り直さず、どの月かを返す。"""
+    today = ["20261016"]
+    calls, races = _fake_env(tmp_path, monkeypatch, today)
+    races.update({"202608": ["20260802"]})
+    _write_revisions(tmp_path, monkeypatch, [])
+    specs = [{"key": "popularity"}]
+    matrix.build_matrix("20260801", "20260831", specs)
+    _write_revisions(tmp_path, monkeypatch, [{"at": "2999-01-01T00:00:00+09:00", "kind": "repair",
+                                              "effective_from": "19860101"}])
+    for f in tmp_path.glob("matrix_*.json"):
+        f.unlink()
+    calls.clear()
+    m = matrix.build_matrix("20260801", "20260831", specs, stale_data="reuse")
+    assert calls == [] and m["stale_by_revision"] == ["202608"]
+    calls.clear()
+    m2 = matrix.build_matrix("20260801", "20260831", specs, stale_data="reuse")   # 範囲のキャッシュも古い扱い
+    assert calls == [] and m2.get("stale_by_revision")
+
+
+def test_revision_before_the_cache_does_not_rebuild(tmp_path, monkeypatch):
+    today = ["20261016"]
+    calls, races = _fake_env(tmp_path, monkeypatch, today)
+    _write_revisions(tmp_path, monkeypatch, [{"at": "2000-01-01T00:00:00+09:00", "kind": "old",
+                                              "effective_from": "19860101"}])
+    specs = [{"key": "popularity"}]
+    matrix.build_matrix("20260801", "20260831", specs)
+    calls.clear()
+    matrix.build_matrix("20260801", "20260831", specs)
+    assert calls == []
+
+
+def test_revisions_after_rules_and_broken_ledger(tmp_path, monkeypatch):
+    revs = [{"at": "2026-10-14T22:36:00+09:00", "effective_from": "19860101"},
+            {"at": "2026-10-05T12:00:00+09:00", "effective_from": "20210101"}]
+    assert len(matrix._revisions_after("2026-10-01T00:00:00+09:00", "20260831", revs)) == 2
+    assert len(matrix._revisions_after("2026-10-10T00:00:00+09:00", "20260831", revs)) == 1
+    assert matrix._revisions_after("2026-10-10T00:00:00+09:00", "20201231", revs[1:]) == []
+    dbp = tmp_path / "k" / "keiba.db"
+    dbp.parent.mkdir()
+    (dbp.parent / "data_revisions.json").write_text("{broken", encoding="utf-8")
+    monkeypatch.setattr(matrix.config, "KEIBA_DB_PATH", dbp)
+    assert matrix._load_revisions() == []
+    import pytest
+    with pytest.raises(ValueError):
+        matrix.build_matrix("20260801", "20260831", [{"key": "popularity"}], stale_data="maybe")
+
+
+def test_rebuild_matrix_lists_stale_months(tmp_path, monkeypatch):
+    from builder import rebuild_matrix
+    today = ["20261016"]
+    _calls, races = _fake_env(tmp_path, monkeypatch, today)
+    _write_revisions(tmp_path, monkeypatch, [])
+    specs = [{"key": "popularity"}]
+    matrix.build_matrix("20260801", "20260930", specs)
+    assert rebuild_matrix.stale_months("20260801", "20260930", specs) == []
+    _write_revisions(tmp_path, monkeypatch, [{"at": "2999-01-01T00:00:00+09:00", "kind": "x",
+                                              "effective_from": "20260901"}])
+    assert rebuild_matrix.stale_months("20260801", "20261016", specs) == ["202609", "202610"]
