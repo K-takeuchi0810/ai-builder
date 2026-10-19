@@ -1976,3 +1976,15 @@ def test_the_feed_status_reports_idle_instead_of_a_false_warning(monkeypatch):
     got = api._live_feed_status("20260917")
     assert got["state"] == "idle"
     assert got["fresh"] is None
+
+
+def test_health_reports_which_matrix_the_backtest_uses(monkeypatch):
+    """/api/health の backtest_matrix で「これまでの成績」の行列の版 (作成時刻・改訂より前の月) が分かる。"""
+    monkeypatch.setitem(api._STATE, "backtest_matrix",
+                        {"from": "20250701", "to": "20261018", "built_at": "2026-07-26T10:00:00+09:00",
+                         "races": [{}, {}], "stale_by_revision": ["202507"]})
+    assert api._backtest_matrix_meta() == {"from": "20250701", "to": "20261018",
+                                           "built_at": "2026-07-26T10:00:00+09:00", "races": 2,
+                                           "stale_by_revision": ["202507"]}
+    monkeypatch.setitem(api._STATE, "backtest_matrix", None)
+    assert api._backtest_matrix_meta() is None

@@ -167,6 +167,16 @@ def _feed_expected(date: str, *, now: datetime | None = None) -> bool | None:
         return None
 
 
+def _backtest_matrix_meta() -> dict | None:
+    """「これまでの成績」の行列がどの版のデータから出たか (/api/health)。stale_by_revision が空でなければ
+    keiba-yosou の改訂より前に作った月が混ざっている (builder.rebuild_matrix で作り直してから再起動する)。"""
+    m = _STATE.get("backtest_matrix")
+    if not m:
+        return None
+    return {"from": m.get("from"), "to": m.get("to"), "built_at": m.get("built_at"),
+            "races": len(m.get("races", [])), "stale_by_revision": m.get("stale_by_revision") or []}
+
+
 def _live_feed_status(date: str | None = None) -> dict:
     """開催変更(0B14)が最後に正常確認できた時刻と鮮度を返す。
 
@@ -1280,7 +1290,8 @@ class Handler(BaseHTTPRequestHandler):
                                 "started_at": _BOOT_TIME,
                                 "live_updated_at": (_STATE.get("daily") or {}).get(
                                     "live_updated_at"),
-                                "live_source": feed})
+                                "live_source": feed,
+                                "backtest_matrix": _backtest_matrix_meta()})
 
         if path == "/api/auth/status":
             session = self._session()
@@ -1602,8 +1613,17 @@ def main() -> int:
 
     if args.backtest_from and not args.no_backtest:
         from . import matrix as mx
+        if mx.rebuild_lock_path().exists():
+            logger.warning("builder.rebuild_matrix が作り直しの最中 (%s)。同じ月を同時に作らないよう、"
+                           "終わってから再起動する", mx.rebuild_lock_path())
+        # 改訂で古くなった月は起動時に作り直さない (全期間の作り直しは数時間かかり、その間サービスが止まる)。
+        # 作り直しは python -m builder.rebuild_matrix を夜間に流してから再起動する
         _STATE["backtest_matrix"] = mx.build_matrix(
-            args.backtest_from, args.backtest_to or date, _STATE["specs"])
+            args.backtest_from, args.backtest_to or date, _STATE["specs"], stale_data="reuse")
+        if _STATE["backtest_matrix"].get("stale_by_revision"):
+            logger.warning("バックテスト用行列に keiba-yosou の改訂より前の月がある: %s "
+                           "(python -m builder.rebuild_matrix で作り直してから再起動する)",
+                           _STATE["backtest_matrix"]["stale_by_revision"])
         logger.info("バックテスト用レース数: %d (%s〜%s)",
                     len(_STATE["backtest_matrix"].get("races", [])),
                     args.backtest_from, args.backtest_to or date)
