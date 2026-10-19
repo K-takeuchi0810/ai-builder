@@ -1193,7 +1193,7 @@ async function loadBacktest() {
 function dataVersionFoot(bt) {
   const at = bt.data_version && bt.data_version.built_at;
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(at || ''));
-  return m ? ` · 集計 ${Number(m[2])}月${Number(m[3])}日時点` : '';
+  return m ? ` · 集計 ${Number(m[1])}年${Number(m[2])}月${Number(m[3])}日時点` : '';
 }
 
 function staleDataNote(bt) {
