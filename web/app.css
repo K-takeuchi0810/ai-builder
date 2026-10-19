@@ -541,6 +541,7 @@ main{flex:1; padding:14px 14px 84px}
 .bt2-diff.down{color:var(--minus)}
 .bt2-diff.even{color:var(--ink-faint)}
 .bt2-foot{padding:9px 0; font-size:var(--fs-min); color:var(--ink-soft); line-height:1.7}
+.bt2-stale{margin:0 0 9px; font-size:var(--fs-min); color:var(--ink-soft); line-height:1.7}
 
 /* B-2: 自信度は turf 系。gold は「注意・保留」専用にして意味を衝突させない */
 .badge-conf.low{background:var(--gold-soft); color:var(--gold-text)}

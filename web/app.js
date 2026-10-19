@@ -1174,7 +1174,8 @@ async function loadBacktest() {
       ${btRow('◎が1着だった割合', you.hit_rate_win, base.hit_rate_win)}
       ${btRow('◎が3着以内', you.hit_rate_show, base.hit_rate_show)}
       ${btRow('印の中に勝ち馬', you.hit_rate_in_marks, base.hit_rate_in_marks)}
-      <div class="bt2-foot">${you.races}レース · ${esc(ymd(bt.period[0]))}以降</div>
+      <div class="bt2-foot">${you.races}レース · ${esc(ymd(bt.period[0]))}以降${dataVersionFoot(bt)}</div>
+      ${staleDataNote(bt)}
     </div>
     ${btRoiBlock(bt)}
     ${condBreakdown(bt)}
@@ -1185,6 +1186,24 @@ async function loadBacktest() {
   bindTerms();
   bindGo();
   bindHoldout();
+}
+
+/* 成績の集計がいつのデータから作られたか。過去データの修正 (keiba-yosou の改訂の台帳) より前に
+ * 作った月が混ざっているときは、その月を注記する (数字が修正後のデータと食い違いうるため) */
+function dataVersionFoot(bt) {
+  const at = bt.data_version && bt.data_version.built_at;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(at || ''));
+  return m ? ` · 集計 ${Number(m[2])}月${Number(m[3])}日時点` : '';
+}
+
+function staleDataNote(bt) {
+  const months = (bt.data_version && bt.data_version.stale_by_revision) || [];
+  if (!months.length) return '';
+  const label = (ym) => `${ym.slice(0, 4)}年${Number(ym.slice(4, 6))}月`;
+  const span = months.length === 1 ? label(months[0])
+    : `${label(months[0])}〜${label(months[months.length - 1])}`;
+  return `<p class="bt2-stale">${esc(span)}の集計は、元のデータを直す前に作ったものです。
+    作り直すまで、数字が少しずれることがあります。</p>`;
 }
 
 /* ======================= 選び直しの記録と封印期間 =========================
