@@ -1988,3 +1988,17 @@ def test_health_reports_which_matrix_the_backtest_uses(monkeypatch):
                                            "stale_by_revision": ["202507"]}
     monkeypatch.setitem(api._STATE, "backtest_matrix", None)
     assert api._backtest_matrix_meta() is None
+
+
+
+def test_backtest_reports_which_data_version_it_used(monkeypatch):
+    """「これまでの成績」の応答に、行列を作った時刻と改訂より前の月を載せる (画面の注記に使う)。"""
+    monkeypatch.setitem(api._STATE, "preset", PRESET)
+    monkeypatch.setitem(api._STATE, "backtest_matrix",
+                        {"columns": [], "races": [_race("A", date="20250801")], "from": "20250701",
+                         "to": "20261019", "built_at": "2026-07-26T10:00:00+09:00",
+                         "stale_by_revision": ["202507", "202508"]})
+    body, status = api.handle_backtest({"config": USER_CFG, "period": {"from": "20250701"}})
+    assert status == 200
+    assert body["data_version"]["built_at"] == "2026-07-26T10:00:00+09:00"
+    assert body["data_version"]["stale_by_revision"] == ["202507", "202508"]

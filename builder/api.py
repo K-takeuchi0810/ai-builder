@@ -1231,6 +1231,9 @@ def handle_backtest(payload: dict, owner_id: str | None = None) -> tuple[dict, i
                        date_to=period.get("to", "99999999"),
                        holdout_from=cfgmod.DISPLAY_HOLDOUT_FROM,
                        include_holdout=bool(revealed))
+    if src is _STATE.get("backtest_matrix"):
+        # 成績がどの版のデータから出たか (keiba-yosou の過去データの修正より前に作った月が混ざっていれば画面で注記)
+        got["data_version"] = _backtest_matrix_meta()
 
     if config_id:
         cur = cf.get_config(config_id, owner_id=owner_id)
