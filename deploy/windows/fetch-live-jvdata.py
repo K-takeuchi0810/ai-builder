@@ -8,9 +8,12 @@ from __future__ import annotations
 
 import os
 import argparse
+import faulthandler
+import json
 import sqlite3
 import sys
 import time
+import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -38,6 +41,146 @@ STANDARD_ODDS_SECONDS = 5 * 60
 RESULT_DELAY_MINUTES = 3
 RESULT_TIMEOUT_SECONDS = 2
 PRE_RACE_ACTIVITY_MINUTES = 120
+
+# JV-Link の呼び出しが応答を返さないまま止まることがある (2026-10-25 は 10 回)。タスクの
+# 実行時間の上限 (4 分) は wscript だけを止めるので、cmd と python が残り、ロックを 20 分
+# つかんだままになっていた。区切りごとに上限をかけ直し、超えたら止まった場所を記録して自分で終わる。
+LOG_DIR = ROOT / "out" / "logs" / "live-jvdata"
+LOG_KEEP_DAYS = 14
+STEP_TIMEOUT_SECONDS = 120      # JV-Link の 1 回の取得 (JVRTOpen の再試行の待ち 5+15+45 秒を含む)
+INGEST_TIMEOUT_SECONDS = 300    # 取り込みの 1 段 (DB のロック待ちを含む)
+# 起動からこれより後には書き込まない。止まっていた実行が後で動き出し、古い状態で照合するのを防ぐ。
+RUN_MAX_SECONDS = 10 * 60
+# 持ち主を確かめられないロック (書きかけ・旧版) を古いとみなす時間。
+LOCK_STALE_SECONDS = RUN_MAX_SECONDS + 5 * 60
+
+_LOG = None
+
+
+class StaleRun(RuntimeError):
+    """起動から時間がたちすぎた、または日付が変わった実行。"""
+
+
+def _log(message: str) -> None:
+    if _LOG is not None:
+        _LOG.write(f"{datetime.now():%Y-%m-%dT%H:%M:%S} pid={os.getpid()} {message}\n")
+        _LOG.flush()
+
+
+def _open_log(now: datetime):
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    cutoff = time.time() - LOG_KEEP_DAYS * 86400
+    for old in LOG_DIR.glob("live-jvdata-*.log"):
+        try:
+            if old.stat().st_mtime < cutoff:
+                old.unlink()
+        except OSError:
+            pass
+    return open(LOG_DIR / f"live-jvdata-{now:%Y%m%d}.log", "a", encoding="utf-8")
+
+
+def _report(message: str) -> None:
+    print(message)
+    _log(message)
+
+
+def _step(label: str, seconds: int = STEP_TIMEOUT_SECONDS) -> None:
+    """次の区切りまでの上限をかけ直す。超えると faulthandler が全スレッドの
+    traceback をログに書いてプロセスを終える (GIL を持ったままの COM 呼び出しでも効く)。"""
+    _log(f"step {label}")
+    if _LOG is not None:
+        faulthandler.dump_traceback_later(seconds, exit=True, file=_LOG)
+
+
+def _ensure_current(started: float, target: str, label: str) -> None:
+    elapsed = time.time() - started
+    today = datetime.now().strftime("%Y%m%d")
+    if elapsed > RUN_MAX_SECONDS or today != target:
+        raise StaleRun(f"{label}: elapsed={int(elapsed)}s target={target} today={today}")
+
+
+def _process_created(pid: int) -> int | None:
+    """生きているプロセスの作成時刻 (FILETIME)。番号の使い回しを見分けるのに使う。
+    終わっていれば None、確かめられなければ -1 (生きているとみなす)。"""
+    if sys.platform != "win32":
+        return -1
+    import ctypes
+    from ctypes import wintypes
+
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.OpenProcess.restype = wintypes.HANDLE
+    k32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    k32.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+    k32.GetProcessTimes.argtypes = (wintypes.HANDLE,) + (ctypes.POINTER(wintypes.FILETIME),) * 4
+    k32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    handle = k32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+    if not handle:
+        return -1 if ctypes.get_last_error() == 5 else None  # 5 = ERROR_ACCESS_DENIED
+    try:
+        code = wintypes.DWORD()
+        if not k32.GetExitCodeProcess(handle, ctypes.byref(code)):
+            return -1
+        if code.value != 259:  # STILL_ACTIVE
+            return None
+        times = [wintypes.FILETIME() for _ in range(4)]
+        if not k32.GetProcessTimes(handle, *(ctypes.byref(t) for t in times)):
+            return -1
+        return (times[0].dwHighDateTime << 32) | times[0].dwLowDateTime
+    finally:
+        k32.CloseHandle(handle)
+
+
+def _lock_stale_reason(now: float) -> str | None:
+    """ロックを引き継いでよい理由。持ち主が生きていれば None。"""
+    try:
+        age = now - LOCK.stat().st_mtime
+    except FileNotFoundError:
+        return "gone"
+    if age >= LOCK_STALE_SECONDS:
+        return f"age={int(age)}s"
+    try:
+        owner = json.loads(LOCK.read_text(encoding="utf-8"))
+        pid, created = int(owner["pid"]), owner.get("created")
+    except (OSError, ValueError, TypeError, KeyError):
+        return None  # 書きかけ・旧版のロック。古くなるまで待つ
+    alive = _process_created(pid)
+    if alive is None:
+        return f"owner pid={pid} exited"
+    if alive != -1 and created not in (None, -1) and alive != created:
+        return f"owner pid={pid} reused"
+    return None
+
+
+def _acquire_lock(now: float) -> str | None:
+    """取れたら持ち主の印を返す。ほかの実行が生きていれば None。"""
+    LOCK.parent.mkdir(parents=True, exist_ok=True)
+    token = uuid.uuid4().hex
+    body = json.dumps({"pid": os.getpid(), "created": _process_created(os.getpid()),
+                       "token": token, "started_at": now})
+    for _ in range(2):
+        try:
+            fd = os.open(str(LOCK), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            reason = _lock_stale_reason(now)
+            if reason is None:
+                return None
+            _log(f"lock taken over: {reason}")
+            LOCK.unlink(missing_ok=True)
+            continue
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(body)
+        return token
+    return None
+
+
+def _release_lock(token: str) -> None:
+    """自分のロックだけを消す。後で動き出した古い実行が、今の実行のロックを消さない。"""
+    try:
+        owner = json.loads(LOCK.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if isinstance(owner, dict) and owner.get("token") == token:
+        LOCK.unlink(missing_ok=True)
 
 
 def _race_key(race: dict) -> str:
@@ -303,144 +446,170 @@ def reconcile_0b14_snapshot(names: set[str], target: str) -> dict[str, int]:
     }
 
 
+def _run(args, now: datetime, started: float) -> int:
+    target = now.strftime("%Y%m%d")
+    _step("read races")
+    with open_db() as conn:
+        rows = [dict(r) for r in conn.execute(
+            "SELECT r.race_year,r.race_month_day,r.track_code,r.kaiji,r.nichiji,"
+            "r.race_num,COALESCE((SELECT tc.new_start_time FROM start_time_changes tc "
+            "WHERE tc.race_year=r.race_year AND tc.race_month_day=r.race_month_day "
+            "AND tc.track_code=r.track_code AND tc.kaiji=r.kaiji "
+            "AND tc.nichiji=r.nichiji AND tc.race_num=r.race_num "
+            "ORDER BY tc.announced_time DESC LIMIT 1),r.start_time) start_time,"
+            "EXISTS(SELECT 1 FROM horse_races hr "
+            "WHERE hr.race_year=r.race_year AND hr.race_month_day=r.race_month_day "
+            "AND hr.track_code=r.track_code AND hr.kaiji=r.kaiji "
+            "AND hr.nichiji=r.nichiji AND hr.race_num=r.race_num "
+            "AND CAST(COALESCE(hr.confirmed_order,'0') AS INTEGER)>0) result_confirmed "
+            "FROM races r WHERE r.race_year||r.race_month_day=? ORDER BY r.start_time",
+            (target,))]
+    if not rows:
+        if not args.critical:
+            CRITICAL_FLAG.unlink(missing_ok=True)
+        _report(f"date={target} no_races=1")
+        return 0
+    if all(race.get("result_confirmed") for race in rows):
+        if not args.critical:
+            CRITICAL_FLAG.unlink(missing_ok=True)
+        _report(f"date={target} all_results_confirmed={len(rows)}")
+        return 0
+    all_upcoming = []
+    for race in rows:
+        start = _start(race)
+        if start and -2 <= (start - now).total_seconds() / 60 <= WINDOW_MINUTES:
+            all_upcoming.append(race)
+    critical_upcoming = [race for race in all_upcoming if _start(race)
+                         and (_start(race) - now).total_seconds() / 60 <=
+                         CRITICAL_WINDOW_MINUTES]
+    if not args.critical:
+        CRITICAL_FLAG.parent.mkdir(parents=True, exist_ok=True)
+        if critical_upcoming:
+            CRITICAL_FLAG.touch()
+        else:
+            CRITICAL_FLAG.unlink(missing_ok=True)
+    if args.critical:
+        upcoming = critical_upcoming
+    else:
+        upcoming = [
+            race for race in all_upcoming
+            if race in critical_upcoming or live_status.due(
+                f"0B30:{_race_key(race)}", STANDARD_ODDS_SECONDS)
+        ]
+    result_due = [] if args.critical else [race for race in rows if _result_due(race, now)]
+    day_update_due = bool(critical_upcoming) if args.critical else _day_update_due(rows, now)
+    if not day_update_due and not result_due and not upcoming:
+        starts = [start for race in rows if (start := _start(race)) is not None]
+        schedule = (f"{min(starts):%H:%M}-{max(starts):%H:%M}" if starts else "unknown")
+        _report(f"date={target} outside_activity_window=1 schedule={schedule}")
+        return 0
+
+    results = []
+    result_errors = []
+    successful_sources: dict[str, str] = {}
+    # 0B12 の JVGets が「未配信」を返したとき、定期タスクを長時間占有しない。
+    # 取得できなかったレースは次の1分間隔の実行で再試行される。
+    os.environ["JVLINK_REALTIME_NO_DATA_SEC"] = str(RESULT_TIMEOUT_SECONDS)
+    _step("JVInit")
+    with JVLinkClient() as client:
+        # 開催日単位: 馬体重は発表ごと、馬場は変更ごとに更新される。
+        if day_update_due:
+            for spec in (("0B14",) if args.critical else ("0B11", "0B14")):
+                _step(f"{spec}:{target}")
+                results.append((spec, client.fetch_realtime(spec, target)))
+                successful_sources[spec] = target
+        # 確定着順・払戻はレース単位で配信される。DBに着順が入ったレースは
+        # 次回から除外し、未確定の終了レースだけを追跡する。
+        for race in result_due:
+            key = _result_key(race)
+            _step(f"0B12:{key}")
+            try:
+                results.append(("0B12", client.fetch_realtime("0B12", key)))
+                successful_sources[f"0B12:{key}"] = key
+            except Exception as exc:
+                result_errors.append(f"{key}:{type(exc).__name__}")
+        # 全賭式は選択肢が膨大なので、直近90分のレースだけを取得する。
+        for race in upcoming:
+            key = _race_key(race)
+            _step(f"0B30:{key}")
+            results.append(("0B30", client.fetch_realtime("0B30", key)))
+            successful_sources[f"0B30:{key}"] = key
+        _step("JVClose")
+
+    wh_names = {name for spec, result in results if spec == "0B11"
+                for name in (result.get("filenames") or [])}
+    _ensure_current(started, target, "0B11")
+    _step("ingest 0B11", INGEST_TIMEOUT_SECONDS)
+    weight_rows = ingest_wh_files(wh_names)
+    snapshot_stats = {
+        "jockey_changes_reverted": 0, "cancellations_removed": 0,
+        "weather_changes_removed": 0, "start_times_applied": 0,
+        "start_times_restored": 0, "courses_applied": 0,
+        "courses_restored": 0, "anomalies": 0,
+    }
+    for spec in ("0B12", "0B14", "0B30"):
+        names = {name for got_spec, result in results if got_spec == spec
+                 for name in (result.get("filenames") or [])}
+        _ensure_current(started, target, spec)
+        _step(f"ingest {spec}", INGEST_TIMEOUT_SECONDS)
+        if names:
+            ingest_all(dataspecs=[spec], only_files=names)
+        # An empty successful 0B14 response means that no changes remain;
+        # it must therefore withdraw previously stored snapshot rows.
+        if spec == "0B14" and any(got_spec == spec for got_spec, _ in results):
+            snapshot_stats = reconcile_0b14_snapshot(names, target)
+            if snapshot_stats["anomalies"]:
+                raise RuntimeError(
+                    f"invalid 0B14 records: {snapshot_stats['anomalies']}"
+                )
+    _ensure_current(started, target, "status")
+    live_status.record_success(successful_sources)
+    _report(f"date={target} day_update_due={int(day_update_due)} upcoming={len(upcoming)} "
+          f"critical={int(args.critical)} "
+          f"result_due={len(result_due)} "
+          f"result_errors={','.join(result_errors) or '-'} weight_rows={weight_rows} "
+          f"jc_reverted={snapshot_stats['jockey_changes_reverted']} "
+          f"av_removed={snapshot_stats['cancellations_removed']} "
+          f"we_removed={snapshot_stats['weather_changes_removed']} "
+          f"tc_applied={snapshot_stats['start_times_applied']} "
+          f"tc_restored={snapshot_stats['start_times_restored']} "
+          f"cc_applied={snapshot_stats['courses_applied']} "
+          f"cc_restored={snapshot_stats['courses_restored']} "
+          f"files={sum(int(r.get('files_written') or 0) for _, r in results)}")
+    return 0
+
+
 def main() -> int:
+    global _LOG
     parser = argparse.ArgumentParser()
     parser.add_argument("--critical", action="store_true",
                         help="発走15分前の30秒オフセット取得 (0B14/0B30のみ)")
     args = parser.parse_args()
     now = datetime.now()
-    target = now.strftime("%Y%m%d")
-    LOCK.parent.mkdir(parents=True, exist_ok=True)
+    started = time.time()
+    _LOG = _open_log(now)
     try:
-        fd = os.open(str(LOCK), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-    except FileExistsError:
-        if time.time() - LOCK.stat().st_mtime < 20 * 60:
-            print("another live fetch is active")
+        _log(f"start critical={int(args.critical)}")
+        token = _acquire_lock(started)
+        if token is None:
+            _report("another live fetch is active")
             return 0
-        LOCK.unlink(missing_ok=True)
-        fd = os.open(str(LOCK), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-    os.close(fd)
-    try:
-        with open_db() as conn:
-            rows = [dict(r) for r in conn.execute(
-                "SELECT r.race_year,r.race_month_day,r.track_code,r.kaiji,r.nichiji,"
-                "r.race_num,COALESCE((SELECT tc.new_start_time FROM start_time_changes tc "
-                "WHERE tc.race_year=r.race_year AND tc.race_month_day=r.race_month_day "
-                "AND tc.track_code=r.track_code AND tc.kaiji=r.kaiji "
-                "AND tc.nichiji=r.nichiji AND tc.race_num=r.race_num "
-                "ORDER BY tc.announced_time DESC LIMIT 1),r.start_time) start_time,"
-                "EXISTS(SELECT 1 FROM horse_races hr "
-                "WHERE hr.race_year=r.race_year AND hr.race_month_day=r.race_month_day "
-                "AND hr.track_code=r.track_code AND hr.kaiji=r.kaiji "
-                "AND hr.nichiji=r.nichiji AND hr.race_num=r.race_num "
-                "AND CAST(COALESCE(hr.confirmed_order,'0') AS INTEGER)>0) result_confirmed "
-                "FROM races r WHERE r.race_year||r.race_month_day=? ORDER BY r.start_time",
-                (target,))]
-        if not rows:
-            if not args.critical:
-                CRITICAL_FLAG.unlink(missing_ok=True)
-            print(f"date={target} no_races=1")
-            return 0
-        if all(race.get("result_confirmed") for race in rows):
-            if not args.critical:
-                CRITICAL_FLAG.unlink(missing_ok=True)
-            print(f"date={target} all_results_confirmed={len(rows)}")
-            return 0
-        all_upcoming = []
-        for race in rows:
-            start = _start(race)
-            if start and -2 <= (start - now).total_seconds() / 60 <= WINDOW_MINUTES:
-                all_upcoming.append(race)
-        critical_upcoming = [race for race in all_upcoming if _start(race)
-                             and (_start(race) - now).total_seconds() / 60 <=
-                             CRITICAL_WINDOW_MINUTES]
-        if not args.critical:
-            CRITICAL_FLAG.parent.mkdir(parents=True, exist_ok=True)
-            if critical_upcoming:
-                CRITICAL_FLAG.touch()
-            else:
-                CRITICAL_FLAG.unlink(missing_ok=True)
-        if args.critical:
-            upcoming = critical_upcoming
-        else:
-            upcoming = [
-                race for race in all_upcoming
-                if race in critical_upcoming or live_status.due(
-                    f"0B30:{_race_key(race)}", STANDARD_ODDS_SECONDS)
-            ]
-        result_due = [] if args.critical else [race for race in rows if _result_due(race, now)]
-        day_update_due = bool(critical_upcoming) if args.critical else _day_update_due(rows, now)
-        if not day_update_due and not result_due and not upcoming:
-            starts = [start for race in rows if (start := _start(race)) is not None]
-            schedule = (f"{min(starts):%H:%M}-{max(starts):%H:%M}" if starts else "unknown")
-            print(f"date={target} outside_activity_window=1 schedule={schedule}")
-            return 0
-
-        results = []
-        result_errors = []
-        successful_sources: dict[str, str] = {}
-        # 0B12 の JVGets が「未配信」を返したとき、定期タスクを長時間占有しない。
-        # 取得できなかったレースは次の1分間隔の実行で再試行される。
-        os.environ["JVLINK_REALTIME_NO_DATA_SEC"] = str(RESULT_TIMEOUT_SECONDS)
-        with JVLinkClient() as client:
-            # 開催日単位: 馬体重は発表ごと、馬場は変更ごとに更新される。
-            if day_update_due:
-                for spec in (("0B14",) if args.critical else ("0B11", "0B14")):
-                    results.append((spec, client.fetch_realtime(spec, target)))
-                    successful_sources[spec] = target
-            # 確定着順・払戻はレース単位で配信される。DBに着順が入ったレースは
-            # 次回から除外し、未確定の終了レースだけを追跡する。
-            for race in result_due:
-                key = _result_key(race)
-                try:
-                    results.append(("0B12", client.fetch_realtime("0B12", key)))
-                    successful_sources[f"0B12:{key}"] = key
-                except Exception as exc:
-                    result_errors.append(f"{key}:{type(exc).__name__}")
-            # 全賭式は選択肢が膨大なので、直近90分のレースだけを取得する。
-            for race in upcoming:
-                key = _race_key(race)
-                results.append(("0B30", client.fetch_realtime("0B30", key)))
-                successful_sources[f"0B30:{key}"] = key
-
-        wh_names = {name for spec, result in results if spec == "0B11"
-                    for name in (result.get("filenames") or [])}
-        weight_rows = ingest_wh_files(wh_names)
-        snapshot_stats = {
-            "jockey_changes_reverted": 0, "cancellations_removed": 0,
-            "weather_changes_removed": 0, "start_times_applied": 0,
-            "start_times_restored": 0, "courses_applied": 0,
-            "courses_restored": 0, "anomalies": 0,
-        }
-        for spec in ("0B12", "0B14", "0B30"):
-            names = {name for got_spec, result in results if got_spec == spec
-                     for name in (result.get("filenames") or [])}
-            if names:
-                ingest_all(dataspecs=[spec], only_files=names)
-            # An empty successful 0B14 response means that no changes remain;
-            # it must therefore withdraw previously stored snapshot rows.
-            if spec == "0B14" and any(got_spec == spec for got_spec, _ in results):
-                snapshot_stats = reconcile_0b14_snapshot(names, target)
-                if snapshot_stats["anomalies"]:
-                    raise RuntimeError(
-                        f"invalid 0B14 records: {snapshot_stats['anomalies']}"
-                    )
-        live_status.record_success(successful_sources)
-        print(f"date={target} day_update_due={int(day_update_due)} upcoming={len(upcoming)} "
-              f"critical={int(args.critical)} "
-              f"result_due={len(result_due)} "
-              f"result_errors={','.join(result_errors) or '-'} weight_rows={weight_rows} "
-              f"jc_reverted={snapshot_stats['jockey_changes_reverted']} "
-              f"av_removed={snapshot_stats['cancellations_removed']} "
-              f"we_removed={snapshot_stats['weather_changes_removed']} "
-              f"tc_applied={snapshot_stats['start_times_applied']} "
-              f"tc_restored={snapshot_stats['start_times_restored']} "
-              f"cc_applied={snapshot_stats['courses_applied']} "
-              f"cc_restored={snapshot_stats['courses_restored']} "
-              f"files={sum(int(r.get('files_written') or 0) for _, r in results)}")
-        return 0
+        try:
+            return _run(args, now, started)
+        except StaleRun as exc:
+            # その段より後は書かずに終える。各段の取り込みは冪等なので、次の 1 分の実行がやり直す。
+            _report(f"stale run, stopped before writing {exc}")
+            return 3
+        except BaseException as exc:
+            _log(f"error {type(exc).__name__}: {exc}")
+            raise
+        finally:
+            faulthandler.cancel_dump_traceback_later()
+            _release_lock(token)
+            _log(f"end {time.time() - started:.1f}s")
     finally:
-        LOCK.unlink(missing_ok=True)
+        _LOG.close()
+        _LOG = None
 
 
 if __name__ == "__main__":
