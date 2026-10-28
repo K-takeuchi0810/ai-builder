@@ -240,6 +240,20 @@ def test_a_lock_without_an_owner_is_taken_over_only_when_old(tmp_path, monkeypat
     assert mod._acquire_lock(time.time()) is not None
 
 
+def test_a_live_owner_keeps_an_old_lock_until_the_last_safety_valve(tmp_path, monkeypatch):
+    """遅いだけの生きた実行からは奪わない (JV-Link を 2 つの実行が同時に使わない)。"""
+    mod = _module()
+    _isolate(mod, tmp_path, monkeypatch)
+    token = mod._acquire_lock(time.time())
+    old = time.time() - mod.LOCK_STALE_SECONDS - 1
+    os.utime(mod.LOCK, (old, old))
+    assert mod._acquire_lock(time.time()) is None
+    older = time.time() - 2 * mod.LOCK_STALE_SECONDS - 1
+    os.utime(mod.LOCK, (older, older))
+    assert mod._acquire_lock(time.time()) not in (None, token)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="kernel32 の stdcall で止める")
 def test_watchdog_ends_a_process_stuck_in_a_call_that_holds_the_gil(tmp_path):
     """JV-Link の COM 呼び出しの代わりに、GIL を持ったまま戻らない kernel32.Sleep で止める。"""
     script = Path("deploy/windows/fetch-live-jvdata.py").resolve()
@@ -294,11 +308,8 @@ _NO_SNAPSHOT_CHANGES = dict.fromkeys((
     "courses_restored", "anomalies"), 0)
 
 
-@pytest.mark.parametrize("resume", [None, "late", "next_day"])
-def test_a_run_that_resumes_late_writes_nothing(tmp_path, monkeypatch, resume):
-    """本命の経路 (main) で、JV-Link の応答待ちから遅れて戻った実行が書き込まないこと。
-    resume=None は対照 (同じ経路で書き込みが起きることを確かめる)。"""
-    mod = _module()
+def _race_day(mod, tmp_path, monkeypatch, on_fetch):
+    """main を本番と同じ経路で動かす。JV-Link・取り込み・見張りだけを記録に置き換える。"""
     _isolate(mod, tmp_path, monkeypatch)
     _Clock.current = datetime(2026, 10, 25, 15, 0)
     monkeypatch.setattr(mod, "datetime", _Clock)
@@ -319,39 +330,86 @@ def test_a_run_that_resumes_late_writes_nothing(tmp_path, monkeypatch, resume):
                         or dict(_NO_SNAPSHOT_CHANGES))
     monkeypatch.setattr(mod.live_status, "record_success",
                         lambda sources: events.append(("write", "status")))
-    real_time = time.time
 
     class Client:
         def __enter__(self):
             return self
 
         def __exit__(self, *exc):
+            events.append(("close",))
             return False
 
-        def fetch_realtime(self, spec, key):
+        def fetch_realtime(self, spec, key, on_progress=None):
             events.append(("fetch", spec))
-            if resume == "late":         # 応答待ちで止まり、30 分後に戻ってきた
-                monkeypatch.setattr(mod.time, "time", lambda: real_time() + 30 * 60)
-            elif resume == "next_day":
-                _Clock.current = datetime(2026, 10, 26, 8, 0)
+            on_fetch(spec)
+            if spec == "0B14":           # 一時的なエラーで JVRTOpen を再試行した
+                on_progress("rt_retry", {"dataspec": spec, "key": key, "rc": -502,
+                                         "attempt": 1, "wait_sec": 5})
             return {"filenames": [f"{spec}_{key}.jvd"], "files_written": 1}
 
     monkeypatch.setattr(mod, "JVLinkClient", Client)
     monkeypatch.setattr(sys, "argv", ["fetch-live-jvdata.py"])
+    return events
+
+
+def _log_text(tmp_path):
+    return next((tmp_path / "logs").glob("live-jvdata-*.log")).read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("resume", [None, "late", "next_day"])
+def test_a_run_that_resumes_late_stops_before_fetching_or_writing_more(tmp_path, monkeypatch,
+                                                                        resume):
+    """本命の経路 (main) で、JV-Link の応答待ちから遅れて戻った実行が先へ進まないこと。
+    resume=None は対照 (同じ経路で取得と書き込みが最後まで起きることを確かめる)。"""
+    mod = _module()
+    started = time.time()
+
+    def on_fetch(spec):
+        if resume == "late":             # 応答待ちで止まり、30 分後に戻ってきた
+            monkeypatch.setattr(mod, "_wall_clock", lambda: started + 30 * 60)
+        elif resume == "next_day":
+            _Clock.current = datetime(2026, 10, 26, 8, 0)
+
+    events = _race_day(mod, tmp_path, monkeypatch, on_fetch)
 
     got = mod.main()
 
     writes = [e[1] for e in events if e[0] == "write"]
+    fetched = [e[1] for e in events if e[0] == "fetch"]
     if resume is None:
         assert got == 0
+        assert fetched == ["0B11", "0B14", "0B12", "0B30"]
         assert writes == ["0B11", "0B12", "0B14", "reconcile", "0B30", "status"]
     else:
-        assert got == 3 and writes == []
+        assert got == 3
+        assert fetched == ["0B11"] and writes == []      # 次の取得にも進まない
+        assert ("close",) in events                      # JVClose は通る
     # 取得の前には必ず上限をかけ直している。終わりに解除し、ロックは残さない。
     fetches = [i for i, e in enumerate(events) if e[0] == "fetch"]
-    assert fetches and all(events[i - 1] == ("arm", mod.STEP_TIMEOUT_SECONDS) for i in fetches)
+    assert all(events[i - 1] == ("arm", mod.STEP_TIMEOUT_SECONDS) for i in fetches)
     assert events[-1] == ("cancel",)
     assert not mod.LOCK.exists()
-    log = next((tmp_path / "logs").glob("live-jvdata-*.log")).read_text(encoding="utf-8")
-    assert "step 0B30:202610250504081" in log
+    log = _log_text(tmp_path)
+    assert "step 0B11:20261025" in log
+    if resume is None:
+        retry = events.index(("fetch", "0B14")) + 1
+        assert events[retry] == ("arm", mod.STEP_TIMEOUT_SECONDS)   # 再試行の待ちでかけ直す
+        assert "step retry 0B14:20261025 rc=-502 attempt=1 wait=5s" in log
     assert ("stale run" in log) == (resume is not None)
+
+
+def test_an_error_leaves_its_traceback_in_the_log(tmp_path, monkeypatch):
+    """vbs の非表示実行は stderr を捨てるので、例外の traceback は日別ログにしか残らない。"""
+    mod = _module()
+
+    def on_fetch(spec):
+        if spec == "0B30":
+            raise RuntimeError("JVRTOpen failed: rc=-502")
+
+    _race_day(mod, tmp_path, monkeypatch, on_fetch)
+    with pytest.raises(RuntimeError):
+        mod.main()
+    log = _log_text(tmp_path)
+    assert "error RuntimeError: JVRTOpen failed: rc=-502" in log
+    assert "Traceback (most recent call last)" in log and "in fetch_realtime" in log
+    assert not mod.LOCK.exists()

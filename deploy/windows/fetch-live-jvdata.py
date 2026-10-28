@@ -13,6 +13,7 @@ import json
 import sqlite3
 import sys
 import time
+import traceback
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -47,14 +48,18 @@ PRE_RACE_ACTIVITY_MINUTES = 120
 # つかんだままになっていた。区切りごとに上限をかけ直し、超えたら止まった場所を記録して自分で終わる。
 LOG_DIR = ROOT / "out" / "logs" / "live-jvdata"
 LOG_KEEP_DAYS = 14
-STEP_TIMEOUT_SECONDS = 120      # JV-Link の 1 回の取得 (JVRTOpen の再試行の待ち 5+15+45 秒を含む)
+# JV-Link の 1 回の取得。JVRTOpen の再試行 (待ち 5・15・45 秒) のたびにかけ直す。成功した実行は
+# 1 分の中で長くても 55 秒で終わっている (live-jvdata-status.json の 24 開催日、2026-10-28 に確認)
+STEP_TIMEOUT_SECONDS = 120
 INGEST_TIMEOUT_SECONDS = 300    # 取り込みの 1 段 (DB のロック待ちを含む)
-# 起動からこれより後には書き込まない。止まっていた実行が後で動き出し、古い状態で照合するのを防ぐ。
+# 起動からこれより後には取得も書き込みも続けない。止まっていた実行が後で動き出し、古い状態で
+# 照合するのを防ぐ。見張りと合わせ、生きている実行は長くてもこれ + 取り込み 1 段で終わる。
 RUN_MAX_SECONDS = 10 * 60
-# 持ち主を確かめられないロック (書きかけ・旧版) を古いとみなす時間。
+# 持ち主を確かめられないロック (書きかけ・旧版) を古いとみなす時間。持ち主が生きているロックは奪わない。
 LOCK_STALE_SECONDS = RUN_MAX_SECONDS + 5 * 60
 
 _LOG = None
+_wall_clock = time.time  # テストで差し替える (プロセス全体の time.time を替えない)
 
 
 class StaleRun(RuntimeError):
@@ -88,12 +93,18 @@ def _step(label: str, seconds: int = STEP_TIMEOUT_SECONDS) -> None:
     """次の区切りまでの上限をかけ直す。超えると faulthandler が全スレッドの
     traceback をログに書いてプロセスを終える (GIL を持ったままの COM 呼び出しでも効く)。"""
     _log(f"step {label}")
-    if _LOG is not None:
-        faulthandler.dump_traceback_later(seconds, exit=True, file=_LOG)
+    faulthandler.dump_traceback_later(seconds, exit=True, file=_LOG or sys.stderr)
+
+
+def _on_jvlink_progress(event: str, info: dict) -> None:
+    """再試行の待ちは正常な遅れなので、上限をかけ直して見張りに殺させない。"""
+    if event == "rt_retry":
+        _step(f"retry {info.get('dataspec')}:{info.get('key')} rc={info.get('rc')} "
+              f"attempt={info.get('attempt')} wait={info.get('wait_sec')}s")
 
 
 def _ensure_current(started: float, target: str, label: str) -> None:
-    elapsed = time.time() - started
+    elapsed = _wall_clock() - started
     today = datetime.now().strftime("%Y%m%d")
     if elapsed > RUN_MAX_SECONDS or today != target:
         raise StaleRun(f"{label}: elapsed={int(elapsed)}s target={target} today={today}")
@@ -115,7 +126,8 @@ def _process_created(pid: int) -> int | None:
     k32.CloseHandle.argtypes = (wintypes.HANDLE,)
     handle = k32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
     if not handle:
-        return -1 if ctypes.get_last_error() == 5 else None  # 5 = ERROR_ACCESS_DENIED
+        # 87 = ERROR_INVALID_PARAMETER (その番号のプロセスが無い)。それ以外は確かめられない
+        return None if ctypes.get_last_error() == 87 else -1
     try:
         code = wintypes.DWORD()
         if not k32.GetExitCodeProcess(handle, ctypes.byref(code)):
@@ -131,23 +143,26 @@ def _process_created(pid: int) -> int | None:
 
 
 def _lock_stale_reason(now: float) -> str | None:
-    """ロックを引き継いでよい理由。持ち主が生きていれば None。"""
+    """ロックを引き継いでよい理由。持ち主が生きていれば None (古くても奪わない。生きている実行は
+    見張りと RUN_MAX_SECONDS で終わるので、奪うと JV-Link を 2 つの実行が同時に使うだけになる)。"""
     try:
         age = now - LOCK.stat().st_mtime
     except FileNotFoundError:
         return "gone"
-    if age >= LOCK_STALE_SECONDS:
-        return f"age={int(age)}s"
     try:
         owner = json.loads(LOCK.read_text(encoding="utf-8"))
         pid, created = int(owner["pid"]), owner.get("created")
     except (OSError, ValueError, TypeError, KeyError):
-        return None  # 書きかけ・旧版のロック。古くなるまで待つ
+        # 書きかけ・旧版のロック。古くなるまで待つ
+        return f"no owner, age={int(age)}s" if age >= LOCK_STALE_SECONDS else None
     alive = _process_created(pid)
     if alive is None:
         return f"owner pid={pid} exited"
     if alive != -1 and created not in (None, -1) and alive != created:
         return f"owner pid={pid} reused"
+    if age >= 2 * LOCK_STALE_SECONDS:
+        # 見張りも RUN_MAX_SECONDS も効かずに居座っている (想定外)。最後の安全弁
+        return f"owner pid={pid} alive but age={int(age)}s"
     return None
 
 
@@ -510,29 +525,36 @@ def _run(args, now: datetime, started: float) -> int:
     # 0B12 の JVGets が「未配信」を返したとき、定期タスクを長時間占有しない。
     # 取得できなかったレースは次の1分間隔の実行で再試行される。
     os.environ["JVLINK_REALTIME_NO_DATA_SEC"] = str(RESULT_TIMEOUT_SECONDS)
-    _step("JVInit")
+    def fetch_step(label: str) -> None:
+        # 取得の途中でも RUN_MAX_SECONDS を超えたら止める (遅い取得が続いても次の実行と重ならない)
+        _ensure_current(started, target, label)
+        _step(label)
+
+    fetch_step("JVInit")
     with JVLinkClient() as client:
         # 開催日単位: 馬体重は発表ごと、馬場は変更ごとに更新される。
         if day_update_due:
             for spec in (("0B14",) if args.critical else ("0B11", "0B14")):
-                _step(f"{spec}:{target}")
-                results.append((spec, client.fetch_realtime(spec, target)))
+                fetch_step(f"{spec}:{target}")
+                results.append((spec, client.fetch_realtime(spec, target, on_progress=_on_jvlink_progress)))
                 successful_sources[spec] = target
         # 確定着順・払戻はレース単位で配信される。DBに着順が入ったレースは
         # 次回から除外し、未確定の終了レースだけを追跡する。
         for race in result_due:
             key = _result_key(race)
-            _step(f"0B12:{key}")
+            fetch_step(f"0B12:{key}")
             try:
-                results.append(("0B12", client.fetch_realtime("0B12", key)))
+                results.append(("0B12", client.fetch_realtime("0B12", key,
+                                                            on_progress=_on_jvlink_progress)))
                 successful_sources[f"0B12:{key}"] = key
             except Exception as exc:
                 result_errors.append(f"{key}:{type(exc).__name__}")
         # 全賭式は選択肢が膨大なので、直近90分のレースだけを取得する。
         for race in upcoming:
             key = _race_key(race)
-            _step(f"0B30:{key}")
-            results.append(("0B30", client.fetch_realtime("0B30", key)))
+            fetch_step(f"0B30:{key}")
+            results.append(("0B30", client.fetch_realtime("0B30", key,
+                                                        on_progress=_on_jvlink_progress)))
             successful_sources[f"0B30:{key}"] = key
         _step("JVClose")
 
@@ -586,7 +608,7 @@ def main() -> int:
                         help="発走15分前の30秒オフセット取得 (0B14/0B30のみ)")
     args = parser.parse_args()
     now = datetime.now()
-    started = time.time()
+    started = _wall_clock()
     _LOG = _open_log(now)
     try:
         _log(f"start critical={int(args.critical)}")
@@ -601,12 +623,13 @@ def main() -> int:
             _report(f"stale run, stopped before writing {exc}")
             return 3
         except BaseException as exc:
-            _log(f"error {type(exc).__name__}: {exc}")
+            # 起動経路 (vbs の非表示実行) は stderr を捨てるので、traceback はここにしか残らない
+            _log(f"error {type(exc).__name__}: {exc}\n{traceback.format_exc()}")
             raise
         finally:
             faulthandler.cancel_dump_traceback_later()
             _release_lock(token)
-            _log(f"end {time.time() - started:.1f}s")
+            _log(f"end {_wall_clock() - started:.1f}s")
     finally:
         _LOG.close()
         _LOG = None
