@@ -10,6 +10,7 @@ import os
 import argparse
 import faulthandler
 import json
+import logging
 import sqlite3
 import sys
 import time
@@ -59,7 +60,10 @@ RUN_MAX_SECONDS = 10 * 60
 LOCK_STALE_SECONDS = RUN_MAX_SECONDS + 5 * 60
 
 _LOG = None
-_wall_clock = time.time  # テストで差し替える (プロセス全体の time.time を替えない)
+# テストで差し替える (プロセス全体の time.time を替えない)。起動からの経過だけに使い、ロックの古さは
+# ファイルの mtime (実時計) と比べる
+_wall_clock = time.time
+LIVE_SPECS = ("0B11", "0B12", "0B14", "0B30")
 
 
 class StaleRun(RuntimeError):
@@ -97,10 +101,27 @@ def _step(label: str, seconds: int = STEP_TIMEOUT_SECONDS) -> None:
 
 
 def _on_jvlink_progress(event: str, info: dict) -> None:
-    """再試行の待ちは正常な遅れなので、上限をかけ直して見張りに殺させない。"""
+    """再試行の待ちは正常な遅れなので、上限をかけ直して見張りに殺させない。未配信の待ち (rt_wait) は
+    JVLINK_REALTIME_NO_DATA_SEC で切れるのでかけ直さない。"""
     if event == "rt_retry":
         _step(f"retry {info.get('dataspec')}:{info.get('key')} rc={info.get('rc')} "
               f"attempt={info.get('attempt')} wait={info.get('wait_sec')}s")
+
+
+def _log_leftover_parts() -> None:
+    """見張りで終わった実行が残した書きかけ (.jvd.part) の数をログに残す。取り込まれないので消さない
+    (止まった場所の調べに使う)。"""
+    counts = []
+    for spec in LIVE_SPECS:
+        try:
+            with os.scandir(KEIBA / "data" / "raw" / spec) as entries:
+                n = sum(1 for e in entries if e.name.endswith(".jvd.part"))
+        except OSError:
+            continue
+        if n:
+            counts.append(f"{spec}={n}")
+    if counts:
+        _log("leftover .jvd.part " + " ".join(counts))
 
 
 def _ensure_current(started: float, target: str, label: str) -> None:
@@ -610,12 +631,20 @@ def main() -> int:
     now = datetime.now()
     started = _wall_clock()
     _LOG = _open_log(now)
+    # jvlink_client などの logger.warning (raw の名前を変えられない等) も日別ログへ。stderr は捨てられる
+    handler = logging.StreamHandler(_LOG)
+    handler.setLevel(logging.WARNING)
+    handler.setFormatter(logging.Formatter(
+        f"%(asctime)s pid={os.getpid()} log %(levelname)s %(name)s: %(message)s",
+        "%Y-%m-%dT%H:%M:%S"))
+    logging.getLogger().addHandler(handler)
     try:
         _log(f"start critical={int(args.critical)}")
         token = _acquire_lock(started)
         if token is None:
             _report("another live fetch is active")
             return 0
+        _log_leftover_parts()
         try:
             return _run(args, now, started)
         except StaleRun as exc:
@@ -631,6 +660,7 @@ def main() -> int:
             _release_lock(token)
             _log(f"end {_wall_clock() - started:.1f}s")
     finally:
+        logging.getLogger().removeHandler(handler)
         _LOG.close()
         _LOG = None
 

@@ -4,6 +4,7 @@ from datetime import datetime
 import contextlib
 import importlib.util
 import json
+import logging
 import os
 from pathlib import Path
 import sqlite3
@@ -403,6 +404,8 @@ def test_an_error_leaves_its_traceback_in_the_log(tmp_path, monkeypatch):
     mod = _module()
 
     def on_fetch(spec):
+        if spec == "0B14":               # jvlink_client の logger.warning も日別ログへ
+            logging.getLogger("jvlink_client.client").warning("failed to finalize realtime raw file")
         if spec == "0B30":
             raise RuntimeError("JVRTOpen failed: rc=-502")
 
@@ -412,4 +415,18 @@ def test_an_error_leaves_its_traceback_in_the_log(tmp_path, monkeypatch):
     log = _log_text(tmp_path)
     assert "error RuntimeError: JVRTOpen failed: rc=-502" in log
     assert "Traceback (most recent call last)" in log and "in fetch_realtime" in log
+    assert "log WARNING jvlink_client.client: failed to finalize realtime raw file" in log
     assert not mod.LOCK.exists()
+
+
+def test_leftover_part_files_are_counted_in_the_log(tmp_path, monkeypatch):
+    mod = _module()
+    events = _race_day(mod, tmp_path, monkeypatch, lambda spec: None)
+    monkeypatch.setattr(mod, "KEIBA", tmp_path / "keiba")
+    for name in ("0B30/0B30_a_1.jvd.part", "0B30/0B30_b_2.jvd.part", "0B14/0B14_c_3.jvd",
+                 "0B12/0B12_d_4.jvd.part"):
+        path = tmp_path / "keiba" / "data" / "raw" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"x")
+    assert mod.main() == 0 and events
+    assert "leftover .jvd.part 0B12=1 0B30=2" in _log_text(tmp_path)
