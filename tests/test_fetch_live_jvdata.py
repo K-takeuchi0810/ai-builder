@@ -3,8 +3,17 @@ from __future__ import annotations
 from datetime import datetime
 import contextlib
 import importlib.util
+import json
+import logging
+import os
 from pathlib import Path
 import sqlite3
+import subprocess
+import sys
+import textwrap
+import time
+
+import pytest
 
 AV_LENGTH = 78
 JC_LENGTH = 161
@@ -180,3 +189,244 @@ def test_0b14_snapshot_restores_withdrawn_time_course_and_weather(tmp_path, monk
     assert stats["start_times_restored"] == 1
     assert stats["courses_restored"] == 1
     assert stats["weather_changes_removed"] == 1
+
+
+# ---- 止まった実行を残さない (2026-10-25 に JV-Link の応答待ちで 10 組が残った) ----
+
+def _isolate(mod, tmp_path, monkeypatch):
+    monkeypatch.setattr(mod, "LOCK", tmp_path / "cache" / "fetch-live-jvdata.lock")
+    monkeypatch.setattr(mod, "CRITICAL_FLAG", tmp_path / "cache" / "live-critical-window.flag")
+    monkeypatch.setattr(mod, "LOG_DIR", tmp_path / "logs")
+
+
+def _exited_pid() -> int:
+    proc = subprocess.Popen([sys.executable, "-c", "pass"])
+    proc.wait()
+    return proc.pid
+
+
+def test_lock_is_kept_while_its_owner_lives_and_released_only_by_the_owner(tmp_path, monkeypatch):
+    mod = _module()
+    _isolate(mod, tmp_path, monkeypatch)
+    now = time.time()
+    token = mod._acquire_lock(now)
+    assert token
+    assert mod._acquire_lock(now + 60) is None          # 持ち主 (このプロセス) は生きている
+    mod._release_lock("an-older-run")                    # 後で動き出した古い実行
+    assert mod.LOCK.exists()
+    mod._release_lock(token)
+    assert not mod.LOCK.exists()
+
+
+@pytest.mark.parametrize("owner", ["exited", "pid_reused"])
+def test_lock_of_a_dead_owner_is_taken_over_at_once(tmp_path, monkeypatch, owner):
+    mod = _module()
+    _isolate(mod, tmp_path, monkeypatch)
+    mod.LOCK.parent.mkdir(parents=True)
+    pid = _exited_pid() if owner == "exited" else os.getpid()
+    mod.LOCK.write_text(json.dumps({"pid": pid, "created": 1, "token": "old"}),
+                        encoding="utf-8")
+    assert mod._acquire_lock(time.time()) is not None
+    assert json.loads(mod.LOCK.read_text(encoding="utf-8"))["pid"] == os.getpid()
+
+
+def test_a_lock_without_an_owner_is_taken_over_only_when_old(tmp_path, monkeypatch):
+    mod = _module()
+    _isolate(mod, tmp_path, monkeypatch)
+    mod.LOCK.parent.mkdir(parents=True)
+    mod.LOCK.write_text("", encoding="utf-8")            # 旧版のロック、または書きかけ
+    assert mod._acquire_lock(time.time()) is None
+    old = time.time() - mod.LOCK_STALE_SECONDS - 1
+    os.utime(mod.LOCK, (old, old))
+    assert mod._acquire_lock(time.time()) is not None
+
+
+def test_a_live_owner_keeps_an_old_lock_until_the_last_safety_valve(tmp_path, monkeypatch):
+    """遅いだけの生きた実行からは奪わない (JV-Link を 2 つの実行が同時に使わない)。"""
+    mod = _module()
+    _isolate(mod, tmp_path, monkeypatch)
+    token = mod._acquire_lock(time.time())
+    old = time.time() - mod.LOCK_STALE_SECONDS - 1
+    os.utime(mod.LOCK, (old, old))
+    assert mod._acquire_lock(time.time()) is None
+    older = time.time() - 2 * mod.LOCK_STALE_SECONDS - 1
+    os.utime(mod.LOCK, (older, older))
+    assert mod._acquire_lock(time.time()) not in (None, token)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="kernel32 の stdcall で止める")
+def test_watchdog_ends_a_process_stuck_in_a_call_that_holds_the_gil(tmp_path):
+    """JV-Link の COM 呼び出しの代わりに、GIL を持ったまま戻らない kernel32.Sleep で止める。"""
+    script = Path("deploy/windows/fetch-live-jvdata.py").resolve()
+    code = textwrap.dedent(f"""
+        import ctypes, importlib.util, pathlib
+        spec = importlib.util.spec_from_file_location("m", r"{script}")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        mod.LOG_DIR = pathlib.Path(r"{tmp_path}")
+        mod._LOG = mod._open_log(mod.datetime.now())
+        mod._step("JVRTOpen stand-in", 1)
+        class PyWinDLL(ctypes.CDLL):
+            _func_flags_ = ctypes._FUNCFLAG_STDCALL | ctypes._FUNCFLAG_PYTHONAPI
+        PyWinDLL("kernel32").Sleep(60000)
+    """)
+    started = time.monotonic()
+    proc = subprocess.run([sys.executable, "-c", code], timeout=45, capture_output=True)
+    assert proc.returncode == 1, proc.stderr
+    assert time.monotonic() - started < 30
+    log = next(tmp_path.glob("live-jvdata-*.log")).read_text(encoding="utf-8")
+    assert "step JVRTOpen stand-in" in log
+    assert "Timeout (0:00:01)!" in log and 'File "<string>"' in log
+
+
+class _Clock(datetime):
+    current = datetime(2026, 10, 25, 15, 0)
+
+    @classmethod
+    def now(cls, tz=None):
+        return cls.current
+
+
+def _race_day_db():
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.executescript("""
+      CREATE TABLE races (race_year TEXT,race_month_day TEXT,track_code TEXT,kaiji TEXT,
+        nichiji TEXT,race_num TEXT,start_time TEXT);
+      CREATE TABLE start_time_changes (race_year TEXT,race_month_day TEXT,track_code TEXT,
+        kaiji TEXT,nichiji TEXT,race_num TEXT,new_start_time TEXT,announced_time TEXT);
+      CREATE TABLE horse_races (race_year TEXT,race_month_day TEXT,track_code TEXT,
+        kaiji TEXT,nichiji TEXT,race_num TEXT,confirmed_order TEXT);
+      INSERT INTO races VALUES ('2026','1025','05','04','08','11','1540');
+      INSERT INTO races VALUES ('2026','1025','05','04','08','10','1450');
+    """)
+    return conn
+
+
+_NO_SNAPSHOT_CHANGES = dict.fromkeys((
+    "jockey_changes_reverted", "cancellations_removed", "weather_changes_removed",
+    "start_times_applied", "start_times_restored", "courses_applied",
+    "courses_restored", "anomalies"), 0)
+
+
+def _race_day(mod, tmp_path, monkeypatch, on_fetch):
+    """main を本番と同じ経路で動かす。JV-Link・取り込み・見張りだけを記録に置き換える。"""
+    _isolate(mod, tmp_path, monkeypatch)
+    _Clock.current = datetime(2026, 10, 25, 15, 0)
+    monkeypatch.setattr(mod, "datetime", _Clock)
+    conn = _race_day_db()
+    monkeypatch.setattr(mod, "open_db", lambda: contextlib.nullcontext(conn))
+    monkeypatch.setattr(mod.live_status, "due", lambda *a, **k: True)
+    events = []
+    monkeypatch.setattr(mod.faulthandler, "dump_traceback_later",
+                        lambda seconds, **kw: events.append(("arm", seconds)))
+    monkeypatch.setattr(mod.faulthandler, "cancel_dump_traceback_later",
+                        lambda: events.append(("cancel",)))
+    monkeypatch.setattr(mod, "ingest_wh_files",
+                        lambda names: events.append(("write", "0B11")) or 0)
+    monkeypatch.setattr(mod, "ingest_all",
+                        lambda dataspecs, only_files: events.append(("write", dataspecs[0])))
+    monkeypatch.setattr(mod, "reconcile_0b14_snapshot",
+                        lambda names, target: events.append(("write", "reconcile"))
+                        or dict(_NO_SNAPSHOT_CHANGES))
+    monkeypatch.setattr(mod.live_status, "record_success",
+                        lambda sources: events.append(("write", "status")))
+
+    class Client:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            events.append(("close",))
+            return False
+
+        def fetch_realtime(self, spec, key, on_progress=None):
+            events.append(("fetch", spec))
+            on_fetch(spec)
+            if spec == "0B14":           # 一時的なエラーで JVRTOpen を再試行した
+                on_progress("rt_retry", {"dataspec": spec, "key": key, "rc": -502,
+                                         "attempt": 1, "wait_sec": 5})
+            return {"filenames": [f"{spec}_{key}.jvd"], "files_written": 1}
+
+    monkeypatch.setattr(mod, "JVLinkClient", Client)
+    monkeypatch.setattr(sys, "argv", ["fetch-live-jvdata.py"])
+    return events
+
+
+def _log_text(tmp_path):
+    return next((tmp_path / "logs").glob("live-jvdata-*.log")).read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("resume", [None, "late", "next_day"])
+def test_a_run_that_resumes_late_stops_before_fetching_or_writing_more(tmp_path, monkeypatch,
+                                                                        resume):
+    """本命の経路 (main) で、JV-Link の応答待ちから遅れて戻った実行が先へ進まないこと。
+    resume=None は対照 (同じ経路で取得と書き込みが最後まで起きることを確かめる)。"""
+    mod = _module()
+    started = time.time()
+
+    def on_fetch(spec):
+        if resume == "late":             # 応答待ちで止まり、30 分後に戻ってきた
+            monkeypatch.setattr(mod, "_wall_clock", lambda: started + 30 * 60)
+        elif resume == "next_day":
+            _Clock.current = datetime(2026, 10, 26, 8, 0)
+
+    events = _race_day(mod, tmp_path, monkeypatch, on_fetch)
+
+    got = mod.main()
+
+    writes = [e[1] for e in events if e[0] == "write"]
+    fetched = [e[1] for e in events if e[0] == "fetch"]
+    if resume is None:
+        assert got == 0
+        assert fetched == ["0B11", "0B14", "0B12", "0B30"]
+        assert writes == ["0B11", "0B12", "0B14", "reconcile", "0B30", "status"]
+    else:
+        assert got == 3
+        assert fetched == ["0B11"] and writes == []      # 次の取得にも進まない
+        assert ("close",) in events                      # JVClose は通る
+    # 取得の前には必ず上限をかけ直している。終わりに解除し、ロックは残さない。
+    fetches = [i for i, e in enumerate(events) if e[0] == "fetch"]
+    assert all(events[i - 1] == ("arm", mod.STEP_TIMEOUT_SECONDS) for i in fetches)
+    assert events[-1] == ("cancel",)
+    assert not mod.LOCK.exists()
+    log = _log_text(tmp_path)
+    assert "step 0B11:20261025" in log
+    if resume is None:
+        retry = events.index(("fetch", "0B14")) + 1
+        assert events[retry] == ("arm", mod.STEP_TIMEOUT_SECONDS)   # 再試行の待ちでかけ直す
+        assert "step retry 0B14:20261025 rc=-502 attempt=1 wait=5s" in log
+    assert ("stale run" in log) == (resume is not None)
+
+
+def test_an_error_leaves_its_traceback_in_the_log(tmp_path, monkeypatch):
+    """vbs の非表示実行は stderr を捨てるので、例外の traceback は日別ログにしか残らない。"""
+    mod = _module()
+
+    def on_fetch(spec):
+        if spec == "0B14":               # jvlink_client の logger.warning も日別ログへ
+            logging.getLogger("jvlink_client.client").warning("failed to finalize realtime raw file")
+        if spec == "0B30":
+            raise RuntimeError("JVRTOpen failed: rc=-502")
+
+    _race_day(mod, tmp_path, monkeypatch, on_fetch)
+    with pytest.raises(RuntimeError):
+        mod.main()
+    log = _log_text(tmp_path)
+    assert "error RuntimeError: JVRTOpen failed: rc=-502" in log
+    assert "Traceback (most recent call last)" in log and "in fetch_realtime" in log
+    assert "log WARNING jvlink_client.client: failed to finalize realtime raw file" in log
+    assert not mod.LOCK.exists()
+
+
+def test_leftover_part_files_are_counted_in_the_log(tmp_path, monkeypatch):
+    mod = _module()
+    events = _race_day(mod, tmp_path, monkeypatch, lambda spec: None)
+    monkeypatch.setattr(mod, "KEIBA", tmp_path / "keiba")
+    for name in ("0B30/0B30_a_1.jvd.part", "0B30/0B30_b_2.jvd.part", "0B14/0B14_c_3.jvd",
+                 "0B12/0B12_d_4.jvd.part"):
+        path = tmp_path / "keiba" / "data" / "raw" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"x")
+    assert mod.main() == 0 and events
+    assert "leftover .jvd.part 0B12=1 0B30=2" in _log_text(tmp_path)
